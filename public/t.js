@@ -27,6 +27,7 @@
       p: path || location.pathname,
       r: document.referrer || '',
       w: window.innerWidth || 0,
+      u: location.origin || '',
     });
     // sendBeacon survives page unload; fetch is the fallback
     if (navigator.sendBeacon) {

@@ -179,6 +179,18 @@
     background: var(--paper); border: 1px dashed var(--line); border-radius: 10px; padding: 14px; margin-top: 10px; }
   .email-sub { font-weight: 600; margin-bottom: 8px; }
 
+  .field { display: block; margin: 8px 0; }
+  .field span { display: block; font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+  .field input {
+    width: 100%; font: inherit; font-size: 14px; padding: 9px 11px; border-radius: 9px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--ink);
+  }
+  .field input:focus-visible { outline: 2px solid var(--pine); outline-offset: 1px; border-color: var(--pine); }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .btn.sm { padding: 7px 12px; font-size: 12.5px; }
+  .auto-tag { font-size: 10px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--pine); background: var(--pine-soft); border-radius: 5px; padding: 2px 6px; margin-left: 8px; vertical-align: 2px; }
+
   .loading { color: var(--faint); padding: 60px 0; text-align: center; }
   .note { font-size: 12.5px; color: var(--faint); margin-top: 8px; }
 
@@ -320,9 +332,14 @@ function render(data) {
   ].map(([k, v, d]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
 
   $('#siteCount').textContent = `${data.sites.length} tracked`;
-  $('#footNote').textContent = data.demo
-    ? 'Showing sample data. Deploy to Vercel and add Vercel KV to see real numbers here.'
-    : `Last updated ${new Date(data.generatedAt).toLocaleString()}.`;
+  if (data.demo) {
+    $('#footNote').textContent = 'Showing sample data. Deploy to Vercel and add the database to see real numbers here.';
+  } else if (p.auditQuota) {
+    $('#footNote').innerHTML = `Last updated ${new Date(data.generatedAt).toLocaleString()}. ` +
+      `<strong>SEO/speed scans are rate-limited</strong> — add a free <code>PAGESPEED_API_KEY</code> env var in Vercel (SETUP.md step 6) and the scores fill in.`;
+  } else {
+    $('#footNote').textContent = `Last updated ${new Date(data.generatedAt).toLocaleString()}.`;
+  }
 
   $('#sites').innerHTML = data.sites.map(siteCard).join('');
   data.sites.forEach((s) => {
@@ -338,7 +355,7 @@ function siteCard(s) {
   const conv = st.conversions ?? 0;
   return `<button class="card" data-slug="${s.slug}">
     <div>
-      <div class="name">${esc(s.name)}</div>
+      <div class="name">${esc(s.name)}${s.auto ? '<span class="auto-tag">auto</span>' : ''}</div>
       <div class="url">${esc(s.url.replace(/^https?:\/\//, ''))}</div>
     </div>
     <div class="grade ${gletter.toLowerCase()}" title="Overall health">${g ? gletter : '—'}</div>
@@ -367,6 +384,81 @@ function bars(items, unit) {
     <span class="bar-track"><span class="bar-fill" style="width:${Math.max(4, (i.score / max) * 100)}%"></span></span>
     <span class="n">${fmt(i.score)}</span>
   </div>`).join('');
+}
+
+function getSecret() {
+  let s = null;
+  try { s = sessionStorage.getItem('cronSecret'); } catch {}
+  if (!s) {
+    s = prompt('Enter your CRON_SECRET (from Vercel env vars):');
+    if (s) { try { sessionStorage.setItem('cronSecret', s); } catch {} }
+  }
+  return s;
+}
+
+function buildDraft(s) {
+  const st = s.stats || {};
+  const g = s.grade;
+  const a = s.audit && s.audit.ok ? s.audit : null;
+  const rep = s.report;
+  const name = (($('#ecName') && $('#ecName').value) || s.client || 'there').trim();
+
+  if (rep && rep.email) {
+    let body = rep.email.body_text || rep.summary || '';
+    if (name && s.client && name !== s.client) body = body.split(s.client).join(name);
+    return { subject: rep.email.subject || `${s.name} — website update`, body };
+  }
+  const L = [`Hi ${name},`, '', `Quick update on your website (${s.url.replace(/^https?:\/\//, '')}):`, ''];
+  if (st.hasData) L.push(`• ${fmt(st.visitors)} visitors and ${st.conversions} enquiries in the last 30 days (${st.deltas.visitors >= 0 ? '+' : ''}${st.deltas.visitors}% vs the month before).`);
+  if (g) L.push(`• Site health score: ${g.letter} (${g.score}/100).`);
+  if (a) L.push(`• SEO ${a.scores.seo}/100 and speed ${a.scores.performance}/100 (Google, mobile).`);
+  if (!st.hasData && !g && !a) L.push('• Tracking is now live — first full month of numbers coming soon.');
+  L.push('', 'What we plan to improve next:');
+  (s.findings || []).filter((f) => f.severity !== 'good').slice(0, 3).forEach((f) => L.push(`• ${f.title}`));
+  L.push('', 'Any questions, just reply here.', '', '— The team');
+  return { subject: `${s.name} — website update`, body: L.join('\n') };
+}
+
+function wireDrawer(s) {
+  const addrKey = 'ec:' + s.slug;
+  const addrEl = $('#ecAddr');
+  try { addrEl.value = localStorage.getItem(addrKey) || ''; } catch {}
+
+  $('#ecGmail').addEventListener('click', () => {
+    const addr = (addrEl.value || '').trim();
+    try { if (addr) localStorage.setItem(addrKey, addr); } catch {}
+    const { subject, body } = buildDraft(s);
+    const u = 'https://mail.google.com/mail/?view=cm&fs=1' +
+      (addr ? '&to=' + encodeURIComponent(addr) : '') +
+      '&su=' + encodeURIComponent(subject) +
+      '&body=' + encodeURIComponent(body);
+    window.open(u, '_blank', 'noopener');
+  });
+
+  $('#ecCopy').addEventListener('click', (e) => {
+    const { subject, body } = buildDraft(s);
+    navigator.clipboard.writeText('Subject: ' + subject + '\n\n' + body);
+    e.target.textContent = 'Copied ✓';
+    setTimeout(() => (e.target.textContent = 'Copy email text'), 1600);
+  });
+
+  $('#genOne').addEventListener('click', async (e) => {
+    const secret = getSecret();
+    if (!secret) return;
+    e.target.disabled = true;
+    e.target.textContent = 'Working… (up to 30s)';
+    try {
+      const r = await fetch(`/api/report?slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(secret)}`, { method: 'POST' });
+      const j = await r.json();
+      if (j.ok) { await load(); openDrawer(s.slug); }
+      else {
+        try { sessionStorage.removeItem('cronSecret'); } catch {}
+        e.target.textContent = 'Failed — check secret'; e.target.disabled = false;
+      }
+    } catch {
+      e.target.textContent = 'Failed'; e.target.disabled = false;
+    }
+  });
 }
 
 function openDrawer(slug) {
@@ -410,23 +502,32 @@ function openDrawer(slug) {
       </div>`).join('') || '<div class="note">No issues detected. Nice.</div>'}
     </div>
 
-    ${rep ? `<div class="block">
-      <h3>Monthly report — ${esc(rep.month)} ${rep.aiGenerated ? '· AI drafted' : '· rules'}</h3>
-      <p style="margin:0 0 8px"><strong>${esc(rep.headline || '')}</strong></p>
-      <p style="margin:0 0 6px;color:var(--muted)">${esc(rep.summary || '')}</p>
-      ${rep.email ? `<div class="email-draft"><div class="email-sub">Subject: ${esc(rep.email.subject || '')}</div>${esc(rep.email.body_text || '')}</div>
-      <button class="btn ghost" style="margin-top:10px" id="copyEmail">Copy email</button>` : ''}
-    </div>` : `<div class="block"><h3>Monthly report</h3><div class="note">Not generated yet. Hit “Generate reports”, or run <code>/api/report?secret=…&slug=${esc(s.slug)}</code>.</div></div>`}
+    <div class="block">
+      <h3>Monthly report ${rep ? `— ${esc(rep.month)} ${rep.aiGenerated ? '· AI drafted' : '· rules only'}` : ''}</h3>
+      ${rep ? `
+        <p style="margin:0 0 8px"><strong>${esc(rep.headline || '')}</strong></p>
+        <p style="margin:0 0 6px;color:var(--muted)">${esc(rep.summary || '')}</p>
+        ${(rep.wins && rep.wins.length) ? `<p style="margin:6px 0 0;color:var(--pine)">✔ ${rep.wins.map(esc).join(' &nbsp;·&nbsp; ')}</p>` : ''}
+      ` : '<div class="note">Not generated yet.</div>'}
+      <div class="btn-row">
+        <button class="btn sm" id="genOne">${rep ? 'Regenerate' : 'Generate'} for this site</button>
+      </div>
+    </div>
+
+    <div class="block">
+      <h3>Email this client</h3>
+      <label class="field"><span>Client name</span><input id="ecName" value="${esc(s.client || '')}" placeholder="e.g. Kyle" /></label>
+      <label class="field"><span>Client email</span><input id="ecAddr" type="email" placeholder="client@email.com" /></label>
+      <div class="btn-row">
+        <button class="btn sm" id="ecGmail">Open Gmail draft</button>
+        <button class="btn ghost sm" id="ecCopy">Copy email text</button>
+      </div>
+      <p class="note">Opens Gmail in a new tab with the subject and body filled in — you just review and hit send. Uses the report above if there is one, otherwise a short update built from the numbers.</p>
+      ${rep && rep.email ? `<div class="email-draft"><div class="email-sub">Subject: ${esc(rep.email.subject || '')}</div>${esc(rep.email.body_text || '')}</div>` : ''}
+    </div>
   `;
 
-  const copyBtn = $('#copyEmail');
-  if (copyBtn && rep && rep.email) {
-    copyBtn.addEventListener('click', () => {
-      navigator.clipboard.writeText(`Subject: ${rep.email.subject}\n\n${rep.email.body_text}`);
-      copyBtn.textContent = 'Copied ✓';
-      setTimeout(() => (copyBtn.textContent = 'Copy email'), 1600);
-    });
-  }
+  wireDrawer(s);
 
   $('#scrim').classList.add('open');
   $('#drawer').classList.add('open');
@@ -444,19 +545,19 @@ document.addEventListener('keydown', (e) => e.key === 'Escape' && closeDrawer())
 $('#refreshBtn').addEventListener('click', load);
 
 $('#genBtn').addEventListener('click', async () => {
-  const secret = prompt('Enter your CRON_SECRET to generate reports:');
+  const secret = getSecret();
   if (!secret) return;
   const btn = $('#genBtn');
-  btn.disabled = true; btn.textContent = 'Generating…';
+  btn.disabled = true; btn.textContent = 'Generating… (can take a minute)';
   try {
     const r = await fetch(`/api/report?secret=${encodeURIComponent(secret)}`, { method: 'POST' });
     const j = await r.json();
-    btn.textContent = j.ok ? `Done · ${j.generated} reports` : 'Failed';
-    if (j.ok) await load();
+    if (j.ok) { btn.textContent = `Done · ${j.generated} reports`; await load(); }
+    else { try { sessionStorage.removeItem('cronSecret'); } catch {} btn.textContent = 'Failed — check secret'; }
   } catch {
     btn.textContent = 'Failed';
   }
-  setTimeout(() => { btn.disabled = false; btn.textContent = 'Generate reports'; }, 2500);
+  setTimeout(() => { btn.disabled = false; btn.textContent = 'Generate reports'; }, 2800);
 });
 
 load();

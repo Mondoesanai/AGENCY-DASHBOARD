@@ -72,6 +72,23 @@ export default async function handler(req, res) {
     if (width) {
       tasks.push(store.incr(`${p}:day:${day}:${width < 768 ? 'mobile' : 'desktop'}`));
     }
+    // auto-register the site so it shows up in the dashboard with no config.
+    // only on the homepage hit, to keep writes low.
+    if (path === '/' || path === '') {
+      let origin = '';
+      try {
+        origin = new URL(d.u || '').origin;
+      } catch {
+        origin = '';
+      }
+      tasks.push(store.sadd('registry:slugs', slug));
+      tasks.push(
+        store.set(
+          `meta:${slug}`,
+          JSON.stringify({ slug, url: origin || `https://${slug}`, lastSeen: Date.now() })
+        )
+      );
+    }
   } else {
     const name = cleanSlug(d.n || 'click') || 'click';
     tasks.push(store.incr(`${p}:day:${day}:ev:${name}`));
