@@ -1,5 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/audit.js": { "maxDuration": 60 },
+    "api/report.js": { "maxDuration": 60 },
+    "api/sites.js": { "maxDuration": 60 }
+  },
   "crons": [
     { "path": "/api/report", "schedule": "0 13 1 * *" }
   ],
