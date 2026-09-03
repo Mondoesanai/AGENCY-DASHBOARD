@@ -31,11 +31,19 @@ git init && git add -A && git commit -m "portfolio dashboard"
 ```
 Framework preset: **Other**. No build command. Output dir: leave default.
 
-### 2. Add Vercel KV (the database)
-Vercel dashboard → your project → **Storage → Create → KV** → connect it.
-This auto-sets `KV_REST_API_URL` and `KV_REST_API_TOKEN`. Nothing else to do.
-(Until this exists the app runs on an in-memory store that resets — fine for a
-first look, not for real data.)
+### 2. Add the database — Upstash Redis (free)
+Vercel dashboard → your project → **Storage → Create Database** →
+**Upstash** → **Redis** → free plan → **Continue / Connect to Project**.
+
+This auto-sets the connection env vars (`KV_REST_API_URL` + `KV_REST_API_TOKEN`,
+or `UPSTASH_REDIS_REST_URL` + `UPSTASH_REDIS_REST_TOKEN` — the app reads either
+pair). Then **redeploy** so the running functions pick them up.
+
+Do **not** pick "Redis (Official Redis for Vercel)" — that gives a `redis://`
+connection string, not the REST API this app uses. Upstash is the one.
+
+(Until a database exists the app runs on an in-memory store that resets on every
+deploy — fine for a first look, not for real data.)
 
 ### 3. Set a cron secret
 Project → **Settings → Environment Variables**:
