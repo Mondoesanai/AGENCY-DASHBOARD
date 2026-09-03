@@ -3,10 +3,15 @@
   "functions": {
     "api/audit.js": { "maxDuration": 60 },
     "api/report.js": { "maxDuration": 60 },
-    "api/sites.js": { "maxDuration": 60 }
+    "api/sites.js": { "maxDuration": 60 },
+    "api/cron-daily.js": { "maxDuration": 60 },
+    "api/card.js": { "maxDuration": 30 }
   },
   "crons": [
-    { "path": "/api/report", "schedule": "0 13 1 * *" }
+    { "path": "/api/cron-daily", "schedule": "0 13 * * *" }
+  ],
+  "rewrites": [
+    { "source": "/r/:slug", "destination": "/r.html?slug=:slug" }
   ],
   "headers": [
     {

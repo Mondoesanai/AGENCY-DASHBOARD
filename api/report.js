@@ -1,48 +1,57 @@
-// Monthly report builder.
-//   - runs automatically on the 1st of each month (see vercel.json cron)
-//   - or on demand:  /api/report?secret=YOUR_CRON_SECRET
-//   - single site:    ...&slug=relax-tax
-//   - also email it:   ...&send=1   (needs RESEND_API_KEY + an email in lib/sites.js)
+// Build (and optionally send) the monthly client report.
+//   /api/report?secret=SECRET                 -> all sites, generate only
+//   /api/report?secret=SECRET&slug=relax-tax  -> one site
+//   ...&send=1                                 -> also email it (needs Resend + client email)
 //
-// AI step is optional. With no ANTHROPIC_API_KEY it still produces a solid
-// rules-only report. Model defaults to claude-opus-5; set ANTHROPIC_MODEL to
-// claude-sonnet-5 for a cheaper run.
-import { SITES, getSite } from '../lib/sites.js';
+// Always: snapshots this month's numbers, builds a rotating client email, and
+// (on send) attaches a branded PNG report card + links the shareable report page.
+import { listSites } from '../lib/registry.js';
 import { runAudit } from '../lib/audit.js';
 import { siteStats } from '../lib/stats.js';
-import { buildFindings, overallGrade } from '../lib/suggestions.js';
+import { buildFindings, clientSuggestions, overallGrade } from '../lib/suggestions.js';
+import { snapshot, getHistory, getBaseline, monthKey } from '../lib/history.js';
+import { buildClientEmail, pickAngle } from '../lib/email.js';
+import { buildCardSVG, renderPNG } from '../lib/card.js';
+import { reportToken } from '../lib/token.js';
 import { store } from '../lib/store.js';
 
 const MONTH = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
-const MONTH_KEY = new Date().toISOString().slice(0, 7);
+const MK = monthKey();
 
 function authed(req) {
   const secret = process.env.CRON_SECRET;
-  if (!secret) return true; // not configured yet -> allow (dev)
-  const header = req.headers.authorization || '';
-  return header === `Bearer ${secret}` || req.query.secret === secret;
+  if (!secret) return true;
+  const h = req.headers.authorization || '';
+  return h === `Bearer ${secret}` || req.query.secret === secret;
 }
 
-function pct(n) {
-  return `${n > 0 ? '+' : ''}${n}%`;
+function baseUrl(req) {
+  if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/$/, '');
+  const host = req.headers['x-forwarded-host'] || req.headers.host;
+  const proto = req.headers['x-forwarded-proto'] || 'https';
+  return host ? `${proto}://${host}` : '';
 }
 
-function rulesSummary(site, g, stats) {
-  const bits = [];
-  if (stats?.hasData) {
-    bits.push(
-      `${stats.visitors} visitors and ${stats.conversions} conversions in the last 30 days (${pct(
-        stats.deltas.visitors
-      )} vs the month before)`
-    );
+async function readLog(slug) {
+  const raw = await store.get(`changelog:${slug}`).catch(() => null);
+  try {
+    const a = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(a) ? a : [];
+  } catch {
+    return [];
   }
-  if (g) bits.push(`site health graded ${g.letter} (${g.score}/100)`);
-  return bits.length
-    ? `${site.name}: ${bits.join(', ')}.`
-    : `${site.name}: baseline recorded, tracking is now live.`;
 }
 
-async function aiReport({ site, stats, audit, findings, grade }) {
+function monthsSince(baseline, history) {
+  if (baseline?.month) {
+    const [by, bm] = baseline.month.split('-').map(Number);
+    const now = new Date();
+    return (now.getUTCFullYear() - by) * 12 + (now.getUTCMonth() + 1 - bm);
+  }
+  return Math.max(0, (history?.length || 1) - 1);
+}
+
+async function aiPolish({ site, stats, audit, grade, findings, suggestions, angle, wins }) {
   if (!process.env.ANTHROPIC_API_KEY) return null;
   let Anthropic;
   try {
@@ -52,135 +61,180 @@ async function aiReport({ site, stats, audit, findings, grade }) {
   }
   const client = new Anthropic();
   const model = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
-
+  const system =
+    'You are the account manager at a small web studio (Inspiring Websites) writing the ' +
+    'monthly performance update for a client who is NOT technical. Warm, specific, ' +
+    'encouraging, never hype. This month\'s tone angle is "' + angle + '" — honour it so ' +
+    'consecutive months do not read the same. Return ONLY minified JSON: ' +
+    '{"headline":string,"summary":string,"client_suggestions":[{"title":string,"why":string}],' +
+    '"builder_notes":[string],"email":{"subject":string,"body_text":string}}. ' +
+    'summary = 2-3 sentences. client_suggestions = 3-5, outcome-framed, no jargon. ' +
+    'builder_notes = 2-5 blunt technical to-dos for the web developer only. ' +
+    'email.body_text = the full email to ' + (site.client || 'the client') +
+    ' (greet them by name, sign off "— Inspiring Websites"), 130-200 words, lead with the ' +
+    'wins provided, then what we are improving next. Weave in these exact facts: ' + JSON.stringify(wins) + '.';
   const payload = {
     business: site.name,
-    contact: site.client,
     month: MONTH,
+    angle,
     grade,
+    scores: audit?.ok ? audit.scores : null,
     metrics: stats && {
       visitors: stats.visitors,
-      pageviews: stats.pageviews,
       conversions: stats.conversions,
-      changeVsLastMonth: stats.deltas,
+      change: stats.deltas,
       topPages: stats.topPages,
-      trafficSources: stats.sources,
-      device: stats.device,
+      sources: stats.sources,
     },
-    audit: audit?.ok && { scores: audit.scores, vitals: audit.vitals },
-    findings,
+    rule_findings: findings.slice(0, 8),
+    rule_client_suggestions: suggestions,
   };
-
-  const system =
-    'You are the account manager at a small web studio writing the monthly ' +
-    'performance update for a client. Warm, plain-spoken, concrete, never hype. ' +
-    'The client is not technical. Return ONLY valid minified JSON, no markdown, ' +
-    'matching exactly: {"headline":string,"summary":string,' +
-    '"wins":string[],"suggestions":[{"title":string,"why":string,"priority":"high"|"medium"|"low"}],' +
-    '"email":{"subject":string,"body_text":string}}. ' +
-    '"summary" is 2-3 sentences. "wins" is 1-3 short phrases (omit if genuinely none). ' +
-    '"suggestions" is 3-5 items, most impactful first, each "why" one sentence in ' +
-    'client language. "email.body_text" is the full plain-text email to ' +
-    `${site.client} (greeting to "${site.client}", sign-off "— The team"), 120-200 words, ` +
-    'leads with the good news, then 2-3 things we plan to improve next.';
-
-  const res = await client.messages.create({
-    model,
-    max_tokens: 2000,
-    system,
-    messages: [{ role: 'user', content: JSON.stringify(payload) }],
-  });
-  const text = res.content.find((b) => b.type === 'text')?.text || '';
   try {
-    return JSON.parse(text.replace(/^```json\s*|\s*```$/g, '').trim());
+    const r = await client.messages.create({
+      model,
+      max_tokens: 2000,
+      system,
+      messages: [{ role: 'user', content: JSON.stringify(payload) }],
+    });
+    const t = r.content.find((b) => b.type === 'text')?.text || '';
+    return JSON.parse(t.replace(/^```json\s*|\s*```$/g, '').trim());
   } catch {
     return null;
   }
 }
 
-async function sendEmail(site, report) {
-  if (!process.env.RESEND_API_KEY || !site.email || !report?.email) return { sent: false };
+async function sendEmail({ site, subject, body, cardPng, reportUrl }) {
+  if (!process.env.RESEND_API_KEY || !site.email) return { sent: false, reason: 'no resend key or client email' };
   let Resend;
   try {
     ({ Resend } = await import('resend'));
   } catch {
-    return { sent: false, error: 'resend not installed' };
+    return { sent: false, reason: 'resend not installed' };
   }
   const resend = new Resend(process.env.RESEND_API_KEY);
   const from = process.env.REPORT_FROM || 'reports@example.com';
-  const body = report.email.body_text || report.summary;
-  const html = `<div style="font:16px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;color:#1a1d1a;max-width:560px">
-    ${body
-      .split('\n')
-      .map((p) => `<p style="margin:0 0 14px">${p.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</p>`)
-      .join('')}
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
+  const html = `<div style="font:16px/1.65 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#12160f;max-width:580px">
+    ${body.split('\n').map((p) => (p.trim() ? `<p style="margin:0 0 13px">${esc(p)}</p>` : '<div style="height:6px"></div>')).join('')}
+    ${reportUrl ? `<p style="margin:18px 0 0"><a href="${esc(reportUrl)}" style="background:#1f6f4d;color:#fff;text-decoration:none;padding:11px 18px;border-radius:8px;display:inline-block">View your full report</a></p>` : ''}
   </div>`;
+  const attachments = cardPng
+    ? [{ filename: `${site.slug}-report-${MK}.png`, content: cardPng.toString('base64') }]
+    : [];
   try {
-    const r = await resend.emails.send({
-      from,
-      to: site.email,
-      subject: report.email.subject || `${site.name} — website update for ${MONTH}`,
-      text: body,
-      html,
-    });
-    return { sent: !r.error, id: r.data?.id, error: r.error?.message };
+    const r = await resend.emails.send({ from, to: site.email, subject, text: body, html, attachments });
+    return { sent: !r.error, id: r.data?.id, reason: r.error?.message };
   } catch (e) {
-    return { sent: false, error: String(e.message || e) };
+    return { sent: false, reason: String(e.message || e) };
   }
 }
 
-async function buildForSite(site, doSend) {
-  const [stats, audit] = await Promise.all([
+async function buildForSite(site, { doSend, req }) {
+  const [stats, audit, changelog] = await Promise.all([
     siteStats(site.slug).catch(() => null),
     runAudit(site.url, { fresh: true }).catch(() => ({ ok: false, error: 'audit failed' })),
+    readLog(site.slug),
   ]);
-  const findings = buildFindings(audit, stats);
   const grade = overallGrade(audit, stats);
-  const ai = await aiReport({ site, stats, audit, findings, grade }).catch(() => null);
+  const findings = buildFindings(audit, stats);
+  const suggestions = clientSuggestions(audit, stats);
+
+  const row = await snapshot(site.slug, {
+    seo: audit?.ok ? audit.scores.seo : null,
+    perf: audit?.ok ? audit.scores.performance : null,
+    a11y: audit?.ok ? audit.scores.accessibility : null,
+    grade,
+    visitors: stats?.visitors || 0,
+    conversions: stats?.conversions || 0,
+    pageviews: stats?.pageviews || 0,
+  });
+  const history = await getHistory(site.slug);
+  const baseline = await getBaseline(site.slug);
+  const msl = monthsSince(baseline, history);
+  const angle = pickAngle(msl);
+  const tok = reportToken(site.slug);
+  const reportUrl = baseUrl(req)
+    ? `${baseUrl(req)}/r/${site.slug}${tok ? `?t=${tok}` : ''}`
+    : '';
+
+  const rules = buildClientEmail({
+    biz: site.name,
+    client: site.client || 'there',
+    month: MK,
+    monthsSinceLaunch: msl,
+    history,
+    baseline,
+    row,
+    clientSuggestions: suggestions,
+    changelog,
+    reportUrl,
+    signature: process.env.REPORT_SIGNATURE || 'Inspiring Websites',
+    reviewUrl: site.reviewUrl,
+    leadValue: site.leadValue || 0,
+  });
+
+  const ai = await aiPolish({
+    site,
+    stats,
+    audit,
+    grade,
+    findings,
+    suggestions,
+    angle,
+    wins: rules.wins,
+  }).catch(() => null);
+
+  const email = ai?.email || { subject: rules.subject, body_text: rules.body_text };
 
   const report = {
     slug: site.slug,
     name: site.name,
     month: MONTH,
-    monthKey: MONTH_KEY,
+    monthKey: MK,
+    angle,
+    monthsSinceLaunch: msl,
     generatedAt: Date.now(),
     grade,
     headline: ai?.headline || `${site.name} — ${MONTH}`,
-    summary: ai?.summary || rulesSummary(site, grade, stats),
-    wins: ai?.wins || findings.filter((f) => f.severity === 'good').map((f) => f.title),
-    suggestions:
-      ai?.suggestions ||
-      findings
-        .filter((f) => f.severity !== 'good')
-        .slice(0, 6)
-        .map((f) => ({
-          title: f.title,
-          why: f.detail,
-          priority: f.severity === 'high' ? 'high' : f.severity === 'med' ? 'medium' : 'low',
-        })),
-    email: ai?.email || null,
-    metrics: stats,
+    summary: ai?.summary || rules.wins.join(' '),
+    wins: rules.wins,
+    clientSuggestions: ai?.client_suggestions || suggestions,
+    builderFindings: findings,
+    builderExtra: ai?.builder_notes || [],
+    email,
+    reportUrl,
+    metrics: row,
     aiGenerated: !!ai,
   };
-
   await store.set(`report:${site.slug}:latest`, JSON.stringify(report));
-  await store.set(`report:${site.slug}:${MONTH_KEY}`, JSON.stringify(report));
+  await store.set(`report:${site.slug}:${MK}`, JSON.stringify(report));
 
-  let email = { sent: false };
-  if (doSend) email = await sendEmail(site, report);
-  return { ...report, emailResult: email };
+  let emailResult = { sent: false, reason: 'send not requested' };
+  if (doSend) {
+    let cardPng = null;
+    try {
+      cardPng = await renderPNG(buildCardSVG({ biz: site.name, url: site.url, month: MONTH, row, history, grade }));
+    } catch {
+      cardPng = null;
+    }
+    emailResult = await sendEmail({ site, subject: email.subject, body: email.body_text, cardPng, reportUrl });
+    if (emailResult.sent) await store.set(`lastSent:${site.slug}`, MK);
+  }
+
+  return { ...report, emailResult };
 }
 
 export default async function handler(req, res) {
   if (!authed(req)) return res.status(401).json({ ok: false, error: 'bad secret' });
 
-  const only = req.query.slug ? [getSite(req.query.slug)].filter(Boolean) : SITES;
+  const all = await listSites();
+  const only = req.query.slug ? all.filter((s) => s.slug === req.query.slug) : all;
   const doSend = req.query.send === '1';
 
   const reports = [];
   for (const site of only) {
     try {
-      reports.push(await buildForSite(site, doSend));
+      reports.push(await buildForSite(site, { doSend, req }));
     } catch (e) {
       reports.push({ slug: site.slug, error: String(e.message || e) });
     }
@@ -195,3 +249,5 @@ export default async function handler(req, res) {
     reports,
   });
 }
+
+export { buildForSite };
