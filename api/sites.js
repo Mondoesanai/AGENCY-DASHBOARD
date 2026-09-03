@@ -2,7 +2,7 @@
 import { listSites } from '../lib/registry.js';
 import { runAudit } from '../lib/audit.js';
 import { siteStats } from '../lib/stats.js';
-import { buildFindings, clientSuggestions, overallGrade } from '../lib/suggestions.js';
+import { buildFindings, clientActions, improvementsForClient, overallGrade } from '../lib/suggestions.js';
 import { getHistory } from '../lib/history.js';
 import { store } from '../lib/store.js';
 
@@ -55,7 +55,8 @@ export default async function handler(req, res) {
         audit,
         grade,
         builderFindings: findings,
-        clientSuggestions: clientSuggestions(audit, stats),
+        clientActions: clientActions(audit, stats),
+        improvements: improvementsForClient(audit, stats),
         openCount: findings.filter((f) => f.severity !== 'good').length,
         history,
         notes,

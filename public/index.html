@@ -11,11 +11,11 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
   :root{
-    --bg:#0b0e0d; --surface:#131a16; --surface2:#1a221d; --ink:#f1f4f1;
-    --muted:#9aa79f; --faint:#6c7a71; --line:#26302a;
-    --green:#3d9968; --green-br:#57c78c; --green-soft:#16281f;
-    --pos:#57c78c; --neg:#e0795c; --warn:#d8a13a;
-    --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 34px rgba(0,0,0,.34);
+    --bg:#0f1311; --surface:#1a221e; --surface2:#232d28; --ink:#f6f9f6;
+    --muted:#c2ccc5; --faint:#93a099; --line:#3a463f;
+    --green:#46a878; --green-br:#77dbaa; --green-soft:#1e3a2d;
+    --pos:#77dbaa; --neg:#f0906f; --warn:#eab54a;
+    --shadow:0 1px 2px rgba(0,0,0,.35), 0 14px 36px rgba(0,0,0,.4);
     --radius:14px;
   }
   *{box-sizing:border-box;} html,body{margin:0;}
@@ -40,7 +40,8 @@
   .brand{display:flex;align-items:center;gap:13px;}
   .brand img{width:38px;height:38px;object-fit:contain;}
   .brand .bt b{font-size:13px;letter-spacing:2.6px;font-weight:600;display:block;}
-  .brand .bt span{color:var(--faint);font-size:12px;}
+  .brand .bt span{color:var(--muted);font-size:12px;}
+  .brand img{filter:drop-shadow(0 0 1px rgba(255,255,255,.4));}
   .top-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
   .pill{font-size:12px;color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 11px;display:inline-flex;align-items:center;gap:6px;}
   .pill .dot{width:7px;height:7px;border-radius:50%;background:var(--pos);}
@@ -60,9 +61,9 @@
 
   .overview{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:30px;}
   .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 15px 14px;}
-  .stat .k{font-size:11px;color:var(--faint);text-transform:uppercase;letter-spacing:.06em;}
+  .stat .k{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
   .stat .v{font-family:"Fraunces",serif;font-size:25px;font-weight:600;margin-top:6px;}
-  .stat .d{font-size:12px;margin-top:3px;color:var(--faint);}
+  .stat .d{font-size:12.5px;margin-top:3px;color:var(--faint);}
   .up{color:var(--pos);} .down{color:var(--neg);}
 
   .section-h{display:flex;align-items:baseline;gap:10px;margin:0 2px 14px;}
@@ -73,8 +74,8 @@
   .card:hover{transform:translateY(-2px);border-left-color:var(--green);}
   .card:focus-visible{outline:2px solid var(--green-br);outline-offset:2px;}
   .card .name{font-weight:600;font-size:15px;}
-  .card .url{color:var(--faint);font-size:12.5px;word-break:break-all;}
-  .card .cell-k{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;}
+  .card .url{color:var(--muted);font-size:12.5px;word-break:break-all;}
+  .card .cell-k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
   .card .cell-v{font-size:15px;font-weight:600;font-family:"Fraunces",serif;}
   .card .cell-v small{font-family:"Inter",sans-serif;font-size:11px;font-weight:500;margin-left:5px;}
   .grade{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-family:"Fraunces",serif;font-weight:600;font-size:18px;background:var(--green-soft);color:var(--green-br);}
@@ -98,12 +99,12 @@
 
   .mgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:18px 0;}
   .mgrid .box{background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:12px;}
-  .mgrid .box .k{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;}
+  .mgrid .box .k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
   .mgrid .box .v{font-family:"Fraunces",serif;font-size:19px;font-weight:600;margin-top:4px;}
 
   .block{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:16px;margin-top:14px;}
-  .block h3{font-size:12px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);font-family:"Inter",sans-serif;font-weight:600;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}
-  .block h3 .ang{font-weight:500;letter-spacing:.02em;text-transform:none;color:var(--faint);}
+  .block h3{font-size:12.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink);font-family:"Inter",sans-serif;font-weight:600;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;gap:10px;}
+  .block h3 .ang{font-weight:500;letter-spacing:.02em;text-transform:none;color:var(--faint);text-align:right;}
 
   .bar-row{display:grid;grid-template-columns:92px 1fr 44px;align-items:center;gap:10px;font-size:13px;margin:7px 0;}
   .bar-track{background:var(--surface2);border-radius:6px;height:8px;overflow:hidden;}
@@ -115,8 +116,8 @@
   .sev{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:3px 0;text-align:center;border-radius:6px;height:fit-content;}
   .sev.high{background:#2e1a15;color:var(--neg);} .sev.med{background:#2c2a17;color:var(--warn);}
   .sev.low{background:var(--surface2);color:var(--muted);} .sev.good{background:var(--green-soft);color:var(--green-br);}
-  .finding .ft{font-weight:600;font-size:13.5px;} .finding .fd{font-size:13px;color:var(--muted);margin-top:2px;}
-  .more{background:none;border:none;color:var(--green-br);font-size:12.5px;padding:8px 0 0;}
+  .finding .ft{font-weight:600;font-size:14px;} .finding .fd{font-size:13px;color:var(--muted);margin-top:2px;}
+  .more{background:none;border:none;color:var(--green-br);font-size:13px;padding:8px 0 0;}
 
   .win{display:flex;gap:9px;font-size:13.5px;padding:5px 0;}
   .win::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--green-br);margin-top:7px;flex:none;}
@@ -130,7 +131,7 @@
   .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
   .toggle{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);margin:10px 0;}
   .toggle input{width:16px;height:16px;accent-color:var(--green);}
-  .note{font-size:12px;color:var(--faint);margin-top:8px;}
+  .note{font-size:12.5px;color:var(--muted);margin-top:8px;}
   .email-draft{white-space:pre-wrap;font-size:13px;line-height:1.65;background:var(--bg);border:1px dashed var(--line);border-radius:10px;padding:13px;margin-top:10px;}
   .card-thumb{width:100%;border-radius:10px;border:1px solid var(--line);margin-top:10px;display:block;}
   .loading{color:var(--faint);padding:60px 0;text-align:center;}
@@ -359,7 +360,9 @@ function buildDraft(s){
   if(g) L.push(`• Site health score: ${g.letter} (${g.score}/100).`);
   if(a) L.push(`• SEO ${a.scores.seo}/100 and speed ${a.scores.performance}/100 (Google, mobile).`);
   L.push('','What we plan to improve next:');
-  (s.clientSuggestions||[]).slice(0,3).forEach(x=>L.push(`• ${x.title}`));
+  ((rep&&rep.improvements)||s.improvements||[]).slice(0,3).forEach(x=>L.push(`• ${x.title}`));
+  const acts=((rep&&rep.clientActions)||s.clientActions||[]);
+  if(acts.length){ L.push('','A few things that would help on your end:'); acts.slice(0,3).forEach(x=>L.push(`• ${x.title}`)); }
   L.push('','Any questions, just reply here.','','— Inspiring Websites');
   return {subject:`${s.name} — website update`, body:L.join('\n')};
 }
@@ -375,8 +378,8 @@ function openDrawer(slug){
   const vit=a?a.vitals:null;
   const vfmt=(v,d=1)=>typeof v==='number'?(v/1000).toFixed(d)+'s':'—';
   const bf=(s.builderFindings||[]).concat((rep&&rep.builderExtra||[]).map(t=>({severity:'low',title:t,detail:''})));
-  const cs=(rep&&rep.clientSuggestions&&rep.clientSuggestions.length?rep.clientSuggestions:s.clientSuggestions)||[];
-  const cfg=s;
+  const improv=((rep&&rep.improvements&&rep.improvements.length)?rep.improvements:s.improvements)||[];
+  const acts=((rep&&rep.clientActions&&rep.clientActions.length)?rep.clientActions:s.clientActions)||[];
 
   $('#drawerIn').innerHTML=`
     <h2>${esc(s.name)}</h2>
@@ -408,8 +411,13 @@ function openDrawer(slug){
     </div>
 
     <div class="block">
-      <h3>Client suggestions <span class="ang">goes in the email</span></h3>
-      ${cs.map(x=>`<div class="finding"><span class="sev good">✓</span><div><div class="ft">${esc(x.title)}</div><div class="fd">${esc(x.why||'')}</div></div></div>`).join('')||'<div class="note">Generate a report to build these.</div>'}
+      <h3>Client suggestions <span class="ang">things the owner can do — no website work</span></h3>
+      ${acts.map(x=>`<div class="finding"><span class="sev good">✓</span><div><div class="ft">${esc(x.title)}</div><div class="fd">${esc(x.why||'')}</div></div></div>`).join('')||'<div class="note">Generate a report to build these.</div>'}
+    </div>
+
+    <div class="block">
+      <h3>We're improving <span class="ang">website work — for the email</span></h3>
+      ${improv.map(x=>`<div class="finding"><span class="sev good">→</span><div><div class="ft">${esc(x.title)}</div><div class="fd">${esc(x.why||'')}</div></div></div>`).join('')||'<div class="note">Generate a report to build these.</div>'}
     </div>
 
     <div class="block">

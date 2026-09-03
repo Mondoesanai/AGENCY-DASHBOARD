@@ -5,7 +5,7 @@ import { listSites } from '../lib/registry.js';
 import { getHistory } from '../lib/history.js';
 import { runAudit } from '../lib/audit.js';
 import { siteStats } from '../lib/stats.js';
-import { clientSuggestions, overallGrade } from '../lib/suggestions.js';
+import { clientActions, improvementsForClient, overallGrade } from '../lib/suggestions.js';
 import { tokenOk } from '../lib/token.js';
 import { store } from '../lib/store.js';
 
@@ -36,7 +36,8 @@ export default async function handler(req, res) {
     headline: report?.headline || `${site.name} — website performance`,
     summary: report?.summary || '',
     wins: report?.wins || [],
-    suggestions: report?.clientSuggestions || clientSuggestions(audit, stats),
+    improvements: report?.improvements || improvementsForClient(audit, stats),
+    clientActions: report?.clientActions || clientActions(audit, stats),
     grade,
     scores: audit?.ok ? audit.scores : null,
     vitals: audit?.ok ? audit.vitals : null,

@@ -10,8 +10,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
 <style>
   :root{
-    --bg:#0b0e0d; --panel:#141a17; --panel2:#1a221d; --ink:#f1f4f1; --muted:#9aa79f;
-    --faint:#6c7a71; --line:#26302a; --green:#3d9968; --green-br:#57c78c; --neg:#e0795c;
+    --bg:#0f1311; --panel:#1a221e; --panel2:#232d28; --ink:#f6f9f6; --muted:#c2ccc5;
+    --faint:#93a099; --line:#3a463f; --green:#46a878; --green-br:#77dbaa; --neg:#f0906f;
   }
   *{box-sizing:border-box;} html,body{margin:0;}
   body{background:var(--bg);color:var(--ink);font:15px/1.65 "Inter",system-ui,sans-serif;-webkit-font-smoothing:antialiased;}
@@ -97,7 +97,9 @@ function deltaHTML(d,pct){
 
       ${(d.wins&&d.wins.length) ? `<div class="block"><h3>This month</h3>${d.wins.map(w=>`<div class="win">${esc(w)}</div>`).join('')}</div>` : ''}
 
-      ${(d.suggestions&&d.suggestions.length) ? `<div class="block"><h3>What we're working on next</h3>${d.suggestions.map(s=>`<div class="sug"><div class="t">${esc(s.title)}</div><div class="w">${esc(s.why)}</div></div>`).join('')}</div>` : ''}
+      ${(d.improvements&&d.improvements.length) ? `<div class="block"><h3>What we're working on next</h3>${d.improvements.map(s=>`<div class="sug"><div class="t">${esc(s.title)}</div><div class="w">${esc(s.why)}</div></div>`).join('')}</div>` : ''}
+
+      ${(d.clientActions&&d.clientActions.length) ? `<div class="block"><h3>A few things that would help on your end</h3>${d.clientActions.map(s=>`<div class="sug"><div class="t">${esc(s.title)}</div><div class="w">${esc(s.why)}</div></div>`).join('')}</div>` : ''}
 
       <div class="foot">
         Prepared by <strong>Inspiring Websites</strong><br/>

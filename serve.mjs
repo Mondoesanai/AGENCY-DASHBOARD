@@ -37,10 +37,14 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
       { severity: 'low', title: 'Two H1s on the homepage', detail: 'Keep one H1 per page.' },
       { severity: 'low', title: 'Link text "click here" x3', detail: 'Use descriptive anchors.' },
     ],
-    clientSuggestions: [
+    improvements: [
       { title: 'Make pages load faster on phones', why: 'Most visitors are on mobile — quicker load, fewer drop-offs.' },
       { title: 'Sharpen how you show up on Google', why: 'Tighter titles and descriptions to lift click-through.' },
-      { title: 'Grow your search traffic', why: 'Add service + location pages so new customers find you.' },
+    ],
+    clientActions: [
+      { title: 'Ask 3 recent happy customers for a Google review', why: 'Biggest single thing you can do for local ranking and trust.' },
+      { title: 'Add the site link to your email signature and text replies', why: 'Every message becomes a way for people to find and share your site.' },
+      { title: 'Post the link on Facebook / Instagram with a recent job photo', why: 'One post a month keeps new visitors coming.' },
     ],
     openCount: 5, history, notes: '', changelog: [{ date: '2026-09-01', text: 'Compressed images, added FAQ section' }],
     report: {
@@ -48,7 +52,8 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
       headline: `${name} — momentum is building`,
       summary: `${name} had its best month yet: visitors up ${dV}% and ${c} enquiries came through the site.`,
       wins: [`Visitors: ${history.at(-2).visitors} → ${v} last month (+${dV}%)`, `Your SEO score moved from ${seo - 3} to ${seo}.`, `${c} enquiries this month — roughly $${c * 120} in new business.`],
-      clientSuggestions: [{ title: 'Make pages load faster on phones', why: 'Fewer visitors leave before seeing your offer.' }],
+      improvements: [{ title: 'Make pages load faster on phones', why: 'Fewer visitors leave before seeing your offer.' }],
+      clientActions: [{ title: 'Ask 3 recent customers for a Google review', why: 'Local ranking + trust.' }],
       builderExtra: ['Preload the hero font', 'Add width/height to all <img>'],
       email: { subject: `${name} — this month's website progress`, body_text: `Hi ${client},\n\nGood news — ${name}'s website is building momentum.\n\nThis month:\n• Visitors: ${history.at(-2).visitors} → ${v} (+${dV}%)\n• Your SEO score moved from ${seo - 3} to ${seo}.\n• ${c} enquiries — roughly $${c * 120} in new business.\n\nWhat we're working on next:\n• Make pages load faster on phones\n• Sharpen how you show up on Google\n\nYour website is turning into a real source of business.\n\n— Inspiring Websites` },
       reportUrl: `/r/${slug}`,
@@ -85,7 +90,7 @@ createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
       name: s.name, url: s.url, month: 'September 2026', headline: s.report.headline, summary: s.report.summary,
-      wins: s.report.wins, suggestions: s.clientSuggestions, grade: s.grade, scores: s.audit.scores, vitals: s.audit.vitals,
+      wins: s.report.wins, improvements: s.improvements, clientActions: s.clientActions, grade: s.grade, scores: s.audit.scores, vitals: s.audit.vitals,
       history: s.history, current: { visitors: s.stats.visitors, conversions: s.stats.conversions, deltas: s.stats.deltas },
       uptime: { up: true, ms: 180 }, cardUrl: `/api/card?slug=${s.slug}`,
     }));

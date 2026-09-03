@@ -8,7 +8,7 @@
 import { listSites } from '../lib/registry.js';
 import { runAudit } from '../lib/audit.js';
 import { siteStats } from '../lib/stats.js';
-import { buildFindings, clientSuggestions, overallGrade } from '../lib/suggestions.js';
+import { buildFindings, clientActions, improvementsForClient, overallGrade } from '../lib/suggestions.js';
 import { snapshot, getHistory, getBaseline, monthKey } from '../lib/history.js';
 import { buildClientEmail, pickAngle } from '../lib/email.js';
 import { buildCardSVG, renderPNG } from '../lib/card.js';
@@ -51,7 +51,7 @@ function monthsSince(baseline, history) {
   return Math.max(0, (history?.length || 1) - 1);
 }
 
-async function aiPolish({ site, stats, audit, grade, findings, suggestions, angle, wins }) {
+async function aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins }) {
   if (!process.env.ANTHROPIC_API_KEY) return null;
   let Anthropic;
   try {
@@ -61,18 +61,26 @@ async function aiPolish({ site, stats, audit, grade, findings, suggestions, angl
   }
   const client = new Anthropic();
   const model = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
-  const system =
-    'You are the account manager at a small web studio (Inspiring Websites) writing the ' +
-    'monthly performance update for a client who is NOT technical. Warm, specific, ' +
-    'encouraging, never hype. This month\'s tone angle is "' + angle + '" — honour it so ' +
-    'consecutive months do not read the same. Return ONLY minified JSON: ' +
-    '{"headline":string,"summary":string,"client_suggestions":[{"title":string,"why":string}],' +
-    '"builder_notes":[string],"email":{"subject":string,"body_text":string}}. ' +
-    'summary = 2-3 sentences. client_suggestions = 3-5, outcome-framed, no jargon. ' +
-    'builder_notes = 2-5 blunt technical to-dos for the web developer only. ' +
-    'email.body_text = the full email to ' + (site.client || 'the client') +
-    ' (greet them by name, sign off "— Inspiring Websites"), 130-200 words, lead with the ' +
-    'wins provided, then what we are improving next. Weave in these exact facts: ' + JSON.stringify(wins) + '.';
+  const system = [
+    'You are the account manager at a small web studio (Inspiring Websites) writing the',
+    'monthly performance update for a client who is NOT technical. Warm, specific, encouraging,',
+    'never hype. This month\'s tone angle is "' + angle + '" — honour it so consecutive months',
+    'do not read the same. Return ONLY minified JSON:',
+    '{"headline":string,"summary":string,"improvements":[{"title":string,"why":string}],',
+    '"client_actions":[{"title":string,"why":string}],"builder_notes":[string],',
+    '"email":{"subject":string,"body_text":string}}.',
+    'summary = 2-3 sentences.',
+    'improvements = 2-4 things WE will do to the website, outcome-framed, no jargon.',
+    'client_actions = 3-5 things the BUSINESS OWNER can do this month that do NOT involve the',
+    'website: ask recent customers for a Google review, add the site link to their Google Business',
+    'Profile / email signature / social posts / business cards / invoices, reply to new leads fast,',
+    'share the link in local community groups.',
+    'builder_notes = 2-5 blunt technical to-dos for the web developer only.',
+    'email.body_text = the full email to ' + (site.client || 'the client') + ' (greet by name,',
+    'sign off "— Inspiring Websites"), 140-210 words. Structure: lead with the wins, then',
+    '"What we\'re working on next" (improvements), then "A few things that would help on your end"',
+    '(2-3 client_actions). Weave in these exact facts: ' + JSON.stringify(wins) + '.',
+  ].join(' ');
   const payload = {
     business: site.name,
     month: MONTH,
@@ -87,7 +95,8 @@ async function aiPolish({ site, stats, audit, grade, findings, suggestions, angl
       sources: stats.sources,
     },
     rule_findings: findings.slice(0, 8),
-    rule_client_suggestions: suggestions,
+    rule_improvements: improvements,
+    rule_client_actions: actions,
   };
   try {
     const r = await client.messages.create({
@@ -137,7 +146,8 @@ async function buildForSite(site, { doSend, req }) {
   ]);
   const grade = overallGrade(audit, stats);
   const findings = buildFindings(audit, stats);
-  const suggestions = clientSuggestions(audit, stats);
+  const improvements = improvementsForClient(audit, stats);
+  const actions = clientActions(audit, stats);
 
   const row = await snapshot(site.slug, {
     seo: audit?.ok ? audit.scores.seo : null,
@@ -165,7 +175,8 @@ async function buildForSite(site, { doSend, req }) {
     history,
     baseline,
     row,
-    clientSuggestions: suggestions,
+    improvements,
+    clientActions: actions,
     changelog,
     reportUrl,
     signature: process.env.REPORT_SIGNATURE || 'Inspiring Websites',
@@ -179,7 +190,8 @@ async function buildForSite(site, { doSend, req }) {
     audit,
     grade,
     findings,
-    suggestions,
+    improvements,
+    actions,
     angle,
     wins: rules.wins,
   }).catch(() => null);
@@ -198,7 +210,8 @@ async function buildForSite(site, { doSend, req }) {
     headline: ai?.headline || `${site.name} — ${MONTH}`,
     summary: ai?.summary || rules.wins.join(' '),
     wins: rules.wins,
-    clientSuggestions: ai?.client_suggestions || suggestions,
+    improvements: ai?.improvements || improvements,
+    clientActions: ai?.client_actions || actions,
     builderFindings: findings,
     builderExtra: ai?.builder_notes || [],
     email,
