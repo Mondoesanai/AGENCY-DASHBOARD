@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<meta name="robots" content="noindex" />
+<title>Portfolio Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --paper: #f6f4ef;
+    --surface: #ffffff;
+    --ink: #1b1e1b;
+    --muted: #6b7268;
+    --faint: #97998f;
+    --line: #e5e1d8;
+    --pine: #0e6b54;
+    --pine-soft: #e4efe9;
+    --pos: #2e9e6b;
+    --neg: #c05a3e;
+    --warn: #b8871f;
+    --shadow-sm: 0 1px 2px rgba(24, 51, 41, 0.06), 0 2px 8px rgba(24, 51, 41, 0.05);
+    --shadow-lg: 0 8px 24px rgba(24, 51, 41, 0.1), 0 24px 60px rgba(24, 51, 41, 0.12);
+    --radius: 14px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.6 "Inter", system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  h1, h2, h3 { font-family: "Fraunces", Georgia, serif; font-weight: 600; letter-spacing: -0.02em; margin: 0; }
+  a { color: inherit; }
+  button { font: inherit; cursor: pointer; }
+
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 96px; }
+
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 20px; flex-wrap: wrap; margin-bottom: 30px;
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; }
+  .brand .mark {
+    width: 30px; height: 30px; border-radius: 9px;
+    background: linear-gradient(150deg, var(--pine), #16543f);
+    display: grid; place-items: center; color: #fff; font-family: "Fraunces", serif;
+    font-weight: 600; align-self: center; box-shadow: var(--shadow-sm);
+  }
+  .brand h1 { font-size: 21px; }
+  .brand span { color: var(--faint); font-size: 13px; }
+
+  .top-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .pill {
+    font-size: 12px; color: var(--muted); background: var(--surface);
+    border: 1px solid var(--line); border-radius: 999px; padding: 5px 11px;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--pos); }
+  .pill.warnmode .dot { background: var(--warn); }
+
+  .btn {
+    border: 1px solid var(--pine); background: var(--pine); color: #fff;
+    border-radius: 10px; padding: 9px 15px; font-weight: 500; font-size: 13px;
+    transition: transform 0.14s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.14s ease, background 0.14s ease;
+    box-shadow: 0 2px 8px rgba(14, 107, 84, 0.28);
+  }
+  .btn:hover { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(14, 107, 84, 0.34); }
+  .btn:active { transform: translateY(0); }
+  .btn:focus-visible { outline: 2px solid var(--pine); outline-offset: 2px; }
+  .btn.ghost {
+    background: var(--surface); color: var(--ink); border-color: var(--line);
+    box-shadow: var(--shadow-sm);
+  }
+  .btn.ghost:hover { box-shadow: var(--shadow-lg); }
+  .btn[disabled] { opacity: 0.55; pointer-events: none; }
+
+  .overview {
+    display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px; margin-bottom: 34px;
+  }
+  .stat {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 16px 15px; box-shadow: var(--shadow-sm);
+  }
+  .stat .k { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat .v { font-family: "Fraunces", serif; font-size: 27px; font-weight: 600; margin-top: 6px; }
+  .stat .d { font-size: 12.5px; margin-top: 3px; color: var(--faint); }
+  .delta-pos { color: var(--pos); }
+  .delta-neg { color: var(--neg); }
+
+  .section-h { display: flex; align-items: baseline; gap: 10px; margin: 0 2px 14px; }
+  .section-h h2 { font-size: 17px; }
+  .section-h span { color: var(--faint); font-size: 13px; }
+
+  .sites { display: grid; gap: 12px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px 18px; box-shadow: var(--shadow-sm);
+    display: grid; grid-template-columns: 1.7fr 46px 0.9fr 0.9fr 0.6fr 88px auto; align-items: center; gap: 16px;
+    text-align: left; width: 100%; border-left: 3px solid transparent;
+    transition: transform 0.14s cubic-bezier(0.2, 0.9, 0.3, 1.2), box-shadow 0.14s ease, border-color 0.14s ease;
+  }
+  .card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); border-left-color: var(--pine); }
+  .card:focus-visible { outline: 2px solid var(--pine); outline-offset: 2px; }
+  .card .name { font-weight: 600; font-size: 15px; }
+  .card .url { color: var(--faint); font-size: 12.5px; word-break: break-all; }
+  .card .cell-k { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
+  .card .cell-v { font-size: 16px; font-weight: 600; font-family: "Fraunces", serif; }
+  .card .cell-v small { font-family: "Inter", sans-serif; font-size: 12px; font-weight: 500; margin-left: 5px; }
+
+  .grade {
+    width: 40px; height: 40px; border-radius: 11px; display: grid; place-items: center;
+    font-family: "Fraunces", serif; font-weight: 600; font-size: 18px;
+    background: var(--pine-soft); color: var(--pine);
+  }
+  .grade.b { background: #eef3e1; color: #5c7a1f; }
+  .grade.c { background: #fbf1dd; color: #a9781a; }
+  .grade.d, .grade.f { background: #f8e6df; color: var(--neg); }
+  .grade.na { background: #f0efe9; color: var(--faint); font-size: 12px; }
+
+  .chip {
+    font-size: 12px; padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+    background: var(--pine-soft); color: var(--pine); font-weight: 500;
+  }
+  .chip.zero { background: #f0efe9; color: var(--faint); }
+
+  .spark { display: block; }
+
+  /* drawer */
+  .scrim {
+    position: fixed; inset: 0; background: rgba(20, 30, 26, 0.34);
+    opacity: 0; pointer-events: none; transition: opacity 0.2s ease; z-index: 40;
+    backdrop-filter: blur(2px);
+  }
+  .scrim.open { opacity: 1; pointer-events: auto; }
+  .drawer {
+    position: fixed; top: 0; right: 0; height: 100%; width: min(560px, 94vw);
+    background: var(--paper); box-shadow: var(--shadow-lg); z-index: 50;
+    transform: translateX(100%); transition: transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+    overflow-y: auto;
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-in { padding: 24px 26px 60px; }
+  .drawer h2 { font-size: 20px; }
+  .drawer .url { color: var(--faint); font-size: 13px; margin-top: 2px; }
+  .x {
+    position: absolute; top: 16px; right: 18px; border: 1px solid var(--line);
+    background: var(--surface); width: 32px; height: 32px; border-radius: 9px; color: var(--muted);
+  }
+  .x:hover { color: var(--ink); }
+
+  .mgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 18px 0; }
+  .mgrid .box { background: var(--surface); border: 1px solid var(--line); border-radius: 11px; padding: 12px; }
+  .mgrid .box .k { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: 0.05em; }
+  .mgrid .box .v { font-family: "Fraunces", serif; font-size: 20px; font-weight: 600; margin-top: 4px; }
+
+  .block { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 16px; margin-top: 14px; }
+  .block h3 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-family: "Inter", sans-serif; font-weight: 600; margin-bottom: 10px; }
+
+  .bar-row { display: grid; grid-template-columns: 92px 1fr 44px; align-items: center; gap: 10px; font-size: 13px; margin: 7px 0; }
+  .bar-track { background: #eee9df; border-radius: 6px; height: 8px; overflow: hidden; }
+  .bar-fill { height: 100%; background: linear-gradient(90deg, var(--pine), #2b8c6f); border-radius: 6px; }
+  .bar-row .n { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .finding { display: grid; grid-template-columns: 62px 1fr; gap: 12px; padding: 11px 0; border-top: 1px solid var(--line); }
+  .finding:first-of-type { border-top: 0; }
+  .sev { font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; padding: 3px 0; text-align: center; border-radius: 6px; height: fit-content; }
+  .sev.high { background: #f8e2da; color: var(--neg); }
+  .sev.med { background: #fbf0d8; color: var(--warn); }
+  .sev.low { background: #edeee7; color: var(--muted); }
+  .sev.good { background: var(--pine-soft); color: var(--pine); }
+  .finding .ft { font-weight: 600; font-size: 13.5px; }
+  .finding .fd { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+  .email-draft { white-space: pre-wrap; font-size: 13.5px; line-height: 1.7; color: var(--ink);
+    background: var(--paper); border: 1px dashed var(--line); border-radius: 10px; padding: 14px; margin-top: 10px; }
+  .email-sub { font-weight: 600; margin-bottom: 8px; }
+
+  .loading { color: var(--faint); padding: 60px 0; text-align: center; }
+  .note { font-size: 12.5px; color: var(--faint); margin-top: 8px; }
+
+  @media (max-width: 900px) {
+    .overview { grid-template-columns: repeat(2, 1fr); }
+    .card { grid-template-columns: 1fr auto; grid-auto-rows: auto; row-gap: 10px; }
+    .card .spark, .card .col-hide { display: none; }
+    .mgrid { grid-template-columns: repeat(2, 1fr); }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <span class="mark">P</span>
+      <div>
+        <h1>Portfolio</h1>
+        <span>client site performance</span>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span class="pill" id="statusPill"><span class="dot"></span><span id="statusTxt">loading</span></span>
+      <span class="pill" id="monthPill">—</span>
+      <button class="btn ghost" id="refreshBtn">Refresh</button>
+      <button class="btn" id="genBtn">Generate reports</button>
+    </div>
+  </header>
+
+  <div class="overview" id="overview"></div>
+
+  <div class="section-h">
+    <h2>Sites</h2>
+    <span id="siteCount"></span>
+  </div>
+  <div class="sites" id="sites"><div class="loading">Loading portfolio…</div></div>
+  <p class="note" id="footNote"></p>
+</div>
+
+<div class="scrim" id="scrim"></div>
+<aside class="drawer" id="drawer" aria-hidden="true">
+  <button class="x" id="drawerX" aria-label="Close">✕</button>
+  <div class="drawer-in" id="drawerIn"></div>
+</aside>
+
+<script>
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? '').replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+const fmt = (n) => (n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n ?? 0));
+const deltaHTML = (d) => {
+  if (d === undefined || d === null) return '';
+  const cls = d > 0 ? 'delta-pos' : d < 0 ? 'delta-neg' : '';
+  const sign = d > 0 ? '▲' : d < 0 ? '▼' : '·';
+  return `<small class="${cls}">${sign} ${Math.abs(d)}%</small>`;
+};
+
+function sparkline(data, w = 84, h = 30) {
+  const arr = (data && data.length ? data : [0, 0]).slice();
+  const max = Math.max(...arr, 1);
+  const step = w / Math.max(arr.length - 1, 1);
+  const pts = arr.map((v, i) => `${(i * step).toFixed(1)},${(h - (v / max) * (h - 4) - 2).toFixed(1)}`);
+  const d = 'M' + pts.join(' L');
+  const area = `${d} L${w},${h} L0,${h} Z`;
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true">
+    <path d="${area}" fill="rgba(14,107,84,0.10)"/>
+    <path d="${d}" fill="none" stroke="#0e6b54" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+const DEMO = {
+  portfolio: { sites: 3, visitors30: 1284, conversions30: 47, avgSeo: 86, improving: 2, openFindings: 11, backend: 'memory (demo)' },
+  sites: [
+    demoSite('relax-tax', 'Relax Tax', 'https://relax-tax.vercel.app', 'Kyle', 612, 18, 34, 9, 91, 78, 'B', [
+      ['high', 'Conversions', 'No tracked conversions in 30 days', 'Visitors arrive but nothing fires — confirm the phone link and quote form are real links and lift the main call-to-action above the fold.'],
+      ['med', 'Speed', 'Largest content loads in 3.1s', 'Aim for under 2.5s — compress the hero image and serve WebP.'],
+      ['low', 'SEO', 'Nearly all traffic is "direct"', 'Publishing service + location pages will grow Google traffic.'],
+    ]),
+    demoSite('apostello-detailing', 'Apostello Detailing', 'https://apostellodetailing.vercel.app', 'Shiloh', 431, 33, 9, 40, 88, 71, 'C', [
+      ['high', 'SEO', 'SEO score is 82/100', 'Search engines see fixable issues on the homepage.'],
+      ['high', 'SEO', 'Missing meta description', 'Add a 140–160 character description to each page — the grey text under the title in Google.'],
+      ['med', 'Accessibility', 'Low colour contrast on some text', 'Light-grey text on white fails readability guidelines — darken it.'],
+    ]),
+    demoSite('one-more-thing', 'One More Thing Services', 'https://one-more-thing-gold.vercel.app', 'Angie', 241, -6, 4, -20, 94, 88, 'B', [
+      ['med', 'Content', 'Traffic only lands on one page', 'Almost everything hits /. Add internal links and a reason to go deeper.'],
+      ['low', 'Speed', 'Images not in a modern format', 'Convert to WebP/AVIF — typically 30–50% smaller.'],
+    ]),
+  ],
+  generatedAt: Date.now(),
+  demo: true,
+};
+function demoSite(slug, name, url, client, visitors, dV, conv, dC, seo, perf, letter, findings) {
+  const trend = Array.from({ length: 30 }, (_, i) => Math.round(visitors / 30 * (0.5 + Math.sin(i / 3) * 0.3 + i / 40)));
+  return {
+    slug, name, url, client, hasEmail: false,
+    stats: { hasData: true, visitors, pageviews: Math.round(visitors * 2.2), conversions: conv,
+      deltas: { visitors: dV, pageviews: dV, conversions: dC }, device: { mobile: Math.round(visitors * 0.66), desktop: Math.round(visitors * 0.34) },
+      trend, topPages: [{ member: '/', score: Math.round(visitors * 1.3) }, { member: '/services', score: Math.round(visitors * 0.5) }, { member: '/contact', score: Math.round(visitors * 0.3) }],
+      sources: [{ member: 'google', score: Math.round(visitors * 0.5) }, { member: 'direct', score: Math.round(visitors * 0.35) }, { member: 'social', score: Math.round(visitors * 0.15) }],
+      events: conv ? [{ member: 'call', score: Math.round(conv * 0.6) }, { member: 'lead-form', score: Math.round(conv * 0.4) }] : [] },
+    audit: { ok: true, scores: { seo, performance: perf, accessibility: 90, bestPractices: 92 },
+      vitals: { lcp: 3100, cls: 0.08, tbt: 210, fcp: 1800, si: 3400 } },
+    grade: { score: seo - 5, letter },
+    findings: findings.map(([severity, area, title, detail]) => ({ severity, area, title, detail })),
+    openCount: findings.filter((f) => f[0] !== 'good').length,
+    report: null,
+  };
+}
+
+let STATE = null;
+
+async function load() {
+  $('#sites').innerHTML = '<div class="loading">Loading portfolio…</div>';
+  let data;
+  try {
+    const r = await fetch('/api/sites', { cache: 'no-store' });
+    if (!r.ok) throw new Error('bad status');
+    data = await r.json();
+    if (!data.sites || !data.sites.length) throw new Error('empty');
+  } catch {
+    data = DEMO;
+  }
+  STATE = data;
+  render(data);
+}
+
+function render(data) {
+  const p = data.portfolio;
+  $('#monthPill').textContent = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
+  const pill = $('#statusPill'), txt = $('#statusTxt');
+  if (data.demo) { pill.classList.add('warnmode'); txt.textContent = 'demo data — not deployed yet'; }
+  else { pill.classList.remove('warnmode'); txt.textContent = 'live · ' + (p.backend || 'ok'); }
+
+  $('#overview').innerHTML = [
+    ['Visitors · 30d', fmt(p.visitors30), 'across sites with tracking'],
+    ['Conversions · 30d', fmt(p.conversions30), 'calls · forms · bookings'],
+    ['Avg SEO score', p.avgSeo ?? '—', 'Google Lighthouse, mobile'],
+    ['Sites improving', `${p.improving}/${p.sites}`, 'more visitors than last month'],
+    ['Open suggestions', p.openFindings, 'across the portfolio'],
+  ].map(([k, v, d]) => `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
+
+  $('#siteCount').textContent = `${data.sites.length} tracked`;
+  $('#footNote').textContent = data.demo
+    ? 'Showing sample data. Deploy to Vercel and add Vercel KV to see real numbers here.'
+    : `Last updated ${new Date(data.generatedAt).toLocaleString()}.`;
+
+  $('#sites').innerHTML = data.sites.map(siteCard).join('');
+  data.sites.forEach((s) => {
+    $(`[data-slug="${s.slug}"]`)?.addEventListener('click', () => openDrawer(s.slug));
+  });
+}
+
+function siteCard(s) {
+  const st = s.stats || {};
+  const g = s.grade;
+  const gletter = g ? g.letter : 'NA';
+  const seo = s.audit && s.audit.ok ? s.audit.scores.seo : null;
+  const conv = st.conversions ?? 0;
+  return `<button class="card" data-slug="${s.slug}">
+    <div>
+      <div class="name">${esc(s.name)}</div>
+      <div class="url">${esc(s.url.replace(/^https?:\/\//, ''))}</div>
+    </div>
+    <div class="grade ${gletter.toLowerCase()}" title="Overall health">${g ? gletter : '—'}</div>
+    <div class="col-hide">
+      <div class="cell-k">Visitors 30d</div>
+      <div class="cell-v">${st.hasData ? fmt(st.visitors) : '—'} ${st.hasData ? deltaHTML(st.deltas?.visitors) : ''}</div>
+    </div>
+    <div class="col-hide">
+      <div class="cell-k">Conversions</div>
+      <div class="cell-v">${st.hasData ? conv : '—'} ${st.hasData ? deltaHTML(st.deltas?.conversions) : ''}</div>
+    </div>
+    <div class="col-hide">
+      <div class="cell-k">SEO</div>
+      <div class="cell-v">${seo ?? '—'}</div>
+    </div>
+    ${st.hasData ? sparkline(st.trend) : '<span class="spark"></span>'}
+    <span class="chip ${s.openCount ? '' : 'zero'}">${s.openCount || 0} suggestion${s.openCount === 1 ? '' : 's'} ›</span>
+  </button>`;
+}
+
+function bars(items, unit) {
+  if (!items || !items.length) return '<div class="note">No data yet.</div>';
+  const max = Math.max(...items.map((i) => i.score), 1);
+  return items.map((i) => `<div class="bar-row">
+    <span title="${esc(i.member)}">${esc(String(i.member).slice(0, 14))}</span>
+    <span class="bar-track"><span class="bar-fill" style="width:${Math.max(4, (i.score / max) * 100)}%"></span></span>
+    <span class="n">${fmt(i.score)}</span>
+  </div>`).join('');
+}
+
+function openDrawer(slug) {
+  const s = STATE.sites.find((x) => x.slug === slug);
+  if (!s) return;
+  const st = s.stats || {};
+  const a = s.audit && s.audit.ok ? s.audit : null;
+  const g = s.grade;
+  const rep = s.report;
+
+  const vit = a ? a.vitals : null;
+  const vfmt = (v, d = 1) => (typeof v === 'number' ? (v / 1000).toFixed(d) + 's' : '—');
+
+  $('#drawerIn').innerHTML = `
+    <h2>${esc(s.name)}</h2>
+    <div class="url"><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url.replace(/^https?:\/\//, ''))}</a>${s.client ? ' · ' + esc(s.client) : ''}</div>
+
+    <div class="mgrid">
+      <div class="box"><div class="k">Visitors 30d</div><div class="v">${st.hasData ? fmt(st.visitors) : '—'}</div><div class="d">${st.hasData ? deltaHTML(st.deltas?.visitors) : 'add tracker snippet'}</div></div>
+      <div class="box"><div class="k">Conversions</div><div class="v">${st.hasData ? (st.conversions ?? 0) : '—'}</div><div class="d">${st.hasData ? deltaHTML(st.deltas?.conversions) : ''}</div></div>
+      <div class="box"><div class="k">Health</div><div class="v">${g ? g.letter + ' · ' + g.score : '—'}</div></div>
+      <div class="box"><div class="k">SEO</div><div class="v">${a ? a.scores.seo : '—'}</div></div>
+      <div class="box"><div class="k">Performance</div><div class="v">${a ? a.scores.performance : '—'}</div></div>
+      <div class="box"><div class="k">Accessibility</div><div class="v">${a ? a.scores.accessibility : '—'}</div></div>
+    </div>
+
+    ${a ? `<div class="block"><h3>Core Web Vitals (mobile)</h3>
+      <div class="bar-row" style="grid-template-columns:120px 1fr"><span>Largest paint</span><strong>${vfmt(vit.lcp)}</strong></div>
+      <div class="bar-row" style="grid-template-columns:120px 1fr"><span>Layout shift</span><strong>${typeof vit.cls === 'number' ? vit.cls.toFixed(2) : '—'}</strong></div>
+      <div class="bar-row" style="grid-template-columns:120px 1fr"><span>Blocking time</span><strong>${vfmt(vit.tbt, 2)}</strong></div>
+    </div>` : ''}
+
+    ${st.hasData ? `<div class="block"><h3>Traffic sources</h3>${bars(st.sources)}</div>
+    <div class="block"><h3>Top pages</h3>${bars(st.topPages)}</div>` : ''}
+
+    <div class="block">
+      <h3>Suggestions</h3>
+      ${(s.findings || []).map((f) => `<div class="finding">
+        <span class="sev ${f.severity}">${f.severity === 'med' ? 'MED' : f.severity}</span>
+        <div><div class="ft">${esc(f.title)}</div><div class="fd">${esc(f.detail)}</div></div>
+      </div>`).join('') || '<div class="note">No issues detected. Nice.</div>'}
+    </div>
+
+    ${rep ? `<div class="block">
+      <h3>Monthly report — ${esc(rep.month)} ${rep.aiGenerated ? '· AI drafted' : '· rules'}</h3>
+      <p style="margin:0 0 8px"><strong>${esc(rep.headline || '')}</strong></p>
+      <p style="margin:0 0 6px;color:var(--muted)">${esc(rep.summary || '')}</p>
+      ${rep.email ? `<div class="email-draft"><div class="email-sub">Subject: ${esc(rep.email.subject || '')}</div>${esc(rep.email.body_text || '')}</div>
+      <button class="btn ghost" style="margin-top:10px" id="copyEmail">Copy email</button>` : ''}
+    </div>` : `<div class="block"><h3>Monthly report</h3><div class="note">Not generated yet. Hit “Generate reports”, or run <code>/api/report?secret=…&slug=${esc(s.slug)}</code>.</div></div>`}
+  `;
+
+  const copyBtn = $('#copyEmail');
+  if (copyBtn && rep && rep.email) {
+    copyBtn.addEventListener('click', () => {
+      navigator.clipboard.writeText(`Subject: ${rep.email.subject}\n\n${rep.email.body_text}`);
+      copyBtn.textContent = 'Copied ✓';
+      setTimeout(() => (copyBtn.textContent = 'Copy email'), 1600);
+    });
+  }
+
+  $('#scrim').classList.add('open');
+  $('#drawer').classList.add('open');
+  $('#drawer').setAttribute('aria-hidden', 'false');
+}
+function closeDrawer() {
+  $('#scrim').classList.remove('open');
+  $('#drawer').classList.remove('open');
+  $('#drawer').setAttribute('aria-hidden', 'true');
+}
+
+$('#scrim').addEventListener('click', closeDrawer);
+$('#drawerX').addEventListener('click', closeDrawer);
+document.addEventListener('keydown', (e) => e.key === 'Escape' && closeDrawer());
+$('#refreshBtn').addEventListener('click', load);
+
+$('#genBtn').addEventListener('click', async () => {
+  const secret = prompt('Enter your CRON_SECRET to generate reports:');
+  if (!secret) return;
+  const btn = $('#genBtn');
+  btn.disabled = true; btn.textContent = 'Generating…';
+  try {
+    const r = await fetch(`/api/report?secret=${encodeURIComponent(secret)}`, { method: 'POST' });
+    const j = await r.json();
+    btn.textContent = j.ok ? `Done · ${j.generated} reports` : 'Failed';
+    if (j.ok) await load();
+  } catch {
+    btn.textContent = 'Failed';
+  }
+  setTimeout(() => { btn.disabled = false; btn.textContent = 'Generate reports'; }, 2500);
+});
+
+load();
+</script>
+</body>
+</html>

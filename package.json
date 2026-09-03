@@ -1,0 +1,16 @@
+{
+  "name": "client-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Portfolio dashboard: pulls traffic, SEO and speed data from published client sites and drafts a monthly client report.",
+  "scripts": {
+    "dev": "vercel dev",
+    "deploy": "vercel --prod"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.68.0",
+    "@vercel/kv": "^3.0.0",
+    "resend": "^4.0.0"
+  }
+}
