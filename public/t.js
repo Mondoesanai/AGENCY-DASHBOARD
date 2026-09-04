@@ -63,23 +63,30 @@
     'submit',
     function (ev) {
       var el = ev.target;
-      if (el && el.matches && el.matches('[data-track]')) {
-        send('ev', el.getAttribute('data-track') || 'form');
-      }
+      if (!el || !el.matches) return;
+      if (el.matches('[data-track]')) send('ev', el.getAttribute('data-track') || 'form');
+      else send('ev', 'form-' + ((el.getAttribute('name') || el.id || 'submit').toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 24)));
     },
     true
   );
 
-  // auto-catch the two most common conversions even without data-track
+  // auto-catch the common conversion types even without data-track, so a site
+  // works the moment the snippet is added. Add data-track="…" for anything custom.
   document.addEventListener(
     'click',
     function (ev) {
-      var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+      var a = ev.target && ev.target.closest ? ev.target.closest('a[href], button') : null;
       if (!a || a.hasAttribute('data-track')) return;
-      var href = a.getAttribute('href') || '';
+      var href = (a.getAttribute && a.getAttribute('href')) || '';
+      var txt = (a.textContent || '').toLowerCase();
       if (/^tel:/i.test(href)) send('ev', 'call');
+      else if (/^sms:/i.test(href)) send('ev', 'text');
       else if (/^mailto:/i.test(href)) send('ev', 'email');
-      else if (/calendly\.com|acuityscheduling|cal\.com|book/i.test(href)) send('ev', 'booking');
+      else if (/wa\.me|api\.whatsapp|whatsapp\.com/i.test(href)) send('ev', 'whatsapp');
+      else if (/calendly\.com|acuityscheduling|cal\.com|squareup\.com\/appointments|book(ing)?/i.test(href)) send('ev', 'booking');
+      else if (/writereview|g\.page\/.+\/review|\/review|search\.google\.com\/local\/writereview/i.test(href) || /leave (a )?review|write a review/.test(txt)) send('ev', 'review-click');
+      else if (/maps\.google|google\.[a-z.]+\/maps|goo\.gl\/maps/i.test(href)) send('ev', 'directions');
+      else if (/get (a )?quote|request (a )?quote|free quote|get started/.test(txt) && a.tagName === 'BUTTON') send('ev', 'quote-cta');
     },
     true
   );

@@ -18,7 +18,8 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
   }));
   return {
     slug, name, url, client, email: '', phone: '', priceMonthly: price, leadValue: 120,
-    billingDay: bday, autoSend: false, reviewUrl: '', source: 'ui', billingSoon: bday === new Date().getUTCDate(),
+    billingDay: bday, autoSend: false, reviewUrl: '', conversionEvents: [], source: 'ui',
+    billingSoon: bday === new Date().getUTCDate(), hasTracker: true, reportUrl: `/r/${slug}?t=demo`,
     stats: {
       hasData: true, visitors: v, pageviews: Math.round(v * 2.2), conversions: c,
       deltas: { visitors: dV, pageviews: dV, conversions: dC },
@@ -26,7 +27,8 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
       trend: history.map(h => h.visitors),
       topPages: [{ member: '/', score: Math.round(v * 1.3) }, { member: '/services', score: Math.round(v * 0.5) }, { member: '/contact', score: Math.round(v * 0.3) }],
       sources: [{ member: 'google', score: Math.round(v * 0.5) }, { member: 'direct', score: Math.round(v * 0.35) }, { member: 'social', score: Math.round(v * 0.15) }],
-      events: c ? [{ member: 'call', score: Math.round(c * 0.6) }, { member: 'lead-form', score: Math.round(c * 0.4) }] : [],
+      events: [{ member: 'call', score: Math.round(c * 0.6) + 5 }, { member: 'quote-form', score: Math.round(c * 0.4) + 2 }, { member: 'booking', score: 3 }, { member: 'review-click', score: 4 }],
+      conversionEvents: [],
     },
     audit: { ok: true, scores: { seo, performance: perf, accessibility: 92, bestPractices: 95 }, vitals: { lcp: 2600, cls: 0.06, tbt: 180 } },
     grade: { score: seo - 5, letter },
@@ -62,7 +64,7 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
 }
 
 const DEMO = {
-  portfolio: { sites: 3, visitors30: 1284, conversions30: 47, mrr: 450, avgSeo: 88, improving: 2, openFindings: 15, attention: [], auditQuota: false, backend: 'demo' },
+  portfolio: { sites: 3, visitors30: 1284, conversions30: 47, mrr: 450, avgSeo: 88, improving: 2, openFindings: 15, attention: [], noTracker: [], auditQuota: false, emailEnabled: true, aiEnabled: true, backend: 'demo' },
   sites: [
     demoSite('relax-tax', 'Relax Tax', 'https://relaxtax.vercel.app', 'Kyle', 612, 18, 34, 9, 91, 96, 'B', 150, new Date().getUTCDate()),
     demoSite('apostello-detailing', 'Apostello Detailing', 'https://apostellodetailing.vercel.app', 'Shiloh', 431, 33, 9, 40, 84, 72, 'C', 200, 12),

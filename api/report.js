@@ -51,7 +51,7 @@ function monthsSince(baseline, history) {
   return Math.max(0, (history?.length || 1) - 1);
 }
 
-async function aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins }) {
+async function aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins, style }) {
   if (!process.env.ANTHROPIC_API_KEY) return null;
   let Anthropic;
   try {
@@ -80,6 +80,7 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
     'sign off "— Inspiring Websites"), 140-210 words. Structure: lead with the wins, then',
     '"What we\'re working on next" (improvements), then "A few things that would help on your end"',
     '(2-3 client_actions). Weave in these exact facts: ' + JSON.stringify(wins) + '.',
+    style ? 'IMPORTANT revision instruction for this pass — rewrite the email and summary to be: "' + style + '". Apply it fully (tone, length, warmth, detail) but keep every fact accurate.' : '',
   ].join(' ');
   const payload = {
     business: site.name,
@@ -138,16 +139,16 @@ async function sendEmail({ site, subject, body, cardPng, reportUrl }) {
   }
 }
 
-async function buildForSite(site, { doSend, req }) {
+async function buildForSite(site, { doSend, req, style }) {
   const [stats, audit, changelog] = await Promise.all([
-    siteStats(site.slug).catch(() => null),
+    siteStats(site.slug, site.conversionEvents || []).catch(() => null),
     runAudit(site.url, { fresh: true }).catch(() => ({ ok: false, error: 'audit failed' })),
     readLog(site.slug),
   ]);
   const grade = overallGrade(audit, stats);
   const findings = buildFindings(audit, stats);
   const improvements = improvementsForClient(audit, stats);
-  const actions = clientActions(audit, stats);
+  const actions = clientActions(audit, stats, site);
 
   const row = await snapshot(site.slug, {
     seo: audit?.ok ? audit.scores.seo : null,
@@ -194,6 +195,7 @@ async function buildForSite(site, { doSend, req }) {
     actions,
     angle,
     wins: rules.wins,
+    style,
   }).catch(() => null);
 
   const email = ai?.email || { subject: rules.subject, body_text: rules.body_text };
@@ -237,17 +239,71 @@ async function buildForSite(site, { doSend, req }) {
   return { ...report, emailResult };
 }
 
+// Fast path: reword the email only. Reuses the last report's numbers, skips the
+// fresh audit + history snapshot. Cheap enough to hit on every "regenerate".
+async function regenEmail(site, { style, req }) {
+  const prevRaw = await store.get(`report:${site.slug}:latest`).catch(() => null);
+  const prev = prevRaw ? (typeof prevRaw === 'string' ? JSON.parse(prevRaw) : prevRaw) : null;
+  const [stats, audit, changelog] = await Promise.all([
+    siteStats(site.slug, site.conversionEvents || []).catch(() => null),
+    runAudit(site.url).catch(() => ({ ok: false })),
+    readLog(site.slug),
+  ]);
+  const grade = overallGrade(audit, stats) || prev?.grade || null;
+  const findings = buildFindings(audit, stats);
+  const improvements = prev?.improvements?.length ? prev.improvements : improvementsForClient(audit, stats);
+  const actions = prev?.clientActions?.length ? prev.clientActions : clientActions(audit, stats, site);
+  const history = await getHistory(site.slug);
+  const baseline = await getBaseline(site.slug);
+  const msl = monthsSince(baseline, history);
+  const angle = prev?.angle || pickAngle(msl);
+  const row = prev?.metrics || {
+    seo: audit?.ok ? audit.scores.seo : null,
+    visitors: stats?.visitors || 0,
+    conversions: stats?.conversions || 0,
+  };
+  const tok = reportToken(site.slug);
+  const reportUrl = baseUrl(req) ? `${baseUrl(req)}/r/${site.slug}${tok ? `?t=${tok}` : ''}` : prev?.reportUrl || '';
+
+  const rules = buildClientEmail({
+    biz: site.name, client: site.client || 'there', month: MK, monthsSinceLaunch: msl,
+    history, baseline, row, improvements, clientActions: actions, changelog, reportUrl,
+    signature: process.env.REPORT_SIGNATURE || 'Inspiring Websites',
+    reviewUrl: site.reviewUrl, leadValue: site.leadValue || 0,
+  });
+  const ai = await aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins: rules.wins, style }).catch(() => null);
+  const email = ai?.email || { subject: rules.subject, body_text: rules.body_text };
+
+  const report = {
+    ...(prev || {}),
+    slug: site.slug, name: site.name, month: MONTH, monthKey: MK, angle,
+    generatedAt: Date.now(), grade,
+    headline: ai?.headline || prev?.headline || `${site.name} — ${MONTH}`,
+    summary: ai?.summary || prev?.summary || rules.wins.join(' '),
+    wins: rules.wins,
+    improvements: ai?.improvements || improvements,
+    clientActions: ai?.client_actions || actions,
+    email, reportUrl, metrics: row, aiGenerated: !!ai, lastStyle: style || null,
+  };
+  await store.set(`report:${site.slug}:latest`, JSON.stringify(report));
+  await store.set(`report:${site.slug}:${MK}`, JSON.stringify(report));
+  return report;
+}
+
 export default async function handler(req, res) {
   if (!authed(req)) return res.status(401).json({ ok: false, error: 'bad secret' });
 
   const all = await listSites();
   const only = req.query.slug ? all.filter((s) => s.slug === req.query.slug) : all;
   const doSend = req.query.send === '1';
+  const emailOnly = req.query.emailonly === '1';
+  const style = String(req.query.style || '').slice(0, 140);
 
   const reports = [];
   for (const site of only) {
     try {
-      reports.push(await buildForSite(site, { doSend, req }));
+      if (emailOnly && !doSend) reports.push(await regenEmail(site, { style, req }));
+      else reports.push(await buildForSite(site, { doSend, req, style }));
     } catch (e) {
       reports.push({ slug: site.slug, error: String(e.message || e) });
     }

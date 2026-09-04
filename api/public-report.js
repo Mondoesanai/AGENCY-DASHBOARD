@@ -20,7 +20,7 @@ export default async function handler(req, res) {
   const [history, reportRaw, stats, audit, healthRaw] = await Promise.all([
     getHistory(slug).catch(() => []),
     store.get(`report:${slug}:latest`).catch(() => null),
-    siteStats(slug).catch(() => null),
+    siteStats(slug, site.conversionEvents || []).catch(() => null),
     runAudit(site.url).catch(() => ({ ok: false })),
     store.get(`health:${slug}`).catch(() => null),
   ]);
@@ -37,7 +37,7 @@ export default async function handler(req, res) {
     summary: report?.summary || '',
     wins: report?.wins || [],
     improvements: report?.improvements || improvementsForClient(audit, stats),
-    clientActions: report?.clientActions || clientActions(audit, stats),
+    clientActions: report?.clientActions || clientActions(audit, stats, site),
     grade,
     scores: audit?.ok ? audit.scores : null,
     vitals: audit?.ok ? audit.vitals : null,

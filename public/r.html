@@ -50,6 +50,10 @@
 <div class="wrap" id="root"><div class="err">Loading your report…</div></div>
 <script>
 const P = new URLSearchParams(location.search);
+// works whether the URL is /r/<slug>?t=..  or  /r.html?slug=<slug>&t=..
+const PATH_SLUG = (location.pathname.split('/').filter(Boolean).pop() || '').replace(/\.html$/, '');
+const SLUG = P.get('slug') || (PATH_SLUG === 'r' ? '' : PATH_SLUG);
+const TOK = P.get('t') || '';
 const esc = (s)=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const fmt = (n)=> n>=1000 ? (n/1000).toFixed(n>=10000?0:1)+'k' : String(Math.round(n||0));
 
@@ -63,7 +67,7 @@ function deltaHTML(d,pct){
 (async () => {
   const root = document.getElementById('root');
   try {
-    const r = await fetch(`/api/public-report?slug=${encodeURIComponent(P.get('slug')||'')}&t=${encodeURIComponent(P.get('t')||'')}`);
+    const r = await fetch(`/api/public-report?slug=${encodeURIComponent(SLUG)}&t=${encodeURIComponent(TOK)}`);
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || 'not available');
 

@@ -51,6 +51,7 @@ export default async function handler(req, res) {
         autoSend: body.autoSend,
         leadValue: body.leadValue,
         reviewUrl: body.reviewUrl || '',
+        conversionEvents: body.conversionEvents,
       });
       return res.status(200).json({ ok: true, site: cfg });
     }

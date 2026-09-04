@@ -86,6 +86,10 @@
   .tag{font-size:9.5px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;border-radius:5px;padding:2px 6px;margin-left:8px;vertical-align:2px;}
   .tag.auto{color:var(--green-br);background:var(--green-soft);}
   .tag.bill{color:var(--warn);background:#2c2a17;}
+  .pillmini{font-size:10.5px;font-weight:600;letter-spacing:.03em;border-radius:5px;padding:1px 7px;background:var(--surface2);color:var(--muted);white-space:nowrap;}
+  .pillmini.good{background:var(--green-soft);color:var(--green-br);}
+  .pillmini.ok{background:#2c2a17;color:var(--warn);}
+  .pillmini.bad{background:#2e1a15;color:var(--neg);}
   .spark{display:block;}
 
   .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:40;backdrop-filter:blur(2px);}
@@ -263,7 +267,7 @@ const trendOf=(s)=>{
   return (s.stats&&s.stats.trend)||[];
 };
 
-let STATE=null;
+let STATE=null, EMAIL_ENABLED=false, AI_ENABLED=false;
 
 async function load(){
   $('#sites').innerHTML='<div class="loading">Loading portfolio…</div>';
@@ -282,6 +286,7 @@ async function load(){
 
 function render(data){
   const p=data.portfolio;
+  EMAIL_ENABLED=!!p.emailEnabled; AI_ENABLED=!!p.aiEnabled;
   $('#monthPill').textContent=new Date().toLocaleString('en-US',{month:'long',year:'numeric'});
   const pill=$('#statusPill'), txt=$('#statusTxt');
   pill.className='pill'; txt.textContent='live · '+(p.backend||'ok');
@@ -396,13 +401,13 @@ function openDrawer(slug){
 
     ${histChart(s.history)}
 
-    ${a?`<div class="block"><h3>Core Web Vitals (mobile)</h3>
-      <div class="bar-row" style="grid-template-columns:120px 1fr"><span>Largest paint</span><strong>${vfmt(vit.lcp)}</strong></div>
-      <div class="bar-row" style="grid-template-columns:120px 1fr"><span>Layout shift</span><strong>${typeof vit.cls==='number'?vit.cls.toFixed(2):'—'}</strong></div>
-      <div class="bar-row" style="grid-template-columns:120px 1fr"><span>Blocking time</span><strong>${vfmt(vit.tbt,2)}</strong></div>
+    ${a?`<div class="block"><h3>Speed on a phone <span class="ang">Google's Core Web Vitals</span></h3>
+      ${vitalRow('Loads its main content in', vfmt(vit.lcp), vit.lcp, 2500, 4000, 'How fast the biggest thing on screen appears. Under 2.5s is good.')}
+      ${vitalRow('Page jump while loading', typeof vit.cls==='number'?vit.cls.toFixed(2):'—', vit.cls, 0.1, 0.25, 'How much the layout shifts as it loads. Under 0.1 means it feels stable.')}
+      ${vitalRow('Frozen / unresponsive for', vfmt(vit.tbt,2), vit.tbt, 200, 600, 'How long taps and scrolls are ignored while scripts run. Lower is better.')}
     </div>`:''}
 
-    ${st.hasData?`<div class="block"><h3>Traffic sources</h3>${bars(st.sources)}</div><div class="block"><h3>Top pages</h3>${bars(st.topPages)}</div>`:''}
+    ${st.hasData?`<div class="block"><h3>Traffic sources <span class="ang">where visitors came from</span></h3>${bars(st.sources)}</div><div class="block"><h3>Top pages <span class="ang">what they landed on</span></h3>${bars(st.topPages)}</div>${eventsBlock(s)}`:noTrackerBlock(s)}
 
     <div class="block">
       <h3>Builder suggestions <span class="ang">you only</span></h3>
@@ -423,9 +428,9 @@ function openDrawer(slug){
     <div class="block">
       <h3>Monthly report ${rep?`<span class="ang">${esc(rep.month)} · ${rep.aiGenerated?'AI':'rules'}${rep.angle?' · '+esc(rep.angle):''}</span>`:''}</h3>
       ${rep?`<p style="margin:0 0 8px"><strong>${esc(rep.headline||'')}</strong></p><p style="margin:0 0 6px;color:var(--muted)">${esc(rep.summary||'')}</p>${(rep.wins||[]).map(w=>`<div class="win">${esc(w)}</div>`).join('')}`:'<div class="note">Not generated yet.</div>'}
-      ${rep&&rep.reportUrl?`<p style="margin:10px 0 0"><a href="${esc(rep.reportUrl)}" target="_blank" rel="noopener">Open client report ↗</a></p>`:''}
-      <img class="card-thumb" src="/api/card?slug=${encodeURIComponent(s.slug)}" alt="" loading="lazy" onerror="this.style.display='none'"/>
-      <div class="btn-row"><button class="btn sm" id="genOne">${rep?'Regenerate':'Generate'} for this site</button></div>
+      <p style="margin:10px 0 0"><a href="${esc(s.reportUrl||('/r/'+s.slug))}" target="_blank" rel="noopener">Open client report ↗</a></p>
+      <img class="card-thumb" src="/api/card?slug=${encodeURIComponent(s.slug)}&v=${rep?rep.generatedAt||1:1}" alt="" loading="lazy" onerror="this.style.display='none'"/>
+      <div class="btn-row"><button class="btn sm" id="genOne">${rep?'Regenerate full report':'Generate report'}</button></div>
     </div>
 
     <div class="block">
@@ -433,11 +438,24 @@ function openDrawer(slug){
       <label class="field"><span>Client name</span><input id="ecName" value="${esc(s.client||'')}" /></label>
       <label class="field"><span>Client email</span><input id="ecAddr" type="email" value="${esc(s.email||'')}" placeholder="client@email.com" /></label>
       <div class="btn-row">
-        <button class="btn sm" id="ecGmail">Open Gmail draft</button>
-        <button class="btn ghost sm" id="ecCopy">Copy email text</button>
+        ${EMAIL_ENABLED?`<button class="btn sm" id="ecSend">Send now</button>`:''}
+        <button class="btn ghost sm" id="ecGmail">Open Gmail draft</button>
+        <button class="btn ghost sm" id="ecCopy">Copy text</button>
       </div>
-      <p class="note">Opens Gmail with the subject + body filled in. Uses the report above if there is one.</p>
-      ${rep&&rep.email?`<div class="email-draft"><strong>Subject: ${esc(rep.email.subject||'')}</strong>\n\n${esc(rep.email.body_text||'')}</div>`:''}
+      <p class="note" id="ecMsg">${EMAIL_ENABLED?'"Send now" emails it from your business address, with the report card attached.':'Add RESEND_API_KEY in Vercel to enable one-click Send. For now use Gmail draft.'}</p>
+
+      ${AI_ENABLED?`<div style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
+        <div class="note" style="margin:0 0 6px">Rewrite the email — tap a style or type your own steer, then regenerate:</div>
+        <div class="btn-row" id="styleChips">
+          ${['more personal','more detailed','more reassuring','shorter & punchier','more casual'].map(x=>`<button class="btn ghost sm chip-style" data-s="${x}">${x}</button>`).join('')}
+        </div>
+        <div class="btn-row" style="margin-top:8px">
+          <input id="ecSteer" style="flex:1" placeholder='e.g. "mention the holidays and thank them"'/>
+          <button class="btn sm" id="ecRegen">Regenerate email</button>
+        </div>
+      </div>`:''}
+
+      ${rep&&rep.email?`<div class="email-draft" id="ecDraft"><strong>Subject: ${esc(rep.email.subject||'')}</strong>\n\n${esc(rep.email.body_text||'')}</div>`:''}
     </div>
 
     <div class="block">
@@ -470,6 +488,8 @@ function openDrawer(slug){
         <label class="field"><span>Avg $ per enquiry (optional)</span><input id="cf_lead" value="${s.leadValue||''}" /></label>
       </div>
       <label class="field"><span>Google review link (optional)</span><input id="cf_review" value="${esc(s.reviewUrl||'')}" /></label>
+      <label class="field"><span>What counts as a conversion? (comma-separated event names, blank = all)</span><input id="cf_conv" value="${esc((s.conversionEvents||[]).join(', '))}" placeholder="call, quote-form, booking" /></label>
+      <p class="note" style="margin-top:-4px">Events firing on this site: ${((s.stats&&s.stats.events)||[]).map(e=>esc(e.member)).join(', ')||'none yet'}</p>
       <label class="toggle"><input type="checkbox" id="cf_auto" ${s.autoSend?'checked':''}/> Auto-send the report email on the billing day</label>
       <div class="btn-row"><button class="btn sm" id="cfSave">Save settings</button><button class="btn danger sm" id="cfDel">Remove site</button></div>
     </details>
@@ -481,6 +501,37 @@ function openDrawer(slug){
 function fRow(f){ return `<div class="finding"><span class="sev ${f.severity}">${f.severity==='med'?'MED':f.severity}</span><div><div class="ft">${esc(f.title)}</div>${f.detail?`<div class="fd">${esc(f.detail)}</div>`:''}</div></div>`; }
 function logRow(c,idx){ return `<div class="logitem"><span>${esc(c.date)} — ${esc(c.text)}</span><button data-i="${idx}">✕</button></div>`; }
 
+function vitalRow(label,display,val,goodMax,badMin,help){
+  let cls='ok',word='OK';
+  if(typeof val==='number'){ if(val<=goodMax){cls='good';word='Good';} else if(val>=badMin){cls='bad';word='Needs work';} }
+  return `<div style="padding:9px 0;border-top:1px solid var(--line)">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <span style="font-size:13.5px">${esc(label)} <strong>${esc(display)}</strong></span>
+      <span class="pillmini ${cls}">${word}</span>
+    </div>
+    <div class="note" style="margin-top:2px">${esc(help)}</div>
+  </div>`;
+}
+function eventsBlock(s){
+  const evs=(s.stats&&s.stats.events)||[];
+  const counted=(s.conversionEvents||[]);
+  if(!evs.length) return `<div class="block"><h3>Conversions <span class="ang">what counts as a lead</span></h3>
+    <div class="note">No conversion events have fired yet. The tracker auto-counts clicks on phone / text / email / WhatsApp / booking / "leave a review" links. For anything else, add <code>data-track="name"</code> to the button or form on the site.</div></div>`;
+  return `<div class="block"><h3>Conversions <span class="ang">what counts as a lead</span></h3>
+    <div class="note" style="margin-bottom:8px">${counted.length?`Counting only: <strong>${counted.map(esc).join(', ')}</strong>. Change this in Site settings.`:'Right now <strong>every</strong> event below counts as a conversion. Narrow it in Site settings (e.g. only <code>call, quote-form</code>).'}</div>
+    ${evs.map(e=>`<div class="bar-row" style="grid-template-columns:1fr 60px"><span>${esc(e.member)} ${counted.length&&counted.includes(String(e.member).toLowerCase())?'<span class="pillmini good">counted</span>':(counted.length?'<span class="pillmini">ignored</span>':'')}</span><span class="n">${e.score}</span></div>`).join('')}
+  </div>`;
+}
+function noTrackerBlock(s){
+  const line=`<script defer src="${location.origin}/t.js"></scr`+`ipt>`;
+  return `<div class="block" style="border-color:var(--warn)">
+    <h3 style="color:var(--warn)">No tracker on this site yet</h3>
+    <div class="note">SEO / speed / uptime work from the URL alone, but visitor counts, traffic sources and conversions need one line added before <code>&lt;/body&gt;</code> on every page:</div>
+    <div class="email-draft" style="margin-top:8px">${esc(line)}</div>
+    <div class="btn-row"><button class="btn sm" id="copySnippet">Copy the line</button></div>
+  </div>`;
+}
+
 function wireDrawer(s,bf){
   $('#bfMore')?.addEventListener('click',()=>{ $('#bfList').innerHTML=bf.map(fRow).join(''); $('#bfMore').remove(); });
 
@@ -491,12 +542,40 @@ function wireDrawer(s,bf){
     const u='https://mail.google.com/mail/?view=cm&fs=1'+(addr?'&to='+encodeURIComponent(addr):'')+'&su='+encodeURIComponent(subject)+'&body='+encodeURIComponent(body);
     window.open(u,'_blank','noopener');
   });
-  $('#ecCopy').addEventListener('click',(e)=>{ const {subject,body}=buildDraft(s); navigator.clipboard.writeText('Subject: '+subject+'\n\n'+body); e.target.textContent='Copied ✓'; setTimeout(()=>e.target.textContent='Copy email text',1500); });
+  $('#ecCopy').addEventListener('click',(e)=>{ const {subject,body}=buildDraft(s); navigator.clipboard.writeText('Subject: '+subject+'\n\n'+body); e.target.textContent='Copied ✓'; setTimeout(()=>e.target.textContent='Copy text',1500); });
+
+  $('#copySnippet')?.addEventListener('click',(e)=>{ navigator.clipboard.writeText(`<script defer src="${location.origin}/t.js"><\/script>`); e.target.textContent='Copied ✓'; setTimeout(()=>e.target.textContent='Copy the line',1500); });
 
   $('#genOne').addEventListener('click',async(e)=>{
     const k=needKey(); if(!k) return;
     e.target.disabled=true; e.target.textContent='Working… (up to 40s)';
     const j=await fetch(`/api/report?slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    if(j.ok){ await load(); openDrawer(s.slug); } else { setKey(''); e.target.textContent='Failed — key?'; e.target.disabled=false; }
+  });
+
+  // send the real email now (Resend)
+  $('#ecSend')?.addEventListener('click',async(e)=>{
+    const addr=($('#ecAddr').value||'').trim();
+    if(!addr){ $('#ecMsg').textContent='Add the client email first.'; return; }
+    if(!confirm(`Send this month's report email to ${addr} now?`)) return;
+    const k=needKey(); if(!k) return;
+    e.target.disabled=true; e.target.textContent='Sending…';
+    // make sure the saved email matches what's on screen
+    await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'save',slug:s.slug,email:addr,url:s.url,name:s.name});
+    const j=await fetch(`/api/report?slug=${encodeURIComponent(s.slug)}&send=1&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    const r0=(j.reports&&j.reports[0])||{};
+    if(r0.emailResult&&r0.emailResult.sent){ e.target.textContent='Sent ✓'; $('#ecMsg').textContent='Sent from '+(r0.reportUrl?'your business address':'Resend')+'.'; }
+    else { e.target.textContent='Send now'; e.target.disabled=false; $('#ecMsg').textContent='Failed: '+((r0.emailResult&&r0.emailResult.reason)||'check Resend key / verified domain'); }
+  });
+
+  // regenerate the email with a style steer (AI)
+  let steer='';
+  $('#styleChips')?.addEventListener('click',(e)=>{ const b=e.target.closest('.chip-style'); if(!b) return; $('#ecSteer').value=b.dataset.s; document.querySelectorAll('.chip-style').forEach(c=>c.style.borderColor='var(--line)'); b.style.borderColor='var(--green)'; });
+  $('#ecRegen')?.addEventListener('click',async(e)=>{
+    const k=needKey(); if(!k) return;
+    steer=($('#ecSteer').value||'').trim();
+    e.target.disabled=true; e.target.textContent='Rewriting…';
+    const j=await fetch(`/api/report?slug=${encodeURIComponent(s.slug)}&emailonly=1&style=${encodeURIComponent(steer)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
     if(j.ok){ await load(); openDrawer(s.slug); } else { setKey(''); e.target.textContent='Failed — key?'; e.target.disabled=false; }
   });
 
@@ -527,7 +606,7 @@ function wireDrawer(s,bf){
     const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'save',slug:s.slug,
       url:$('#cf_url').value,name:$('#cf_name').value,client:$('#cf_client').value,email:$('#cf_email').value,
       phone:$('#cf_phone').value,priceMonthly:$('#cf_price').value,billingDay:$('#cf_bday').value,
-      leadValue:$('#cf_lead').value,reviewUrl:$('#cf_review').value,autoSend:$('#cf_auto').checked});
+      leadValue:$('#cf_lead').value,reviewUrl:$('#cf_review').value,conversionEvents:$('#cf_conv').value,autoSend:$('#cf_auto').checked});
     if(j.ok){ await load(); openDrawer(j.site.slug); } else { e.target.disabled=false; e.target.textContent='Failed'; }
   });
   $('#cfDel').addEventListener('click',async()=>{

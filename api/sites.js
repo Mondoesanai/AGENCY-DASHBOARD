@@ -4,6 +4,7 @@ import { runAudit } from '../lib/audit.js';
 import { siteStats } from '../lib/stats.js';
 import { buildFindings, clientActions, improvementsForClient, overallGrade } from '../lib/suggestions.js';
 import { getHistory } from '../lib/history.js';
+import { reportToken } from '../lib/token.js';
 import { store } from '../lib/store.js';
 
 async function readNotes(slug) {
@@ -27,7 +28,7 @@ export default async function handler(req, res) {
   const rows = await Promise.all(
     list.map(async (site) => {
       const [stats, audit, report, history, notes, changelog] = await Promise.all([
-        siteStats(site.slug).catch(() => null),
+        siteStats(site.slug, site.conversionEvents || []).catch(() => null),
         runAudit(site.url).catch(() => ({ ok: false, error: 'audit failed' })),
         store.get(`report:${site.slug}:latest`).catch(() => null),
         getHistory(site.slug).catch(() => []),
@@ -49,13 +50,16 @@ export default async function handler(req, res) {
         billingDay: site.billingDay || null,
         autoSend: !!site.autoSend,
         reviewUrl: site.reviewUrl || '',
+        conversionEvents: site.conversionEvents || [],
         source: site.source,
+        hasTracker: !!(stats && (stats.hasData || (stats.events && stats.events.length))),
+        reportUrl: `/r/${site.slug}?t=${reportToken(site.slug)}`,
         billingSoon: site.billingDay ? (site.billingDay - today + 31) % 31 <= 3 : false,
         stats,
         audit,
         grade,
         builderFindings: findings,
-        clientActions: clientActions(audit, stats),
+        clientActions: clientActions(audit, stats, site),
         improvements: improvementsForClient(audit, stats),
         openCount: findings.filter((f) => f.severity !== 'good').length,
         history,
@@ -87,6 +91,9 @@ export default async function handler(req, res) {
       )
       .map((r) => r.slug),
     auditQuota: rows.some((r) => r.audit && !r.audit.ok && /quota/i.test(r.audit.error || '')),
+    noTracker: rows.filter((r) => !r.hasTracker).map((r) => r.slug),
+    emailEnabled: !!process.env.RESEND_API_KEY,
+    aiEnabled: !!process.env.ANTHROPIC_API_KEY,
     backend: store.backend,
   };
 
