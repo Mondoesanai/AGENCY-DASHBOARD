@@ -51,7 +51,7 @@ function monthsSince(baseline, history) {
   return Math.max(0, (history?.length || 1) - 1);
 }
 
-async function aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins, style }) {
+async function aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins, style, dropped }) {
   if (!process.env.ANTHROPIC_API_KEY) return null;
   let Anthropic;
   try {
@@ -80,6 +80,9 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
     'sign off "— Inspiring Websites"), 140-210 words. Structure: lead with the wins, then',
     '"What we\'re working on next" (improvements), then "A few things that would help on your end"',
     '(2-3 client_actions). Weave in these exact facts: ' + JSON.stringify(wins) + '.',
+    dropped
+      ? 'THIS WAS A DOWN MONTH — visitors fell. Do NOT spin it. Open by acknowledging plainly that traffic dipped this month, then pivot to "here is exactly what we are changing so next month goes the other way" (use the improvements), stay calm and confident, and end reassuring them one quiet month is not a trend.'
+      : '',
     style ? 'IMPORTANT revision instruction for this pass — rewrite the email and summary to be: "' + style + '". Apply it fully (tone, length, warmth, detail) but keep every fact accurate.' : '',
   ].join(' ');
   const payload = {
@@ -196,6 +199,7 @@ async function buildForSite(site, { doSend, req, style }) {
     angle,
     wins: rules.wins,
     style,
+    dropped: rules.dropped,
   }).catch(() => null);
 
   const email = ai?.email || { subject: rules.subject, body_text: rules.body_text };
@@ -271,7 +275,7 @@ async function regenEmail(site, { style, req }) {
     signature: process.env.REPORT_SIGNATURE || 'Inspiring Websites',
     reviewUrl: site.reviewUrl, leadValue: site.leadValue || 0,
   });
-  const ai = await aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins: rules.wins, style }).catch(() => null);
+  const ai = await aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins: rules.wins, style, dropped: rules.dropped }).catch(() => null);
   const email = ai?.email || { subject: rules.subject, body_text: rules.body_text };
 
   const report = {
@@ -287,7 +291,7 @@ async function regenEmail(site, { style, req }) {
   };
   await store.set(`report:${site.slug}:latest`, JSON.stringify(report));
   await store.set(`report:${site.slug}:${MK}`, JSON.stringify(report));
-  return report;
+  return { ...report, aiUsed: !!ai };
 }
 
 export default async function handler(req, res) {

@@ -52,7 +52,20 @@ export default async function handler(req, res) {
         reviewUrl: site.reviewUrl || '',
         conversionEvents: site.conversionEvents || [],
         source: site.source,
-        hasTracker: !!(stats && (stats.hasData || (stats.events && stats.events.length))),
+        lastSeen: site.lastSeen || 0,
+        // tracker is "installed" if any beacon has landed in the last 21 days
+        // (or we already have visit data). New sites with no visits yet =>
+        // "awaiting first visit", not "no tracker".
+        hasTracker: !!(
+          (site.lastSeen && Date.now() - site.lastSeen < 21 * 864e5) ||
+          (stats && (stats.hasData || (stats.events && stats.events.length)))
+        ),
+        awaitingData: !!(
+          !stats?.hasData &&
+          !(stats?.events && stats.events.length) &&
+          site.lastSeen &&
+          Date.now() - site.lastSeen < 21 * 864e5
+        ),
         reportUrl: `/r/${site.slug}?t=${reportToken(site.slug)}`,
         billingSoon: site.billingDay ? (site.billingDay - today + 31) % 31 <= 3 : false,
         stats,

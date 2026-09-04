@@ -65,29 +65,28 @@ export default async function handler(req, res) {
   const p = `site:${slug}`;
   const tasks = [store.pfadd(`${p}:day:${day}:uv`, visitor)];
 
+  // auto-register the site on ANY beacon (pageview or event) so it shows up on
+  // the dashboard within seconds of the snippet going live — no "Add site" needed.
+  let origin = '';
+  try {
+    origin = new URL(d.u || '').origin;
+  } catch {
+    origin = '';
+  }
+  tasks.push(store.sadd('registry:slugs', slug));
+  tasks.push(
+    store.set(
+      `meta:${slug}`,
+      JSON.stringify({ slug, url: origin || `https://${slug}`, lastSeen: Date.now() })
+    )
+  );
+
   if (type === 'pv') {
     tasks.push(store.incr(`${p}:day:${day}:pv`));
     tasks.push(store.zincr(`${p}:day:${day}:paths`, path));
     tasks.push(store.zincr(`${p}:day:${day}:refs`, refHost(d.r)));
     if (width) {
       tasks.push(store.incr(`${p}:day:${day}:${width < 768 ? 'mobile' : 'desktop'}`));
-    }
-    // auto-register the site so it shows up in the dashboard with no config.
-    // only on the homepage hit, to keep writes low.
-    if (path === '/' || path === '') {
-      let origin = '';
-      try {
-        origin = new URL(d.u || '').origin;
-      } catch {
-        origin = '';
-      }
-      tasks.push(store.sadd('registry:slugs', slug));
-      tasks.push(
-        store.set(
-          `meta:${slug}`,
-          JSON.stringify({ slug, url: origin || `https://${slug}`, lastSeen: Date.now() })
-        )
-      );
     }
   } else {
     const name = cleanSlug(d.n || 'click') || 'click';

@@ -12,14 +12,21 @@ const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/cs
 
 function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, price, bday) {
   const months = ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09'];
-  const history = months.map((m, i) => ({
-    month: m, visitors: Math.round(v * (0.45 + i * 0.16)), conversions: Math.max(0, c - (4 - i)),
-    seo: Math.min(100, seo - (4 - i) * 3), grade: { letter, score: seo - 5 },
-  }));
+  const history = months.map((m, i) => {
+    const last = i === months.length - 1;
+    const prevV = Math.round(v * (0.45 + (i - 1) * 0.16));
+    return {
+      month: m,
+      visitors: last && dV < 0 ? v : Math.round(v * (0.45 + i * 0.16)),
+      conversions: Math.max(0, c - (4 - i)),
+      seo: Math.min(100, seo - (4 - i) * 3), grade: { letter, score: seo - 5 },
+    };
+  });
   return {
     slug, name, url, client, email: '', phone: '', priceMonthly: price, leadValue: 120,
     billingDay: bday, autoSend: false, reviewUrl: '', conversionEvents: [], source: 'ui',
-    billingSoon: bday === new Date().getUTCDate(), hasTracker: true, reportUrl: `/r/${slug}?t=demo`,
+    billingSoon: bday === new Date().getUTCDate(), hasTracker: true, awaitingData: false,
+    lastSeen: Date.now() - 3600000, reportUrl: `/r/${slug}?t=demo`,
     stats: {
       hasData: true, visitors: v, pageviews: Math.round(v * 2.2), conversions: c,
       deltas: { visitors: dV, pageviews: dV, conversions: dC },

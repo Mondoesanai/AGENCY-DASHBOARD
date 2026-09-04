@@ -57,6 +57,59 @@ const TOK = P.get('t') || '';
 const esc = (s)=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const fmt = (n)=> n>=1000 ? (n/1000).toFixed(n>=10000?0:1)+'k' : String(Math.round(n||0));
 
+function uptick(history){
+  const rows=(history||[]).slice(-10).filter(h=>h&&h.month);
+  if(rows.length<2) return `<div class="block"><h3>Visitors by month</h3><div class="w">Your growth line appears here once we have a couple of months of data.</div></div>`;
+  const vals=rows.map(h=>h.visitors||0);
+  const max=Math.max(...vals,1)*1.18;
+  const W=900,H=300,padL=10,padR=10,padT=16,padB=34;
+  const iw=W-padL-padR, ih=H-padT-padB;
+  const X=i=>padL+i*(iw/(rows.length-1));
+  const Y=v=>padT+ih-(v/max)*ih;
+  const pts=vals.map((v,i)=>[X(i),Y(v)]);
+  const line=pts.map((p,i)=>`${i?'L':'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
+  const area=`${line} L${X(rows.length-1).toFixed(1)} ${padT+ih} L${padL} ${padT+ih} Z`;
+  const first=vals.length>1?vals[vals.length-2]:vals[0], last=vals[vals.length-1];
+  const up=last>=first;
+  const col=up?'var(--green-br)':'var(--neg)';
+  const pct=first?Math.round((last-first)/first*100):(last>0?100:0);
+  const grid=[.25,.5,.75].map(f=>`<line x1="${padL}" y1="${(padT+ih-f*ih).toFixed(1)}" x2="${W-padR}" y2="${(padT+ih-f*ih).toFixed(1)}" stroke="var(--line)"/>`).join('');
+  const labels=rows.map((r,i)=>`<text x="${X(i).toFixed(1)}" y="${H-12}" fill="var(--faint)" font-size="13" text-anchor="middle">${esc(r.month.slice(5))}</text>`).join('');
+  return `<div class="block">
+    <div style="display:flex;justify-content:space-between;align-items:baseline">
+      <h3 style="margin:0">Visitors by month</h3>
+      <span style="font-size:13px;font-weight:600;color:${col}">${pct>0?'+':''}${pct}% vs last month</span>
+    </div>
+    <svg class="uptick" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin-top:8px;overflow:visible">
+      <defs><linearGradient id="ug" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="${col}" stop-opacity="0.3"/><stop offset="1" stop-color="${col}" stop-opacity="0"/>
+      </linearGradient></defs>
+      ${grid}
+      <path class="uparea" d="${area}" fill="url(#ug)" opacity="0"/>
+      <path class="upline" d="${line}" fill="none" stroke="${col}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle class="updot" cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="6" fill="${col}" opacity="0"/>
+      ${labels}
+    </svg>
+    <div class="upnum" data-to="${last}" style="text-align:right;font-family:Fraunces,serif;font-size:26px;font-weight:600;color:${col}">0</div>
+  </div>`;
+}
+function initUptick(){
+  const svg=document.querySelector('.uptick'); if(!svg) return;
+  const line=svg.querySelector('.upline'); const len=line.getTotalLength();
+  line.style.strokeDasharray=len; line.style.strokeDashoffset=len;
+  const num=document.querySelector('.upnum'); const to=+(num&&num.dataset.to||0);
+  const go=()=>{
+    line.style.transition='stroke-dashoffset 1.4s cubic-bezier(.35,0,.15,1)'; line.style.strokeDashoffset='0';
+    const ar=svg.querySelector('.uparea'); ar.style.transition='opacity .9s ease .5s'; ar.style.opacity='1';
+    const dot=svg.querySelector('.updot'); dot.style.transition='opacity .3s ease 1.3s'; dot.style.opacity='1';
+    if(num){ const t0=performance.now(); const tick=(t)=>{ const k=Math.min(1,(t-t0)/1300); num.textContent=Math.round(to*(1-Math.pow(1-k,3))).toLocaleString(); if(k<1)requestAnimationFrame(tick); }; requestAnimationFrame(tick); }
+  };
+  if('IntersectionObserver' in window){
+    const io=new IntersectionObserver((es)=>es.forEach(e=>{ if(e.isIntersecting){ go(); io.disconnect(); }}),{threshold:0.35});
+    io.observe(svg);
+  } else go();
+}
+
 function deltaHTML(d,pct){
   if(d===undefined||d===null) return '';
   const cls = d>0?'up':d<0?'down':'';
@@ -90,9 +143,10 @@ function deltaHTML(d,pct){
         ${d.summary ? `<p class="sum">${esc(d.summary)}</p>` : ''}
       </div>
 
-      <img class="card-img" src="${esc(d.cardUrl)}" alt="Monthly report card for ${esc(d.name)}" />
-      <a href="${esc(d.url)}" target="_blank" rel="noopener"><img class="card-img" style="aspect-ratio:16/10;object-fit:cover;object-position:top" src="/api/shot?slug=${encodeURIComponent(SLUG)}" alt="Your website" onerror="this.style.display='none'" /></a>
+      <a href="${esc(d.url)}" target="_blank" rel="noopener"><img class="card-img" style="aspect-ratio:16/9;max-height:340px;object-fit:cover;object-position:top;background:var(--panel) url('/brand/crown-white.png') center/40px no-repeat" src="/api/shot?slug=${encodeURIComponent(SLUG)}" alt="Your website" onerror="this.style.display='none'" /></a>
       ${d.ready===false?`<div class="block" style="border-color:var(--faint)"><div class="w">Your full report is being prepared — the numbers below fill in once your web team runs it.</div></div>`:''}
+
+      ${uptick(d.history)}
 
       <div class="stats">
         <div class="stat"><div class="k">Visitors · 30d</div><div class="v">${fmt(cur.visitors)}</div><div class="d">${deltaHTML(dv,true)}</div></div>
@@ -112,6 +166,7 @@ function deltaHTML(d,pct){
         Questions about your website? Just reply to the email this came from.
       </div>
     `;
+    initUptick();
   } catch (e) {
     root.innerHTML = `<div class="err">${esc(e.message||'This report link is not valid or has expired.')}</div>`;
   }

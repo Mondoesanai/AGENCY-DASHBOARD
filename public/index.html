@@ -329,11 +329,12 @@ function siteCard(s){
   const gl=g?g.letter:'NA';
   const seo=s.audit&&s.audit.ok?s.audit.scores.seo:null;
   const attn=(STATE.portfolio.attention||[]).includes(s.slug);
-  const noTrk=!s.hasTracker;
+  const trkTag = s.hasTracker ? (s.awaitingData?'<span class="tag" style="color:var(--faint);background:var(--surface2)">collecting…</span>':'')
+    : '<span class="tag" style="color:var(--warn);background:#2c2a17">no tracker</span>';
   return `<button class="card" data-slug="${s.slug}">
     ${attn?'<span class="attn-tri" title="Needs attention"></span>':''}
     <div>
-      <div class="name">${esc(s.name)}${s.source==='auto'?'<span class="tag auto">auto</span>':''}${s.billingSoon?'<span class="tag bill">billing soon</span>':''}${noTrk?'<span class="tag" style="color:var(--faint);background:var(--surface2)">no tracker</span>':''}</div>
+      <div class="name">${esc(s.name)}${s.source==='auto'?'<span class="tag auto">auto</span>':''}${s.billingSoon?'<span class="tag bill">billing soon</span>':''}${trkTag}</div>
       <div class="url">${esc(s.url.replace(/^https?:\/\//,''))}</div>
     </div>
     <div class="grade ${gl.toLowerCase()}" title="Overall health">${g?gl:'—'}</div>
@@ -351,19 +352,44 @@ function bars(items){
   return items.map(i=>`<div class="bar-row"><span title="${esc(i.member)}">${esc(String(i.member).slice(0,14))}</span><span class="bar-track"><span class="bar-fill" style="width:${Math.max(4,(i.score/max)*100)}%"></span></span><span class="n">${fmt(i.score)}</span></div>`).join('');
 }
 function histChart(hist){
-  const rows=(hist||[]).slice(-8);
-  if(rows.length<2) return '';
-  const vals=rows.map(r=>r.visitors||0), max=Math.max(...vals,1);
-  const w=100,h=44,step=w/(rows.length-1);
-  const pts=vals.map((v,i)=>`${(i*step).toFixed(1)},${(h-(v/max)*(h-6)-3).toFixed(1)}`);
-  const d='M'+pts.join(' L');
-  return `<div class="block"><h3>Visitors by month</h3>
-    <svg width="100%" height="120" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-      <path d="${d} L${w},${h} L0,${h} Z" fill="rgba(87,199,140,.12)"/>
-      <path d="${d}" fill="none" stroke="#57c78c" stroke-width="1.4" vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+  const rows=(hist||[]).slice(-10).filter(r=>r&&r.month);
+  if(rows.length<2) return '<div class="block"><h3>Visitors by month</h3><div class="note">Grows here once there are two months of data.</div></div>';
+  const vals=rows.map(r=>r.visitors||0);
+  const max=Math.max(...vals,1)*1.18;
+  const W=900,H=280,padL=10,padR=10,padT=14,padB=30,iw=W-padL-padR,ih=H-padT-padB;
+  const X=i=>padL+i*(iw/(rows.length-1)), Y=v=>padT+ih-(v/max)*ih;
+  const pts=vals.map((v,i)=>[X(i),Y(v)]);
+  const line=pts.map((p,i)=>`${i?'L':'M'}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
+  const area=`${line} L${X(rows.length-1).toFixed(1)} ${padT+ih} L${padL} ${padT+ih} Z`;
+  const first=vals[vals.length-2]??vals[0], last=vals[vals.length-1];
+  const up=last>=first, col=up?'var(--green-br)':'var(--neg)';
+  const pct=first?Math.round((last-first)/first*100):(last>0?100:0);
+  const labels=rows.map((r,i)=>`<text x="${X(i).toFixed(1)}" y="${H-10}" fill="var(--faint)" font-size="13" text-anchor="middle">${esc(r.month.slice(5))}</text>`).join('');
+  return `<div class="block">
+    <div style="display:flex;justify-content:space-between;align-items:baseline"><h3 style="margin:0">Visitors by month</h3><span style="font-size:12.5px;font-weight:600;color:${col}">${pct>0?'+':''}${pct}% vs last month</span></div>
+    <svg class="uptick" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin-top:6px;overflow:visible">
+      <defs><linearGradient id="dg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${col}" stop-opacity="0.28"/><stop offset="1" stop-color="${col}" stop-opacity="0"/></linearGradient></defs>
+      <path class="uparea" d="${area}" fill="url(#dg)" opacity="0"/>
+      <path class="upline" d="${line}" fill="none" stroke="${col}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle class="updot" cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="6" fill="${col}" opacity="0"/>
+      ${labels}
     </svg>
-    <div style="display:flex;justify-content:space-between;color:var(--faint);font-size:11px">${rows.map(r=>`<span>${esc((r.month||'').slice(5))}</span>`).join('')}</div>
+    <div class="upnum" data-to="${last}" style="text-align:right;font-family:Fraunces,serif;font-size:22px;font-weight:600;color:${col}">0</div>
   </div>`;
+}
+function initUptick(scope){
+  const svg=(scope||document).querySelector('.uptick'); if(!svg) return;
+  const line=svg.querySelector('.upline'); const len=line.getTotalLength();
+  line.style.strokeDasharray=len; line.style.strokeDashoffset=len;
+  const num=(scope||document).querySelector('.upnum'); const to=+(num&&num.dataset.to||0);
+  const go=()=>{
+    line.style.transition='stroke-dashoffset 1.4s cubic-bezier(.35,0,.15,1)'; line.style.strokeDashoffset='0';
+    const ar=svg.querySelector('.uparea'); ar.style.transition='opacity .9s ease .5s'; ar.style.opacity='1';
+    const dot=svg.querySelector('.updot'); dot.style.transition='opacity .3s ease 1.3s'; dot.style.opacity='1';
+    if(num){ const t0=performance.now(); const tick=(t)=>{ const k=Math.min(1,(t-t0)/1300); num.textContent=Math.round(to*(1-Math.pow(1-k,3))).toLocaleString(); if(k<1)requestAnimationFrame(tick); }; requestAnimationFrame(tick); }
+  };
+  if('IntersectionObserver' in window){ const io=new IntersectionObserver((es)=>es.forEach(e=>{ if(e.isIntersecting){ go(); io.disconnect(); }}),{threshold:0.3, root:document.querySelector('#drawer')}); io.observe(svg); setTimeout(()=>{ if(line.style.strokeDashoffset!=='0'&&svg.getBoundingClientRect().top<innerHeight) go(); },400); }
+  else go();
 }
 
 /* ---------- draft email (client-side fallback) ---------- */
@@ -517,6 +543,7 @@ function openDrawer(slug){
   `;
 
   wireDrawer(s,bf);
+  initUptick($('#drawerIn'));
   $('#scrim').classList.add('open'); $('#drawer').classList.add('open'); $('#drawer').setAttribute('aria-hidden','false');
 }
 function fRow(f){ return `<div class="finding"><span class="sev ${f.severity}">${f.severity==='med'?'MED':f.severity}</span><div><div class="ft">${esc(f.title)}</div>${f.detail?`<div class="fd">${esc(f.detail)}</div>`:''}</div></div>`; }
@@ -545,12 +572,23 @@ function eventsBlock(s){
 }
 function noTrackerBlock(s){
   const line=`<script defer src="${location.origin}/t.js"></scr`+`ipt>`;
+  if(s.hasTracker && s.awaitingData){
+    return `<div class="block">
+      <h3>Tracker installed — waiting for the first visits</h3>
+      <div class="note">The snippet is live (last ping ${s.lastSeen?timeAgo(s.lastSeen):'just now'}). Visitor counts, sources and conversions will appear here as people visit${s.stats&&s.stats.window?` — this covers ${esc(s.stats.window.start)} onward`:''}. SEO / speed / uptime already work.</div>
+    </div>`;
+  }
   return `<div class="block" style="border-color:var(--warn)">
-    <h3 style="color:var(--warn)">No tracker on this site yet</h3>
-    <div class="note">SEO / speed / uptime work from the URL alone, but visitor counts, traffic sources and conversions need one line added before <code>&lt;/body&gt;</code> on every page:</div>
+    <h3 style="color:var(--warn)">No tracker detected on this site yet</h3>
+    <div class="note">SEO / speed / uptime work from the URL alone, but visitor counts, traffic sources and conversions need this one line added before <code>&lt;/body&gt;</code> on every page. It auto-registers the site here on the first page load.</div>
     <div class="email-draft" style="margin-top:8px">${esc(line)}</div>
     <div class="btn-row"><button class="btn sm" id="copySnippet">Copy the line</button></div>
   </div>`;
+}
+function timeAgo(ts){
+  const s=Math.max(1,Math.round((Date.now()-ts)/1000));
+  if(s<60) return s+'s ago'; if(s<3600) return Math.round(s/60)+'m ago';
+  if(s<86400) return Math.round(s/3600)+'h ago'; return Math.round(s/86400)+'d ago';
 }
 
 function wireDrawer(s,bf){
@@ -595,9 +633,19 @@ function wireDrawer(s,bf){
   $('#ecRegen')?.addEventListener('click',async(e)=>{
     const k=needKey(); if(!k) return;
     steer=($('#ecSteer').value||'').trim();
-    e.target.disabled=true; e.target.textContent='Rewriting…';
+    e.target.disabled=true; e.target.textContent='Rewriting… (10–20s)';
+    $('#ecMsg').textContent='Asking AI to rewrite'+(steer?` — "${steer}"`:'')+'…';
     const j=await fetch(`/api/report?slug=${encodeURIComponent(s.slug)}&emailonly=1&style=${encodeURIComponent(steer)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-    if(j.ok){ await load(); openDrawer(s.slug); } else { setKey(''); e.target.textContent='Failed — key?'; e.target.disabled=false; }
+    const r0=(j.reports&&j.reports[0])||{};
+    if(j.ok && r0.aiUsed){
+      await load(); openDrawer(s.slug);
+      setTimeout(()=>{ const el=$('#ecDraft')||$('#ecRegen'); if(el) el.scrollIntoView({block:'center'}); },100);
+    } else if(j.ok && !r0.aiUsed){
+      e.target.disabled=false; e.target.textContent='Regenerate email';
+      $('#ecMsg').textContent='AI didn’t respond — check ANTHROPIC_API_KEY is set in Vercel and the account has credit. (Email left unchanged.)';
+    } else {
+      setKey(''); e.target.textContent='Failed — key?'; e.target.disabled=false;
+    }
   });
 
   const nt=$('#notes');
