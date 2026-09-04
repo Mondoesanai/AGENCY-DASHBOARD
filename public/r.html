@@ -91,6 +91,8 @@ function deltaHTML(d,pct){
       </div>
 
       <img class="card-img" src="${esc(d.cardUrl)}" alt="Monthly report card for ${esc(d.name)}" />
+      <a href="${esc(d.url)}" target="_blank" rel="noopener"><img class="card-img" style="aspect-ratio:16/10;object-fit:cover;object-position:top" src="/api/shot?slug=${encodeURIComponent(SLUG)}" alt="Your website" onerror="this.style.display='none'" /></a>
+      ${d.ready===false?`<div class="block" style="border-color:var(--faint)"><div class="w">Your full report is being prepared — the numbers below fill in once your web team runs it.</div></div>`:''}
 
       <div class="stats">
         <div class="stat"><div class="k">Visitors · 30d</div><div class="v">${fmt(cur.visitors)}</div><div class="d">${deltaHTML(dv,true)}</div></div>

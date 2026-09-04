@@ -64,7 +64,7 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
 }
 
 const DEMO = {
-  portfolio: { sites: 3, visitors30: 1284, conversions30: 47, mrr: 450, avgSeo: 88, improving: 2, openFindings: 15, attention: [], noTracker: [], auditQuota: false, emailEnabled: true, aiEnabled: true, backend: 'demo' },
+  portfolio: { sites: 3, visitors30: 1284, conversions30: 47, mrr: 450, avgSeo: 88, improving: 2, openFindings: 15, attention: ['apostello-detailing'], noTracker: [], auditQuota: false, emailEnabled: true, aiEnabled: true, backend: 'demo' },
   sites: [
     demoSite('relax-tax', 'Relax Tax', 'https://relaxtax.vercel.app', 'Kyle', 612, 18, 34, 9, 91, 96, 'B', 150, new Date().getUTCDate()),
     demoSite('apostello-detailing', 'Apostello Detailing', 'https://apostellodetailing.vercel.app', 'Shiloh', 431, 33, 9, 40, 84, 72, 'C', 200, 12),
@@ -91,11 +91,16 @@ createServer(async (req, res) => {
     const s = DEMO.sites.find(x => x.slug === u.searchParams.get('slug')) || DEMO.sites[0];
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({
-      name: s.name, url: s.url, month: 'September 2026', headline: s.report.headline, summary: s.report.summary,
+      name: s.name, url: s.url, ready: true, month: 'September 2026', headline: s.report.headline, summary: s.report.summary,
       wins: s.report.wins, improvements: s.improvements, clientActions: s.clientActions, grade: s.grade, scores: s.audit.scores, vitals: s.audit.vitals,
       history: s.history, current: { visitors: s.stats.visitors, conversions: s.stats.conversions, deltas: s.stats.deltas },
       uptime: { up: true, ms: 180 }, cardUrl: `/api/card?slug=${s.slug}`,
     }));
+  }
+  if (path === '/api/shot') {
+    // local preview: 1x1 transparent gif so the layout shows without hitting mShots
+    res.writeHead(200, { 'Content-Type': 'image/gif' });
+    return res.end(Buffer.from('R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7', 'base64'));
   }
   if (path.startsWith('/api/')) { res.writeHead(200, { 'Content-Type': 'application/json' }); return res.end('{"ok":true,"demo":true}'); }
 

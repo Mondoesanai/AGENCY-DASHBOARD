@@ -26,21 +26,40 @@ export default async function handler(req, res) {
   ]);
   const report = reportRaw ? (typeof reportRaw === 'string' ? JSON.parse(reportRaw) : reportRaw) : null;
   const health = healthRaw ? (typeof healthRaw === 'string' ? JSON.parse(healthRaw) : healthRaw) : null;
-  const grade = overallGrade(audit, stats);
+
+  // one fresh attempt if the cached audit is a stale failure
+  let liveAudit = audit;
+  if (!liveAudit || !liveAudit.ok) {
+    liveAudit = await runAudit(site.url, { fresh: true }).catch(() => liveAudit || { ok: false });
+  }
+  const lastRow = history && history.length ? history[history.length - 1] : null;
+
+  // scores: fresh audit -> last history snapshot -> last saved report metrics
+  let scores = null;
+  if (liveAudit?.ok) {
+    scores = liveAudit.scores;
+  } else {
+    const seo = lastRow?.seo ?? report?.metrics?.seo ?? null;
+    const perf = lastRow?.perf ?? report?.metrics?.perf ?? null;
+    if (seo != null || perf != null) scores = { seo, performance: perf, accessibility: null, bestPractices: null };
+  }
+  const grade = overallGrade(liveAudit, stats) || report?.grade || lastRow?.grade || null;
+  const ready = !!(report || (scores && scores.seo != null) || (stats && stats.hasData));
 
   res.setHeader('Cache-Control', 's-maxage=600, stale-while-revalidate=3600');
   res.status(200).json({
     name: site.name,
     url: site.url,
+    ready,
     month: report?.month || new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' }),
     headline: report?.headline || `${site.name} — website performance`,
     summary: report?.summary || '',
     wins: report?.wins || [],
-    improvements: report?.improvements || improvementsForClient(audit, stats),
-    clientActions: report?.clientActions || clientActions(audit, stats, site),
+    improvements: report?.improvements || improvementsForClient(liveAudit, stats),
+    clientActions: report?.clientActions || clientActions(liveAudit, stats, site),
     grade,
-    scores: audit?.ok ? audit.scores : null,
-    vitals: audit?.ok ? audit.vitals : null,
+    scores,
+    vitals: liveAudit?.ok ? liveAudit.vitals : null,
     history: (history || []).map((h) => ({
       month: h.month,
       visitors: h.visitors,

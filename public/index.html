@@ -57,7 +57,9 @@
   .btn.danger{background:none;border-color:var(--neg);color:var(--neg);box-shadow:none;}
   .btn[disabled]{opacity:.5;pointer-events:none;}
 
-  .attention{background:rgba(216,161,58,.1);border:1px solid rgba(216,161,58,.35);color:var(--warn);border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:18px;}
+  .attention{background:rgba(234,181,74,.12);border:1px solid rgba(234,181,74,.4);color:var(--warn);border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
+  .attention .link{background:none;border:1px solid rgba(234,181,74,.5);color:var(--warn);border-radius:7px;padding:4px 9px;font-size:12px;white-space:nowrap;}
+  .attention .link:hover{background:rgba(234,181,74,.15);}
 
   .overview{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:30px;}
   .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 15px 14px;}
@@ -138,6 +140,9 @@
   .note{font-size:12.5px;color:var(--muted);margin-top:8px;}
   .email-draft{white-space:pre-wrap;font-size:13px;line-height:1.65;background:var(--bg);border:1px dashed var(--line);border-radius:10px;padding:13px;margin-top:10px;}
   .card-thumb{width:100%;border-radius:10px;border:1px solid var(--line);margin-top:10px;display:block;}
+  .site-shot{width:100%;max-height:250px;border-radius:12px;border:1px solid var(--line);margin-top:12px;display:block;aspect-ratio:16/9;object-fit:cover;object-position:top;background:var(--surface2) url('/brand/crown-white.png') center/32px no-repeat;}
+  .attn-tri{position:absolute;top:0;right:0;width:0;height:0;border-top:22px solid var(--warn);border-left:22px solid transparent;border-top-right-radius:3px;}
+  .card{position:relative;overflow:hidden;}
   .loading{color:var(--faint);padding:60px 0;text-align:center;}
   details.log summary{cursor:pointer;color:var(--muted);font-size:13px;}
   .logitem{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 0;border-top:1px solid var(--line);color:var(--muted);}
@@ -301,8 +306,15 @@ function render(data){
   ].map(([k,v,d])=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
 
   const att=$('#attention');
-  if(p.attention&&p.attention.length){ att.hidden=false; att.textContent=`⚠ Needs attention: ${p.attention.join(', ')}`; }
-  else att.hidden=true;
+  let ackList=[]; try{ ackList=JSON.parse(localStorage.getItem('iw_ack')||'[]'); }catch{}
+  const ackKey=(p.attention||[]).slice().sort().join('|');
+  const unacked=(p.attention&&p.attention.length && !ackList.includes(ackKey));
+  if(unacked){
+    att.hidden=false;
+    att.innerHTML=`<span>⚠ Needs attention: <strong>${(p.attention).map(esc).join(', ')}</strong></span>
+      <button class="link" id="ackBtn" title="Acknowledge">✕ dismiss</button>`;
+    $('#ackBtn').onclick=()=>{ try{ ackList.push(ackKey); localStorage.setItem('iw_ack',JSON.stringify(ackList.slice(-20))); }catch{} att.hidden=true; };
+  } else att.hidden=true;
 
   $('#siteCount').textContent=`${data.sites.length} tracked`;
   if(p.auditQuota) $('#footNote').innerHTML=`Updated ${new Date(data.generatedAt).toLocaleString()}. <strong>SEO scans rate-limited</strong> — set a free <code>PAGESPEED_API_KEY</code> in Vercel.`;
@@ -316,9 +328,12 @@ function siteCard(s){
   const st=s.stats||{}, g=s.grade;
   const gl=g?g.letter:'NA';
   const seo=s.audit&&s.audit.ok?s.audit.scores.seo:null;
+  const attn=(STATE.portfolio.attention||[]).includes(s.slug);
+  const noTrk=!s.hasTracker;
   return `<button class="card" data-slug="${s.slug}">
+    ${attn?'<span class="attn-tri" title="Needs attention"></span>':''}
     <div>
-      <div class="name">${esc(s.name)}${s.source==='auto'?'<span class="tag auto">auto</span>':''}${s.billingSoon?'<span class="tag bill">billing soon</span>':''}</div>
+      <div class="name">${esc(s.name)}${s.source==='auto'?'<span class="tag auto">auto</span>':''}${s.billingSoon?'<span class="tag bill">billing soon</span>':''}${noTrk?'<span class="tag" style="color:var(--faint);background:var(--surface2)">no tracker</span>':''}</div>
       <div class="url">${esc(s.url.replace(/^https?:\/\//,''))}</div>
     </div>
     <div class="grade ${gl.toLowerCase()}" title="Overall health">${g?gl:'—'}</div>
@@ -389,6 +404,7 @@ function openDrawer(slug){
   $('#drawerIn').innerHTML=`
     <h2>${esc(s.name)}</h2>
     <div class="url"><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url.replace(/^https?:\/\//,''))}</a>${s.client?' · '+esc(s.client):''}${s.priceMonthly?' · '+money(s.priceMonthly)+'/mo':''}${s.billingDay?' · bills on the '+s.billingDay:''}</div>
+    <a href="${esc(s.url)}" target="_blank" rel="noopener"><img class="site-shot" src="/api/shot?slug=${encodeURIComponent(s.slug)}" alt="Screenshot of ${esc(s.name)}" loading="lazy" onerror="this.style.display='none'" /></a>
 
     <div class="mgrid">
       <div class="box"><div class="k">Visitors 30d</div><div class="v">${st.hasData?fmt(st.visitors):'—'}</div><div class="d">${st.hasData?deltaHTML(st.deltas?.visitors):'add snippet'}</div></div>
@@ -488,8 +504,13 @@ function openDrawer(slug){
         <label class="field"><span>Avg $ per enquiry (optional)</span><input id="cf_lead" value="${s.leadValue||''}" /></label>
       </div>
       <label class="field"><span>Google review link (optional)</span><input id="cf_review" value="${esc(s.reviewUrl||'')}" /></label>
-      <label class="field"><span>What counts as a conversion? (comma-separated event names, blank = all)</span><input id="cf_conv" value="${esc((s.conversionEvents||[]).join(', '))}" placeholder="call, quote-form, booking" /></label>
+      <label class="field"><span>What counts as a conversion? (event names, blank = all)</span><input id="cf_conv" value="${esc((s.conversionEvents||[]).join(', '))}" placeholder="call, quote-form, booking" /></label>
       <p class="note" style="margin-top:-4px">Events firing on this site: ${((s.stats&&s.stats.events)||[]).map(e=>esc(e.member)).join(', ')||'none yet'}</p>
+      <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:8px 0">
+        <div class="note" style="margin:0 0 6px">Not sure of the event name? Describe the action in plain English and let AI work it out:</div>
+        <div class="btn-row"><input id="cf_convdesc" style="flex:1" placeholder='e.g. "when someone clicks the RSVP button"' /><button class="btn sm" id="cf_convai">✨ Figure it out</button></div>
+        <div id="cf_convout" class="note" style="margin-top:8px"></div>
+      </div>
       <label class="toggle"><input type="checkbox" id="cf_auto" ${s.autoSend?'checked':''}/> Auto-send the report email on the billing day</label>
       <div class="btn-row"><button class="btn sm" id="cfSave">Save settings</button><button class="btn danger sm" id="cfDel">Remove site</button></div>
     </details>
@@ -598,6 +619,21 @@ function wireDrawer(s,bf){
     const k=needKey(); if(!k) return;
     const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'changelog-del',slug:s.slug,index:+b.dataset.i});
     if(j.ok){ s.changelog=j.changelog; openDrawer(s.slug); }
+  });
+
+  $('#cf_convai')?.addEventListener('click',async(e)=>{
+    const k=needKey(); if(!k) return;
+    const desc=$('#cf_convdesc').value.trim(); if(!desc) return;
+    e.target.disabled=true; e.target.textContent='Thinking…';
+    const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'analyze-conversion',slug:s.slug,description:desc});
+    e.target.disabled=false; e.target.textContent='✨ Figure it out';
+    if(j.ok){
+      $('#cf_convout').innerHTML=`<div style="color:var(--ink)"><strong>${esc(j.explanation||'')}</strong></div>
+        ${j.instruction&&!/nothing to do/i.test(j.instruction)?`<div class="email-draft" style="margin-top:6px">${esc(j.instruction)}</div>`:''}
+        <div style="margin-top:6px">Added <code>${esc(j.event_name)}</code> to the counted list — hit <strong>Save settings</strong> to keep it.</div>`;
+      const cur=$('#cf_conv').value.split(/[, ]+/).filter(Boolean);
+      if(!cur.includes(j.event_name)){ cur.push(j.event_name); $('#cf_conv').value=cur.join(', '); }
+    } else { $('#cf_convout').textContent=j.error||'Could not analyze — add ANTHROPIC_API_KEY in Vercel for this.'; }
   });
 
   $('#cfSave').addEventListener('click',async(e)=>{
