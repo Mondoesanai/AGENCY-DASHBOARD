@@ -1,6 +1,7 @@
 // Receives tracking beacons from t.js and rolls them into daily counters.
 // Cost: $0 — it's just your own function writing to your own KV store.
 import { store, dayKey } from '../lib/store.js';
+import { slugify } from '../lib/registry.js';
 
 function hash(str) {
   let h = 5381;
@@ -8,11 +9,18 @@ function hash(str) {
   return (h >>> 0).toString(36);
 }
 
+// For the site id: if the tracker sent a hostname (has a dot), turn it into a
+// clean slug ("one-more-thing-gold.vercel.app" -> "one-more-thing-gold").
+// If the owner set an explicit data-site="my-slug", keep it as-is.
 function cleanSlug(s) {
-  return String(s || 'unknown')
-    .toLowerCase()
-    .replace(/[^a-z0-9.-]/g, '')
-    .slice(0, 60);
+  const raw = String(s || 'unknown').toLowerCase().trim();
+  if (raw.includes('.')) return slugify(raw) || 'unknown';
+  return (
+    raw
+      .replace(/[^a-z0-9._-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'unknown'
+  );
 }
 
 function refHost(ref) {

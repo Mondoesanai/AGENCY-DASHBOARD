@@ -110,6 +110,6 @@ export default async function handler(req, res) {
     backend: store.backend,
   };
 
-  res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=3600');
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
   res.status(200).json({ portfolio, sites: rows, generatedAt: Date.now() });
 }

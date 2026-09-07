@@ -135,6 +135,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
+    if (action === 'delete-many') {
+      const slugs = Array.isArray(body.slugs) ? body.slugs.filter(Boolean).slice(0, 50) : [];
+      if (!slugs.length) return res.status(400).json({ ok: false, error: 'need slugs' });
+      for (const slug of slugs) await deleteSiteConfig(slug);
+      return res.status(200).json({ ok: true, removed: slugs.length });
+    }
+
     if (action === 'notes') {
       if (!body.slug) return res.status(400).json({ ok: false, error: 'need slug' });
       await store.set(`notes:${body.slug}`, String(body.notes || '').slice(0, 8000));

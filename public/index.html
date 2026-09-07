@@ -143,6 +143,12 @@
   .site-shot{width:100%;max-height:250px;border-radius:12px;border:1px solid var(--line);margin-top:12px;display:block;aspect-ratio:16/9;object-fit:cover;object-position:top;background:var(--surface2) url('/brand/crown-white.png') center/32px no-repeat;}
   .attn-tri{position:absolute;top:0;right:0;width:0;height:0;border-top:22px solid var(--warn);border-left:22px solid transparent;border-top-right-radius:3px;}
   .card{position:relative;overflow:hidden;}
+  .card .cbx{position:absolute;top:10px;left:10px;width:20px;height:20px;border-radius:6px;border:2px solid var(--muted);display:grid;place-items:center;font-size:13px;font-weight:700;color:#04120c;background:var(--surface2);}
+  .sites.picking .card{cursor:pointer;padding-left:42px;}
+  .card.sel{border-left-color:var(--green);background:var(--green-soft);}
+  .card.sel .cbx{background:var(--green);border-color:var(--green);}
+  .bulkbar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:55;display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;box-shadow:var(--shadow);font-size:13px;}
+  .bulkbar[hidden]{display:none;}
   .loading{color:var(--faint);padding:60px 0;text-align:center;}
   details.log summary{cursor:pointer;color:var(--muted);font-size:13px;}
   .logitem{display:flex;justify-content:space-between;gap:10px;font-size:12.5px;padding:6px 0;border-top:1px solid var(--line);color:var(--muted);}
@@ -178,6 +184,7 @@
       <span class="pill" id="monthPill">—</span>
       <button class="btn ghost" id="refreshBtn">Refresh</button>
       <button class="btn" id="addBtn">+ Add site</button>
+      <button class="btn ghost" id="selectBtn">Select</button>
       <button class="btn ghost" id="genBtn">Generate all</button>
     </div>
   </header>
@@ -188,6 +195,12 @@
   <div class="section-h"><h2>Sites</h2><span id="siteCount"></span></div>
   <div class="sites" id="sites"><div class="loading">Loading portfolio…</div></div>
   <p class="note" id="footNote"></p>
+</div>
+
+<div class="bulkbar" id="bulkbar" hidden>
+  <span id="bulkCount">0 selected</span>
+  <button class="btn danger sm" id="bulkRemove">Remove from dashboard</button>
+  <button class="btn ghost sm" id="bulkCancel">Cancel</button>
 </div>
 
 <div class="scrim" id="scrim"></div>
@@ -273,12 +286,13 @@ const trendOf=(s)=>{
 };
 
 let STATE=null, EMAIL_ENABLED=false, AI_ENABLED=false;
+let selectMode=false; const selected=new Set();
 
 async function load(){
   $('#sites').innerHTML='<div class="loading">Loading portfolio…</div>';
   let data;
   try{
-    const r=await fetch('/api/sites',{cache:'no-store'});
+    const r=await fetch('/api/sites?t='+Date.now(),{cache:'no-store'});
     data=await r.json();
     if(!data.sites) throw 0;
   }catch{
@@ -321,7 +335,11 @@ function render(data){
   else $('#footNote').textContent=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
 
   $('#sites').innerHTML=data.sites.map(siteCard).join('');
-  data.sites.forEach(s=>$(`[data-slug="${s.slug}"]`)?.addEventListener('click',()=>openDrawer(s.slug)));
+  $('#sites').classList.toggle('picking',selectMode);
+  data.sites.forEach(s=>$(`[data-slug="${s.slug}"]`)?.addEventListener('click',()=>{
+    if(selectMode){ toggleSel(s.slug); } else { openDrawer(s.slug); }
+  }));
+  updateBulkBar();
 }
 
 function siteCard(s){
@@ -331,8 +349,10 @@ function siteCard(s){
   const attn=(STATE.portfolio.attention||[]).includes(s.slug);
   const trkTag = s.hasTracker ? (s.awaitingData?'<span class="tag" style="color:var(--faint);background:var(--surface2)">collecting…</span>':'')
     : '<span class="tag" style="color:var(--warn);background:#2c2a17">no tracker</span>';
-  return `<button class="card" data-slug="${s.slug}">
-    ${attn?'<span class="attn-tri" title="Needs attention"></span>':''}
+  const isSel=selected.has(s.slug);
+  return `<button class="card ${isSel?'sel':''}" data-slug="${s.slug}">
+    ${attn&&!selectMode?'<span class="attn-tri" title="Needs attention"></span>':''}
+    ${selectMode?`<span class="cbx">${isSel?'✓':''}</span>`:''}
     <div>
       <div class="name">${esc(s.name)}${s.source==='auto'?'<span class="tag auto">auto</span>':''}${s.billingSoon?'<span class="tag bill">billing soon</span>':''}${trkTag}</div>
       <div class="url">${esc(s.url.replace(/^https?:\/\//,''))}</div>
@@ -706,6 +726,29 @@ $('#scrim').addEventListener('click',closeDrawer);
 $('#drawerX').addEventListener('click',closeDrawer);
 document.addEventListener('keydown',e=>e.key==='Escape'&&(closeDrawer(),$('#modal').classList.remove('open')));
 $('#refreshBtn').addEventListener('click',load);
+
+/* ---------- bulk select + remove ---------- */
+function toggleSel(slug){ selected.has(slug)?selected.delete(slug):selected.add(slug); if(STATE) render(STATE); }
+function updateBulkBar(){
+  const bar=$('#bulkbar');
+  bar.hidden=!selectMode;
+  $('#bulkCount').textContent=`${selected.size} selected`;
+  $('#bulkRemove').disabled=selected.size===0;
+  $('#selectBtn').textContent=selectMode?'Done':'Select';
+}
+function exitSelect(){ selectMode=false; selected.clear(); if(STATE) render(STATE); }
+$('#selectBtn').addEventListener('click',()=>{ selectMode=!selectMode; if(!selectMode) selected.clear(); if(STATE) render(STATE); });
+$('#bulkCancel').addEventListener('click',exitSelect);
+$('#bulkRemove').addEventListener('click',async(e)=>{
+  if(!selected.size) return;
+  const k=needKey(); if(!k) return;
+  const slugs=[...selected];
+  if(!confirm(`Remove ${slugs.length} site${slugs.length>1?'s':''} from the dashboard?\n\n${slugs.join(', ')}\n\n(The websites themselves are untouched. They'll re-appear if their tracker snippet is still live and someone visits.)`)) return;
+  e.target.disabled=true; e.target.textContent='Removing…';
+  const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'delete-many',slugs});
+  if(j.ok){ exitSelect(); await load(); }
+  else { e.target.disabled=false; e.target.textContent='Remove from dashboard'; alert(j.error||'Failed — check your admin key.'); }
+});
 
 $('#genBtn').addEventListener('click',async()=>{
   const k=needKey(); if(!k) return;
