@@ -23,13 +23,21 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
       seo: Math.min(100, seo - (4 - i) * 3), grade: { letter, score: seo - 5 },
     };
   });
+  const setupFee = price * 8;
+  const monthsActive = 6;
+  const lifetimeRevenue = setupFee + price * monthsActive;
+  const expenses = [{ date: '2026-09-01', label: 'Google Ads', amount: 120, recurring: true }];
+  const expensesTotal = expenses.reduce((t, e) => t + e.amount, 0);
   return {
     slug, name, url, client, email: '', phone: '', priceMonthly: price, leadValue: 120,
+    setupFee, startedAt: Date.now() - monthsActive * 30 * 864e5, monthsActive, lifetimeRevenue,
+    expenses, expensesTotal, netProfit: lifetimeRevenue - expensesTotal,
     billingDay: bday, autoSend: false, reviewUrl: '', conversionEvents: [], source: 'ui',
     billingSoon: bday === new Date().getUTCDate(), hasTracker: true, awaitingData: false,
     lastSeen: Date.now() - 3600000, reportUrl: `/r/${slug}?t=demo`,
     stats: {
       hasData: true, visitors: v, pageviews: Math.round(v * 2.2), conversions: c,
+      avgDwell: 18 + Math.round(seo / 8), avgDwellPrev: 15,
       deltas: { visitors: dV, pageviews: dV, conversions: dC },
       device: { mobile: Math.round(v * 0.66), desktop: Math.round(v * 0.34) },
       trend: history.map(h => h.visitors),
@@ -71,8 +79,12 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
   };
 }
 
+const _former = [{ slug: 'old-client', name: 'Corner Cafe', client: 'Dana', reason: 'cancelled', note: 'sold the business', leftDate: '2026-07-15', monthsActive: 9, priceMonthly: 90, setupFee: 600, lifetimeRevenue: 1410, recordedAt: Date.now() - 40 * 864e5 }];
 const DEMO = {
-  portfolio: { sites: 3, visitors30: 1284, conversions30: 47, mrr: 450, avgSeo: 88, improving: 2, openFindings: 15, attention: ['apostello-detailing'], noTracker: [], auditQuota: false, emailEnabled: true, aiEnabled: true, backend: 'demo' },
+  portfolio: { sites: 3, visitors30: 1284, conversions30: 47, mrr: 450, avgSeo: 88, improving: 2, openFindings: 15, attention: ['apostello-detailing'], noTracker: [], auditQuota: false, emailEnabled: true, aiEnabled: true, backend: 'demo',
+    finances: { mrr: 450, annualRunRate: 5400, setupTotal: 3600, recurringToDate: 2700, lifetimeRevenue: 7710, activeRevenue: 6300, churnRevenue: 1410, expensesTotal: 360, netProfit: 7350,
+      perSite: [{ slug: 'relax-tax', name: 'Relax Tax', setupFee: 1200, priceMonthly: 150, monthsActive: 6, lifetimeRevenue: 2100, expensesTotal: 120, netProfit: 1980 }] },
+    formerClients: _former, churnedCount: 1, mrrLost: 90 },
   sites: [
     demoSite('relax-tax', 'Relax Tax', 'https://relaxtax.vercel.app', 'Kyle', 612, 18, 34, 9, 91, 96, 'B', 150, new Date().getUTCDate()),
     demoSite('apostello-detailing', 'Apostello Detailing', 'https://apostellodetailing.vercel.app', 'Shiloh', 431, 33, 9, 40, 84, 72, 'C', 200, 12),

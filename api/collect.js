@@ -64,7 +64,7 @@ export default async function handler(req, res) {
   const slug = cleanSlug(d.s);
   if (slug === 'unknown') return res.status(400).json({ ok: false, error: 'missing site id' });
 
-  const type = d.e === 'ev' ? 'ev' : 'pv';
+  const type = d.e === 'ev' ? 'ev' : d.e === 'dur' ? 'dur' : 'pv';
   const path = String(d.p || '/').slice(0, 120);
   const width = Number(d.w) || 0;
   const day = dayKey();
@@ -102,6 +102,13 @@ export default async function handler(req, res) {
     tasks.push(store.zincr(`${p}:day:${day}:refs`, refHost(d.r)));
     if (width) {
       tasks.push(store.incr(`${p}:day:${day}:${width < 768 ? 'mobile' : 'desktop'}`));
+    }
+  } else if (type === 'dur') {
+    // engaged seconds on a page — for the "Time on site" metric
+    const secs = Math.max(0, Math.min(1800, Math.round(Number(d.d) || 0)));
+    if (secs > 0) {
+      tasks.push(store.incr(`${p}:day:${day}:dursum`, secs));
+      tasks.push(store.incr(`${p}:day:${day}:durcnt`));
     }
   } else {
     const name = cleanSlug(d.n || 'click') || 'click';

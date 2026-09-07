@@ -10,6 +10,42 @@ const normEvent = (s) =>
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
 
+async function readList(key) {
+  const raw = await store.get(key).catch(() => null);
+  try {
+    const a = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(a) ? a : [];
+  } catch {
+    return [];
+  }
+}
+
+// Store a "former client" record when a site is removed because the client left.
+// body.churn: { reason: 'cancelled'|'test'|..., leftDate: 'YYYY-MM-DD', note }
+async function recordChurn(slug, churn) {
+  if (!churn || !churn.reason || churn.reason === 'test' || churn.reason === 'mistake') return;
+  const cfg = (await getSiteConfig(slug)) || {};
+  const startedAt = cfg.startedAt || cfg.addedAt || Date.now();
+  const left = Date.parse(churn.leftDate) || Date.now();
+  const monthsActive = Math.max(1, Math.round((left - startedAt) / (30 * 864e5)));
+  const rec = {
+    slug,
+    name: cfg.name || slug,
+    client: cfg.client || '',
+    reason: String(churn.reason).slice(0, 30),
+    note: String(churn.note || '').slice(0, 300),
+    leftDate: new Date(left).toISOString().slice(0, 10),
+    startedAt,
+    monthsActive,
+    priceMonthly: cfg.priceMonthly || 0,
+    setupFee: cfg.setupFee || 0,
+    lifetimeRevenue: (cfg.setupFee || 0) + (cfg.priceMonthly || 0) * monthsActive,
+    recordedAt: Date.now(),
+  };
+  await store.set(`churn:${slug}`, JSON.stringify(rec));
+  await store.sadd('churn:index', slug);
+}
+
 // Turn a plain-English "what counts as a conversion" description into a real
 // event name + setup instructions, by looking at the site's actual HTML.
 async function analyzeConversion({ site, description }) {
@@ -120,6 +156,8 @@ export default async function handler(req, res) {
         email: body.email || '',
         phone: body.phone || '',
         priceMonthly: body.priceMonthly,
+        setupFee: body.setupFee,
+        startedAt: body.startedAt,
         billingDay: body.billingDay,
         autoSend: body.autoSend,
         leadValue: body.leadValue,
@@ -131,6 +169,7 @@ export default async function handler(req, res) {
 
     if (action === 'delete') {
       if (!body.slug) return res.status(400).json({ ok: false, error: 'need slug' });
+      await recordChurn(body.slug, body.churn);
       await deleteSiteConfig(body.slug);
       return res.status(200).json({ ok: true });
     }
@@ -138,8 +177,36 @@ export default async function handler(req, res) {
     if (action === 'delete-many') {
       const slugs = Array.isArray(body.slugs) ? body.slugs.filter(Boolean).slice(0, 50) : [];
       if (!slugs.length) return res.status(400).json({ ok: false, error: 'need slugs' });
-      for (const slug of slugs) await deleteSiteConfig(slug);
+      const churnMap = body.churn && typeof body.churn === 'object' ? body.churn : {};
+      for (const slug of slugs) {
+        await recordChurn(slug, churnMap[slug]);
+        await deleteSiteConfig(slug);
+      }
       return res.status(200).json({ ok: true, removed: slugs.length });
+    }
+
+    if (action === 'expense-add') {
+      if (!body.slug) return res.status(400).json({ ok: false, error: 'need slug' });
+      const amt = Math.max(0, Number(String(body.amount).replace(/[^0-9.]/g, '')) || 0);
+      if (!amt) return res.status(400).json({ ok: false, error: 'need amount' });
+      const list = await readList(`expenses:${body.slug}`);
+      list.push({
+        amount: amt,
+        label: String(body.label || 'expense').slice(0, 60),
+        kind: String(body.kind || 'other').slice(0, 20),
+        date: (body.date && String(body.date).slice(0, 10)) || new Date().toISOString().slice(0, 10),
+        recurring: !!body.recurring,
+      });
+      while (list.length > 200) list.shift();
+      await store.set(`expenses:${body.slug}`, JSON.stringify(list));
+      return res.status(200).json({ ok: true, expenses: list });
+    }
+
+    if (action === 'expense-del') {
+      const list = await readList(`expenses:${body.slug}`);
+      if (Number.isInteger(body.index) && body.index >= 0 && body.index < list.length) list.splice(body.index, 1);
+      await store.set(`expenses:${body.slug}`, JSON.stringify(list));
+      return res.status(200).json({ ok: true, expenses: list });
     }
 
     if (action === 'notes') {

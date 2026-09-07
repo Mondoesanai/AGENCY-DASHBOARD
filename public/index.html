@@ -19,6 +19,7 @@
     --radius:14px;
   }
   *{box-sizing:border-box;} html,body{margin:0;}
+  [hidden]{display:none!important;}
   body{background:var(--bg);color:var(--ink);font:15px/1.6 "Inter",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased;}
   h1,h2,h3{font-family:"Fraunces",Georgia,serif;font-weight:600;letter-spacing:-0.02em;margin:0;}
   a{color:var(--green-br);}
@@ -60,6 +61,18 @@
   .attention{background:rgba(234,181,74,.12);border:1px solid rgba(234,181,74,.4);color:var(--warn);border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
   .attention .link{background:none;border:1px solid rgba(234,181,74,.5);color:var(--warn);border-radius:7px;padding:4px 9px;font-size:12px;white-space:nowrap;}
   .attention .link:hover{background:rgba(234,181,74,.15);}
+  button.link{background:none;border:none;color:var(--green-br);text-decoration:underline;cursor:pointer;font-size:inherit;padding:0;}
+
+  #finPanel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-top:10px;}
+  #finPanel[hidden]{display:none;}
+  .fin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px;}
+  .fin-grid .b{background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:12px 13px;}
+  .fin-grid .b .k{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;}
+  .fin-grid .b .v{font-family:"Fraunces",serif;font-size:21px;font-weight:600;margin-top:4px;}
+  .fin-grid .b.pos .v{color:var(--pos);} .fin-grid .b.neg .v{color:var(--neg);}
+  .fin-row{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:10px;font-size:12.5px;padding:6px 0;border-top:1px solid var(--line);}
+  .fin-row.h{color:var(--faint);text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;border-top:0;}
+  .fin-row .r{text-align:right;font-variant-numeric:tabular-nums;}
 
   .overview{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:30px;}
   .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 15px 14px;}
@@ -195,6 +208,7 @@
   <div class="section-h"><h2>Sites</h2><span id="siteCount"></span></div>
   <div class="sites" id="sites"><div class="loading">Loading portfolio…</div></div>
   <p class="note" id="footNote"></p>
+  <div id="finPanel" hidden></div>
 </div>
 
 <div class="bulkbar" id="bulkbar" hidden>
@@ -232,6 +246,23 @@
       <button class="btn ghost" id="m_cancel">Cancel</button>
     </div>
     <p class="note" id="m_msg"></p>
+  </div>
+</div>
+
+<div class="modal" id="churnModal">
+  <div class="modal-in">
+    <h2 id="churnTitle">Remove site</h2>
+    <p class="note" style="margin-top:0">Why are you removing <strong id="churnNames"></strong>?</p>
+    <label class="toggle"><input type="radio" name="churnReason" value="cancelled" checked /> The client cancelled / left</label>
+    <label class="toggle"><input type="radio" name="churnReason" value="mistake" /> Test, duplicate, or mistake — just remove it</label>
+    <div id="churnDetails">
+      <label class="field"><span>Last day as a client</span><input id="churnDate" type="date" /></label>
+      <label class="field"><span>Why did they leave? (optional — kept in your records)</span><input id="churnNote" placeholder="e.g. sold the business / went in-house / budget" /></label>
+    </div>
+    <div class="btn-row">
+      <button class="btn danger" id="churnConfirm">Remove</button>
+      <button class="btn ghost" id="churnCancel">Cancel</button>
+    </div>
   </div>
 </div>
 
@@ -287,6 +318,8 @@ const trendOf=(s)=>{
 
 let STATE=null, EMAIL_ENABLED=false, AI_ENABLED=false;
 let selectMode=false; const selected=new Set();
+let attnDismissedKey=null;   // session-level: which attention set has been dismissed
+const dur=(s)=>{ s=Math.round(s||0); if(s<60) return s+'s'; const m=Math.floor(s/60); return m+'m '+(s%60)+'s'; };
 
 async function load(){
   $('#sites').innerHTML='<div class="loading">Loading portfolio…</div>';
@@ -313,26 +346,34 @@ function render(data){
   $('#overview').innerHTML=[
     ['Visitors · 30d',fmt(p.visitors30),'sites with tracking'],
     ['Conversions · 30d',fmt(p.conversions30),'calls · forms · bookings'],
-    ['Avg SEO',p.avgSeo??'—','Google, mobile'],
-    ['MRR',money(p.mrr),'across '+p.sites+' sites'],
+    ['Avg SEO-ready',p.avgSeo??'—','technical setup, not ranking'],
+    ['MRR',money(p.mrr),(p.finances?money(p.finances.annualRunRate)+'/yr':'across '+p.sites+' sites')],
     ['Improving',`${p.improving}/${p.sites}`,'vs last month'],
     ['Open suggestions',p.openFindings,'builder to-dos'],
   ].map(([k,v,d])=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
 
+  // --- needs-attention banner (dismiss = session flag + localStorage) ---
   const att=$('#attention');
   let ackList=[]; try{ ackList=JSON.parse(localStorage.getItem('iw_ack')||'[]'); }catch{}
   const ackKey=(p.attention||[]).slice().sort().join('|');
-  const unacked=(p.attention&&p.attention.length && !ackList.includes(ackKey));
-  if(unacked){
+  const show = p.attention && p.attention.length && ackKey!==attnDismissedKey && !ackList.includes(ackKey);
+  if(show){
     att.hidden=false;
     att.innerHTML=`<span>⚠ Needs attention: <strong>${(p.attention).map(esc).join(', ')}</strong></span>
-      <button class="link" id="ackBtn" title="Acknowledge">✕ dismiss</button>`;
-    $('#ackBtn').onclick=()=>{ try{ ackList.push(ackKey); localStorage.setItem('iw_ack',JSON.stringify(ackList.slice(-20))); }catch{} att.hidden=true; };
-  } else att.hidden=true;
+      <button type="button" class="link" id="ackBtn">✕ dismiss</button>`;
+    $('#ackBtn').addEventListener('click',(e)=>{
+      e.preventDefault(); e.stopPropagation();
+      attnDismissedKey=ackKey;
+      try{ if(!ackList.includes(ackKey)){ ackList.push(ackKey); localStorage.setItem('iw_ack',JSON.stringify(ackList.slice(-20))); } }catch{}
+      att.hidden=true; att.innerHTML='';
+    });
+  } else { att.hidden=true; att.innerHTML=''; }
 
   $('#siteCount').textContent=`${data.sites.length} tracked`;
-  if(p.auditQuota) $('#footNote').innerHTML=`Updated ${new Date(data.generatedAt).toLocaleString()}. <strong>SEO scans rate-limited</strong> — set a free <code>PAGESPEED_API_KEY</code> in Vercel.`;
-  else $('#footNote').textContent=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
+  const upd=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
+  $('#footNote').innerHTML=(p.auditQuota?`${upd} <strong>SEO scans rate-limited</strong> — set a free <code>PAGESPEED_API_KEY</code> in Vercel.`:upd)+
+    ` <button type="button" class="link" id="finBtn">Lifetime sales ▾</button>`;
+  $('#finBtn').addEventListener('click',()=>toggleFinances(p));
 
   $('#sites').innerHTML=data.sites.map(siteCard).join('');
   $('#sites').classList.toggle('picking',selectMode);
@@ -340,6 +381,30 @@ function render(data){
     if(selectMode){ toggleSel(s.slug); } else { openDrawer(s.slug); }
   }));
   updateBulkBar();
+  if(!$('#finPanel').hidden) toggleFinances(p, true); // keep open panel fresh
+}
+
+function toggleFinances(p, keep){
+  const el=$('#finPanel');
+  if(!keep && !el.hidden){ el.hidden=true; return; }
+  const f=p.finances||{};
+  el.hidden=false;
+  el.innerHTML=`
+    <div class="fin-grid">
+      <div class="b"><div class="k">Lifetime sales</div><div class="v">${money(f.lifetimeRevenue)}</div></div>
+      <div class="b"><div class="k">Setup fees (total)</div><div class="v">${money(f.setupTotal)}</div></div>
+      <div class="b"><div class="k">Recurring to date</div><div class="v">${money(f.recurringToDate)}</div></div>
+      <div class="b"><div class="k">MRR · run rate</div><div class="v">${money(f.mrr)}<span style="font-family:'Inter';font-size:12px;color:var(--faint)"> · ${money(f.annualRunRate)}/yr</span></div></div>
+      <div class="b neg"><div class="k">Expenses (total)</div><div class="v">${money(f.expensesTotal)}</div></div>
+      <div class="b ${(f.netProfit||0)>=0?'pos':'neg'}"><div class="k">Net profit</div><div class="v">${money(f.netProfit)}</div></div>
+      ${p.churnedCount?`<div class="b neg"><div class="k">Former clients</div><div class="v">${p.churnedCount}<span style="font-family:'Inter';font-size:12px;color:var(--faint)"> · -${money(p.mrrLost)}/mo</span></div></div>`:''}
+    </div>
+    <div class="fin-row h"><span>Site</span><span class="r">Setup</span><span class="r">To date</span><span class="r">Net</span></div>
+    ${(f.perSite||[]).map(r=>`<div class="fin-row"><span>${esc(r.name)}</span><span class="r">${money(r.setupFee)}</span><span class="r">${money(r.lifetimeRevenue)}</span><span class="r" style="color:${(r.netProfit||0)>=0?'var(--pos)':'var(--neg)'}">${money(r.netProfit)}</span></div>`).join('')}
+    ${(p.formerClients&&p.formerClients.length)?`<div class="fin-row h" style="margin-top:12px"><span>Former client</span><span class="r">Left</span><span class="r">Months</span><span class="r">Lifetime</span></div>
+      ${p.formerClients.map(c=>`<div class="fin-row"><span title="${esc(c.reason)}${c.note?' — '+esc(c.note):''}">${esc(c.name)}</span><span class="r">${esc(c.leftDate)}</span><span class="r">${c.monthsActive}</span><span class="r">${money(c.lifetimeRevenue)}</span></div>`).join('')}`:''}
+    <p class="note" style="margin-top:12px">Set each site's <strong>setup fee</strong>, <strong>monthly</strong> and <strong>client-since date</strong> in its ⚙ Site settings. Log ad spend and other costs under <strong>Expenses</strong> there too.</p>
+  `;
 }
 
 function siteCard(s){
@@ -455,11 +520,12 @@ function openDrawer(slug){
     <div class="mgrid">
       <div class="box"><div class="k">Visitors 30d</div><div class="v">${st.hasData?fmt(st.visitors):'—'}</div><div class="d">${st.hasData?deltaHTML(st.deltas?.visitors):'add snippet'}</div></div>
       <div class="box"><div class="k">Conversions</div><div class="v">${st.hasData?(st.conversions??0):'—'}</div><div class="d">${st.hasData?deltaHTML(st.deltas?.conversions):''}</div></div>
-      <div class="box"><div class="k">Health</div><div class="v">${g?g.letter+' · '+g.score:'—'}</div></div>
-      <div class="box"><div class="k">SEO</div><div class="v">${a?a.scores.seo:'—'}</div></div>
-      <div class="box"><div class="k">Performance</div><div class="v">${a?a.scores.performance:'—'}</div></div>
+      <div class="box"><div class="k">Time on site</div><div class="v">${st.avgDwell!=null?dur(st.avgDwell):'—'}</div><div class="d">${st.avgDwell!=null?(st.avgDwell>=25?'engaged':st.avgDwell>=10?'okay':'quick bounce'):'per page visit'}</div></div>
+      <div class="box"><div class="k">SEO-ready</div><div class="v">${a?a.scores.seo:'—'}</div><div class="d">setup, not ranking</div></div>
+      <div class="box"><div class="k">Speed</div><div class="v">${a?a.scores.performance:'—'}</div><div class="d">real load performance</div></div>
       <div class="box"><div class="k">Accessibility</div><div class="v">${a?a.scores.accessibility:'—'}</div></div>
     </div>
+    <p class="note" style="margin-top:-8px"><strong>SEO-ready</strong> is technical setup (meta tags, crawlability) — not your Google position. Real keyword/ranking data needs Google Search Console connected (free, one-time per site) — not wired up yet, ask when you want it.</p>
 
     ${histChart(s.history)}
 
@@ -543,11 +609,25 @@ function openDrawer(slug){
       </div>
       <div class="row2">
         <label class="field"><span>Phone</span><input id="cf_phone" value="${esc(s.phone||'')}" /></label>
-        <label class="field"><span>$ / month</span><input id="cf_price" value="${s.priceMonthly||''}" /></label>
+        <label class="field"><span>$ / month</span><input id="cf_price" value="${s.priceMonthly||''}" placeholder="150" /></label>
+      </div>
+      <div class="row2">
+        <label class="field"><span>Setup fee (one-time, $)</span><input id="cf_setup" value="${s.setupFee||''}" placeholder="1500" /></label>
+        <label class="field"><span>Client since (date)</span><input id="cf_since" type="date" value="${s.startedAt?new Date(s.startedAt).toISOString().slice(0,10):''}" /></label>
       </div>
       <div class="row2">
         <label class="field"><span>Billing day (1–28)</span><input id="cf_bday" value="${s.billingDay||''}" /></label>
         <label class="field"><span>Avg $ per enquiry (optional)</span><input id="cf_lead" value="${s.leadValue||''}" /></label>
+      </div>
+      <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:8px 0">
+        <div class="note" style="margin:0 0 6px"><strong>Expenses</strong> for this site — ad spend, tools, etc. (feeds net profit)</div>
+        <div id="expList">${(s.expenses||[]).slice().reverse().map((x,i)=>`<div class="logitem"><span>${esc(x.date)} — ${esc(x.label)} · ${money(x.amount)}${x.recurring?'/mo':''}</span><button data-i="${s.expenses.length-1-i}">✕</button></div>`).join('')||'<div class="note">Nothing logged.</div>'}</div>
+        <div class="btn-row" style="margin-top:6px">
+          <input id="exp_amt" style="width:90px" inputmode="decimal" placeholder="$" />
+          <input id="exp_label" style="flex:1" placeholder="e.g. Google Ads — Sept" />
+          <button class="btn sm" id="exp_add">Add</button>
+        </div>
+        <label class="toggle" style="margin:6px 0 0"><input type="checkbox" id="exp_rec" /> recurring / monthly</label>
       </div>
       <label class="field"><span>Google review link (optional)</span><input id="cf_review" value="${esc(s.reviewUrl||'')}" /></label>
       <label class="field"><span>What counts as a conversion? (event names, blank = all)</span><input id="cf_conv" value="${esc((s.conversionEvents||[]).join(', '))}" placeholder="call, quote-form, booking" /></label>
@@ -709,27 +789,66 @@ function wireDrawer(s,bf){
     } else { $('#cf_convout').textContent=j.error||'Could not analyze — add ANTHROPIC_API_KEY in Vercel for this.'; }
   });
 
+  $('#exp_add')?.addEventListener('click',async(e)=>{
+    const k=needKey(); if(!k) return;
+    const amount=$('#exp_amt').value.trim(); if(!amount) return;
+    const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'expense-add',slug:s.slug,
+      amount,label:$('#exp_label').value.trim()||'expense',recurring:$('#exp_rec').checked});
+    if(j.ok){ s.expenses=j.expenses; openDrawer(s.slug); const d=$('.log.block'); if(d) d.open=true; }
+  });
+  $('#expList')?.addEventListener('click',async(e)=>{
+    const b=e.target.closest('button[data-i]'); if(!b) return;
+    const k=needKey(); if(!k) return;
+    const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'expense-del',slug:s.slug,index:+b.dataset.i});
+    if(j.ok){ s.expenses=j.expenses; openDrawer(s.slug); const d=$('.log.block'); if(d) d.open=true; }
+  });
+
   $('#cfSave').addEventListener('click',async(e)=>{
     const k=needKey(); if(!k) return;
     e.target.disabled=true;
     const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'save',slug:s.slug,
       url:$('#cf_url').value,name:$('#cf_name').value,client:$('#cf_client').value,email:$('#cf_email').value,
-      phone:$('#cf_phone').value,priceMonthly:$('#cf_price').value,billingDay:$('#cf_bday').value,
-      leadValue:$('#cf_lead').value,reviewUrl:$('#cf_review').value,conversionEvents:$('#cf_conv').value,autoSend:$('#cf_auto').checked});
-    if(j.ok){ await load(); openDrawer(j.site.slug); } else { e.target.disabled=false; e.target.textContent='Failed'; }
+      phone:$('#cf_phone').value,priceMonthly:$('#cf_price').value,setupFee:$('#cf_setup').value,startedAt:$('#cf_since').value,
+      billingDay:$('#cf_bday').value,leadValue:$('#cf_lead').value,reviewUrl:$('#cf_review').value,
+      conversionEvents:$('#cf_conv').value,autoSend:$('#cf_auto').checked});
+    if(j.ok){ await load(); openDrawer(j.site.slug); const d=$('.log.block'); if(d) d.open=true; } else { e.target.disabled=false; e.target.textContent='Failed'; }
   });
   $('#cfDel').addEventListener('click',async()=>{
-    if(!confirm('Remove '+s.name+' from the dashboard? (the site itself is untouched)')) return;
+    const churn=await askChurn(s.name);
+    if(!churn) return;
     const k=needKey(); if(!k) return;
-    const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'delete',slug:s.slug});
+    const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'delete',slug:s.slug,churn:churn.reason==='cancelled'?churn:null});
     if(j.ok){ closeDrawer(); await load(); }
+  });
+}
+
+// ask why a site is being removed; resolves {reason,leftDate,note} or null (cancel)
+function askChurn(names){
+  return new Promise(resolve=>{
+    const m=$('#churnModal');
+    $('#churnNames').textContent=names;
+    $('#churnDate').value=new Date().toISOString().slice(0,10);
+    $('#churnNote').value='';
+    m.querySelector('input[value="cancelled"]').checked=true;
+    const sync=()=>{ $('#churnDetails').hidden = m.querySelector('input[name=churnReason]:checked').value!=='cancelled'; };
+    m.querySelectorAll('input[name=churnReason]').forEach(r=>r.onchange=sync); sync();
+    m.classList.add('open');
+    const done=(v)=>{ m.classList.remove('open'); resolve(v); };
+    $('#churnCancel').onclick=()=>done(null);
+    m.onclick=(e)=>{ if(e.target.id==='churnModal') done(null); };
+    $('#churnConfirm').onclick=()=>{
+      const reason=m.querySelector('input[name=churnReason]:checked').value;
+      done(reason==='cancelled'
+        ? {reason:'cancelled',leftDate:$('#churnDate').value,note:$('#churnNote').value.trim()}
+        : {reason:'mistake'});
+    };
   });
 }
 
 function closeDrawer(){ $('#scrim').classList.remove('open'); $('#drawer').classList.remove('open'); $('#drawer').setAttribute('aria-hidden','true'); }
 $('#scrim').addEventListener('click',closeDrawer);
 $('#drawerX').addEventListener('click',closeDrawer);
-document.addEventListener('keydown',e=>e.key==='Escape'&&(closeDrawer(),$('#modal').classList.remove('open')));
+document.addEventListener('keydown',e=>e.key==='Escape'&&(closeDrawer(),$('#modal').classList.remove('open'),$('#churnModal').classList.remove('open')));
 $('#refreshBtn').addEventListener('click',load);
 
 /* ---------- bulk select + remove ---------- */
@@ -746,11 +865,14 @@ $('#selectBtn').addEventListener('click',()=>{ selectMode=!selectMode; if(!selec
 $('#bulkCancel').addEventListener('click',exitSelect);
 $('#bulkRemove').addEventListener('click',async(e)=>{
   if(!selected.size) return;
-  const k=needKey(); if(!k) return;
   const slugs=[...selected];
-  if(!confirm(`Remove ${slugs.length} site${slugs.length>1?'s':''} from the dashboard?\n\n${slugs.join(', ')}\n\n(The websites themselves are untouched. They'll re-appear if their tracker snippet is still live and someone visits.)`)) return;
+  const churn=await askChurn(slugs.join(', '));
+  if(!churn) return;
+  const k=needKey(); if(!k) return;
   e.target.disabled=true; e.target.textContent='Removing…';
-  const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'delete-many',slugs});
+  const churnMap={};
+  if(churn.reason==='cancelled') slugs.forEach(sl=>churnMap[sl]=churn);
+  const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'delete-many',slugs,churn:churnMap});
   if(j.ok){ exitSelect(); await load(); }
   else { e.target.disabled=false; e.target.textContent='Remove from dashboard'; alert(j.error||'Failed — check your admin key.'); }
 });

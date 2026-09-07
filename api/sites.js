@@ -11,8 +11,8 @@ async function readNotes(slug) {
   const n = await store.get(`notes:${slug}`).catch(() => null);
   return typeof n === 'string' ? n : '';
 }
-async function readLog(slug) {
-  const raw = await store.get(`changelog:${slug}`).catch(() => null);
+async function readArr(key) {
+  const raw = await store.get(key).catch(() => null);
   try {
     const a = typeof raw === 'string' ? JSON.parse(raw) : raw;
     return Array.isArray(a) ? a : [];
@@ -20,6 +20,12 @@ async function readLog(slug) {
     return [];
   }
 }
+const readLog = (slug) => readArr(`changelog:${slug}`);
+
+const monthsBetween = (from) => {
+  if (!from) return 1;
+  return Math.max(1, Math.round((Date.now() - from) / (30 * 864e5)));
+};
 
 export default async function handler(req, res) {
   const list = await listSites();
@@ -27,14 +33,18 @@ export default async function handler(req, res) {
 
   const rows = await Promise.all(
     list.map(async (site) => {
-      const [stats, audit, report, history, notes, changelog] = await Promise.all([
+      const [stats, audit, report, history, notes, changelog, expenses] = await Promise.all([
         siteStats(site.slug, site.conversionEvents || []).catch(() => null),
         runAudit(site.url).catch(() => ({ ok: false, error: 'audit failed' })),
         store.get(`report:${site.slug}:latest`).catch(() => null),
         getHistory(site.slug).catch(() => []),
         readNotes(site.slug),
         readLog(site.slug),
+        readArr(`expenses:${site.slug}`),
       ]);
+      const monthsActive = monthsBetween(site.startedAt);
+      const lifetimeRevenue = (site.setupFee || 0) + (site.priceMonthly || 0) * monthsActive;
+      const expensesTotal = expenses.reduce((t, e) => t + (Number(e.amount) || 0), 0);
       const findings = buildFindings(audit, stats);
       const grade = overallGrade(audit, stats);
       const rep = report ? (typeof report === 'string' ? JSON.parse(report) : report) : null;
@@ -46,6 +56,13 @@ export default async function handler(req, res) {
         email: site.email || '',
         phone: site.phone || '',
         priceMonthly: site.priceMonthly || 0,
+        setupFee: site.setupFee || 0,
+        startedAt: site.startedAt || 0,
+        monthsActive,
+        lifetimeRevenue,
+        expenses,
+        expensesTotal,
+        netProfit: lifetimeRevenue - expensesTotal,
         leadValue: site.leadValue || 0,
         billingDay: site.billingDay || null,
         autoSend: !!site.autoSend,
@@ -83,12 +100,59 @@ export default async function handler(req, res) {
     })
   );
 
+  // former clients (churn records survive site deletion)
+  let formerClients = [];
+  try {
+    const churnSlugs = await store.smembers('churn:index');
+    if (churnSlugs.length) {
+      const recs = await store.mget(churnSlugs.map((s) => `churn:${s}`));
+      formerClients = recs
+        .map((r) => {
+          try {
+            return typeof r === 'string' ? JSON.parse(r) : r;
+          } catch {
+            return null;
+          }
+        })
+        .filter(Boolean)
+        .sort((a, b) => (b.recordedAt || 0) - (a.recordedAt || 0));
+    }
+  } catch {
+    /* churn optional */
+  }
+
   const withData = rows.filter((r) => r.stats?.hasData);
+  const mrr = rows.reduce((t, r) => t + (r.priceMonthly || 0), 0);
+  const lifetimeRevenue = rows.reduce((t, r) => t + (r.lifetimeRevenue || 0), 0);
+  const setupTotal = rows.reduce((t, r) => t + (r.setupFee || 0), 0);
+  const expensesTotal = rows.reduce((t, r) => t + (r.expensesTotal || 0), 0);
+  const churnRevenue = formerClients.reduce((t, c) => t + (c.lifetimeRevenue || 0), 0);
   const portfolio = {
     sites: rows.length,
     visitors30: withData.reduce((t, r) => t + (r.stats?.visitors || 0), 0),
     conversions30: withData.reduce((t, r) => t + (r.stats?.conversions || 0), 0),
-    mrr: rows.reduce((t, r) => t + (r.priceMonthly || 0), 0),
+    mrr,
+    finances: {
+      mrr,
+      annualRunRate: mrr * 12,
+      setupTotal,
+      recurringToDate: lifetimeRevenue - setupTotal,
+      lifetimeRevenue: lifetimeRevenue + churnRevenue,
+      activeRevenue: lifetimeRevenue,
+      churnRevenue,
+      expensesTotal,
+      netProfit: lifetimeRevenue + churnRevenue - expensesTotal,
+      perSite: rows
+        .map((r) => ({
+          slug: r.slug, name: r.name, setupFee: r.setupFee, priceMonthly: r.priceMonthly,
+          monthsActive: r.monthsActive, lifetimeRevenue: r.lifetimeRevenue,
+          expensesTotal: r.expensesTotal, netProfit: r.netProfit,
+        }))
+        .sort((a, b) => b.lifetimeRevenue - a.lifetimeRevenue),
+    },
+    formerClients,
+    churnedCount: formerClients.length,
+    mrrLost: formerClients.reduce((t, c) => t + (c.priceMonthly || 0), 0),
     avgSeo: (() => {
       const v = rows.filter((r) => r.audit?.ok).map((r) => r.audit.scores.seo);
       return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null;
