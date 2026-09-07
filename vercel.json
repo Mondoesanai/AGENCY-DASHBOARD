@@ -11,15 +11,7 @@
     { "path": "/api/cron-daily", "schedule": "0 13 * * *" }
   ],
   "rewrites": [
-    { "source": "/r/:slug", "destination": "/r.html?slug=:slug" }
-  ],
-  "headers": [
-    {
-      "source": "/t.js",
-      "headers": [
-        { "key": "Cache-Control", "value": "public, max-age=3600, s-maxage=86400" },
-        { "key": "Access-Control-Allow-Origin", "value": "*" }
-      ]
-    }
+    { "source": "/r/:slug", "destination": "/r.html?slug=:slug" },
+    { "source": "/t.js", "destination": "/api/t" }
   ]
 }

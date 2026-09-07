@@ -54,8 +54,15 @@ export default async function handler(req, res) {
   // also accept querystring (pixel fallback)
   if (req.method === 'GET') d = { ...req.query };
 
+  // bare GET with no site id => a human is checking the endpoint is reachable
+  if (req.method === 'GET' && !d.s) {
+    return res
+      .status(200)
+      .json({ ok: true, message: 'Tracker endpoint is reachable. Beacons POST here from t.js.' });
+  }
+
   const slug = cleanSlug(d.s);
-  if (slug === 'unknown') return res.status(400).json({ ok: false });
+  if (slug === 'unknown') return res.status(400).json({ ok: false, error: 'missing site id' });
 
   const type = d.e === 'ev' ? 'ev' : 'pv';
   const path = String(d.p || '/').slice(0, 120);

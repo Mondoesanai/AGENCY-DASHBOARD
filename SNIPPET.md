@@ -1,14 +1,28 @@
 # The one line to add to a client site
 
-Paste this **once, right before `</body>`** on every page of a site you want
-visitor data from. That's the whole job — nothing else to configure.
+Paste this on every page of a site you want visitor data from — in `<head>` or
+right before `</body>`, either is fine. That's the whole job.
 
 ```html
-<script defer src="https://YOUR-DASHBOARD.vercel.app/t.js"></script>
+<script defer src="https://agency-dashboard-omega-red.vercel.app/t.js"></script>
 ```
 
-Replace `YOUR-DASHBOARD.vercel.app` with the real domain of this dashboard
-once it's deployed.
+The `/api/collect` endpoint is **baked into the script**, so it works no matter
+where you put the tag or how the site loads it.
+
+## Troubleshooting "no beacon received"
+
+1. Open `https://agency-dashboard-omega-red.vercel.app/api/collect` — should say
+   *"Tracker endpoint is reachable."*
+2. On the client site: **F12 → Network → reload** and look for a request to
+   `/api/collect`.
+   - **Missing entirely** → the `<script>` URL is wrong, or an ad-blocker is
+     blocking it (test with the blocker off).
+   - **Red / blocked / "CSP"** → the site has a Content-Security-Policy. Add
+     `agency-dashboard-omega-red.vercel.app` to its `script-src` **and**
+     `connect-src`.
+3. Add `?iwdebug` to the src (`.../t.js?iwdebug`) to log every beacon to the
+   browser console.
 
 ---
 
@@ -24,9 +38,10 @@ conversions for that site until the line is added.
 - Page views + unique visitors (cookieless, no consent banner needed)
 - Where visitors came from (Google, social, direct, referring sites)
 - Which pages they land on
-- Conversions — it **auto-detects** clicks on `tel:` links, `mailto:` links,
-  and booking links (Calendly / Cal.com / Acuity). For anything else, add
-  `data-track` to the element:
+- Conversions — it **auto-detects** clicks on phone, text, email, WhatsApp,
+  booking (Calendly / Cal.com / Acuity / Square), "leave a review" and
+  directions links, plus any form submit. For anything else, add `data-track`
+  to the element:
 
 ```html
 <a href="/quote" data-track="quote-request">Get a quote</a>

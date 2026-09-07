@@ -599,10 +599,15 @@ function noTrackerBlock(s){
     </div>`;
   }
   return `<div class="block" style="border-color:var(--warn)">
-    <h3 style="color:var(--warn)">No tracker detected on this site yet</h3>
-    <div class="note">SEO / speed / uptime work from the URL alone, but visitor counts, traffic sources and conversions need this one line added before <code>&lt;/body&gt;</code> on every page. It auto-registers the site here on the first page load.</div>
+    <h3 style="color:var(--warn)">No beacon received from this site yet</h3>
+    <div class="note">Last beacon: <strong>${s.lastSeen?timeAgo(s.lastSeen):'never'}</strong>. SEO / speed / uptime work from the URL alone; visitor data needs this one line before <code>&lt;/body&gt;</code> (or in <code>&lt;head&gt;</code>) on every page:</div>
     <div class="email-draft" style="margin-top:8px">${esc(line)}</div>
-    <div class="btn-row"><button class="btn sm" id="copySnippet">Copy the line</button></div>
+    <div class="btn-row"><button class="btn sm" id="copySnippet">Copy the line</button><a class="btn ghost sm" href="/api/collect" target="_blank" rel="noopener">Test endpoint ↗</a></div>
+    <div class="note" style="margin-top:10px">Added it and visited the site, still nothing after a minute? Open the site, hit <strong>F12 → Network</strong>, reload, and look for a request to <code>/api/collect</code>:
+      <br>• <strong>Not there at all</strong> → the script isn't loading (wrong URL, or an ad-blocker is blocking it — try without the blocker).
+      <br>• <strong>There but red / blocked / CSP</strong> → the site's Content-Security-Policy is blocking it. Add <code>${esc(location.host)}</code> to its <code>connect-src</code> and <code>script-src</code>.
+      <br>• Add <code>?iwdebug</code> to the script src to log every beacon to the console.
+    </div>
   </div>`;
 }
 function timeAgo(ts){

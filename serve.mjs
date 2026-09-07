@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import { extname, join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { buildCardSVG } from './lib/card.js';
+import { TRACKER_JS } from './lib/tracker.js';
 
 const PUBLIC = join(dirname(fileURLToPath(import.meta.url)), 'public');
 const PORT = process.env.PORT || 3200;
@@ -103,6 +104,14 @@ createServer(async (req, res) => {
       history: s.history, current: { visitors: s.stats.visitors, conversions: s.stats.conversions, deltas: s.stats.deltas },
       uptime: { up: true, ms: 180 }, cardUrl: `/api/card?slug=${s.slug}`,
     }));
+  }
+  if (path === '/t.js' || path === '/api/t') {
+    res.writeHead(200, { 'Content-Type': 'text/javascript', 'Access-Control-Allow-Origin': '*' });
+    return res.end(TRACKER_JS.replace('__ENDPOINT__', `http://localhost:${PORT}/api/collect`));
+  }
+  if (path === '/api/collect') {
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    return res.end('{"ok":true,"message":"reachable (local preview stub)"}');
   }
   if (path === '/api/shot') {
     // local preview: 1x1 transparent gif so the layout shows without hitting mShots
