@@ -28,9 +28,11 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
   const lifetimeRevenue = setupFee + price * monthsActive;
   const expenses = [{ date: '2026-09-01', label: 'Google Ads', amount: 120, recurring: true }];
   const expensesTotal = expenses.reduce((t, e) => t + e.amount, 0);
+  const onTrial = slug === 'one-more-thing';
   return {
     slug, name, url, client, email: '', phone: '', priceMonthly: price, leadValue: 120,
     setupFee, startedAt: Date.now() - monthsActive * 30 * 864e5, monthsActive, lifetimeRevenue,
+    trialEnds: onTrial ? Date.now() + 12 * 864e5 : 0, onTrial, trialDaysLeft: onTrial ? 12 : 0,
     expenses, expensesTotal, netProfit: lifetimeRevenue - expensesTotal,
     billingDay: bday, autoSend: false, reviewUrl: '', conversionEvents: [], source: 'ui',
     billingSoon: bday === new Date().getUTCDate(), hasTracker: true, awaitingData: false,
@@ -80,11 +82,12 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
 }
 
 const _former = [{ slug: 'old-client', name: 'Corner Cafe', client: 'Dana', reason: 'cancelled', note: 'sold the business', leftDate: '2026-07-15', monthsActive: 9, priceMonthly: 90, setupFee: 600, lifetimeRevenue: 1410, recordedAt: Date.now() - 40 * 864e5 }];
+const _overhead = [{ date: '2026-09-02', label: 'Chamber of Commerce membership', amount: 540, recurring: false }, { date: '2026-09-01', label: 'Figma + hosting', amount: 45, recurring: true }];
+const _trials = [{ slug: 'one-more-thing', name: 'One More Thing Services', priceMonthly: 100, autoChargeDate: new Date(Date.now() + 12 * 864e5).toISOString().slice(0, 10), daysLeft: 12 }];
 const DEMO = {
-  portfolio: { sites: 3, visitors30: 1284, conversions30: 47, mrr: 450, avgSeo: 88, improving: 2, openFindings: 15, attention: ['apostello-detailing'], noTracker: [], auditQuota: false, emailEnabled: true, aiEnabled: true, backend: 'demo',
-    finances: { mrr: 450, annualRunRate: 5400, setupTotal: 3600, recurringToDate: 2700, lifetimeRevenue: 7710, activeRevenue: 6300, churnRevenue: 1410, expensesTotal: 360, netProfit: 7350,
-      perSite: [{ slug: 'relax-tax', name: 'Relax Tax', setupFee: 1200, priceMonthly: 150, monthsActive: 6, lifetimeRevenue: 2100, expensesTotal: 120, netProfit: 1980 }] },
-    formerClients: _former, churnedCount: 1, mrrLost: 90 },
+  portfolio: { sites: 3, visitors30: 1284, conversions30: 47, mrr: 350, trials: 1, trialMrr: 100, avgSeo: 88, improving: 2, openFindings: 15, attention: ['apostello-detailing'], noTracker: [], auditQuota: false, emailEnabled: true, aiEnabled: true, backend: 'demo',
+    _fin: { mrr: 350, annualRunRate: 4200, setupTotal: 3600, recurringToDate: 2700, lifetimeRevenue: 7710, activeRevenue: 6300, churnRevenue: 1410, siteExpenses: 360, overheadTotal: 585, expensesTotal: 945, netProfit: 6765,
+      perSite: [{ slug: 'relax-tax', name: 'Relax Tax', setupFee: 1200, priceMonthly: 150, monthsActive: 6, lifetimeRevenue: 2100, expensesTotal: 120, netProfit: 1980, onTrial: false }] } },
   sites: [
     demoSite('relax-tax', 'Relax Tax', 'https://relaxtax.vercel.app', 'Kyle', 612, 18, 34, 9, 91, 96, 'B', 150, new Date().getUTCDate()),
     demoSite('apostello-detailing', 'Apostello Detailing', 'https://apostellodetailing.vercel.app', 'Shiloh', 431, 33, 9, 40, 84, 72, 'C', 200, 12),
@@ -99,7 +102,9 @@ createServer(async (req, res) => {
 
   if (path === '/api/sites') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify(DEMO));
+    // strip the admin-only finance block from the public feed (matches prod)
+    const { _fin, ...pub } = DEMO.portfolio;
+    return res.end(JSON.stringify({ ...DEMO, portfolio: pub }));
   }
   if (path === '/api/card') {
     const s = DEMO.sites.find(x => x.slug === u.searchParams.get('slug')) || DEMO.sites[0];
@@ -124,6 +129,10 @@ createServer(async (req, res) => {
   if (path === '/api/collect') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     return res.end('{"ok":true,"message":"reachable (local preview stub)"}');
+  }
+  if (path === '/api/finances') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true, finances: DEMO.portfolio._fin, overhead: _overhead, trials: _trials, trialMrr: 100, formerClients: _former, churnedCount: 1, mrrLost: 90 }));
   }
   if (path === '/api/shot') {
     // local preview: 1x1 transparent gif so the layout shows without hitting mShots

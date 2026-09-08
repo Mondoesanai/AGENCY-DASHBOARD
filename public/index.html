@@ -347,7 +347,7 @@ function render(data){
     ['Visitors · 30d',fmt(p.visitors30),'sites with tracking'],
     ['Conversions · 30d',fmt(p.conversions30),'calls · forms · bookings'],
     ['Avg SEO-ready',p.avgSeo??'—','technical setup, not ranking'],
-    ['MRR',money(p.mrr),(p.finances?money(p.finances.annualRunRate)+'/yr':'across '+p.sites+' sites')],
+    ['MRR',money(p.mrr),p.trials?`+ ${money(p.trialMrr)}/mo in ${p.trials} trial${p.trials>1?'s':''}`:'across '+p.sites+' sites'],
     ['Improving',`${p.improving}/${p.sites}`,'vs last month'],
     ['Open suggestions',p.openFindings,'builder to-dos'],
   ].map(([k,v,d])=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
@@ -372,8 +372,8 @@ function render(data){
   $('#siteCount').textContent=`${data.sites.length} tracked`;
   const upd=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
   $('#footNote').innerHTML=(p.auditQuota?`${upd} <strong>SEO scans rate-limited</strong> — set a free <code>PAGESPEED_API_KEY</code> in Vercel.`:upd)+
-    ` <button type="button" class="link" id="finBtn">Lifetime sales ▾</button>`;
-  $('#finBtn').addEventListener('click',()=>toggleFinances(p));
+    ` <button type="button" class="link" id="finBtn">🔒 Lifetime sales ▾</button>`;
+  $('#finBtn').addEventListener('click',openFinances);
 
   $('#sites').innerHTML=data.sites.map(siteCard).join('');
   $('#sites').classList.toggle('picking',selectMode);
@@ -381,12 +381,29 @@ function render(data){
     if(selectMode){ toggleSel(s.slug); } else { openDrawer(s.slug); }
   }));
   updateBulkBar();
-  if(!$('#finPanel').hidden) toggleFinances(p, true); // keep open panel fresh
 }
 
-function toggleFinances(p, keep){
+// Finances are admin-only: prompt for the key every time (even if unlocked),
+// fetch from /api/finances (never in the public /api/sites payload).
+let finKey=null;
+async function openFinances(){
   const el=$('#finPanel');
-  if(!keep && !el.hidden){ el.hidden=true; return; }
+  if(!el.hidden){ el.hidden=true; el.innerHTML=''; finKey=null; return; }
+  const k=prompt('Enter your admin key to view lifetime sales & finances:');
+  if(!k) return;
+  finKey=k;
+  el.hidden=false; el.innerHTML='<div class="note">Loading…</div>';
+  await loadFinances();
+}
+async function loadFinances(){
+  const el=$('#finPanel');
+  const j=await fetch(`/api/finances?secret=${encodeURIComponent(finKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+  if(!j.ok){ el.innerHTML=`<div class="note" style="color:var(--neg)">${j.error==='bad secret'?'Wrong key — finances are admin-only.':'Could not load finances.'}</div>`; finKey=null; return; }
+  renderFinances(j);
+}
+
+function renderFinances(p){
+  const el=$('#finPanel');
   const f=p.finances||{};
   el.hidden=false;
   el.innerHTML=`
@@ -395,16 +412,44 @@ function toggleFinances(p, keep){
       <div class="b"><div class="k">Setup fees (total)</div><div class="v">${money(f.setupTotal)}</div></div>
       <div class="b"><div class="k">Recurring to date</div><div class="v">${money(f.recurringToDate)}</div></div>
       <div class="b"><div class="k">MRR · run rate</div><div class="v">${money(f.mrr)}<span style="font-family:'Inter';font-size:12px;color:var(--faint)"> · ${money(f.annualRunRate)}/yr</span></div></div>
-      <div class="b neg"><div class="k">Expenses (total)</div><div class="v">${money(f.expensesTotal)}</div></div>
+      <div class="b neg"><div class="k">Expenses (site + overhead)</div><div class="v">${money(f.expensesTotal)}</div></div>
       <div class="b ${(f.netProfit||0)>=0?'pos':'neg'}"><div class="k">Net profit</div><div class="v">${money(f.netProfit)}</div></div>
+      ${p.trials&&p.trials.length?`<div class="b"><div class="k">Free trials</div><div class="v">${p.trials.length}<span style="font-family:'Inter';font-size:12px;color:var(--faint)"> · ${money(p.trialMrr)}/mo pipeline</span></div></div>`:''}
       ${p.churnedCount?`<div class="b neg"><div class="k">Former clients</div><div class="v">${p.churnedCount}<span style="font-family:'Inter';font-size:12px;color:var(--faint)"> · -${money(p.mrrLost)}/mo</span></div></div>`:''}
     </div>
+
     <div class="fin-row h"><span>Site</span><span class="r">Setup</span><span class="r">To date</span><span class="r">Net</span></div>
-    ${(f.perSite||[]).map(r=>`<div class="fin-row"><span>${esc(r.name)}</span><span class="r">${money(r.setupFee)}</span><span class="r">${money(r.lifetimeRevenue)}</span><span class="r" style="color:${(r.netProfit||0)>=0?'var(--pos)':'var(--neg)'}">${money(r.netProfit)}</span></div>`).join('')}
-    ${(p.formerClients&&p.formerClients.length)?`<div class="fin-row h" style="margin-top:12px"><span>Former client</span><span class="r">Left</span><span class="r">Months</span><span class="r">Lifetime</span></div>
+    ${(f.perSite||[]).map(r=>`<div class="fin-row"><span>${esc(r.name)}${r.onTrial?' <span class="pillmini">trial</span>':''}</span><span class="r">${money(r.setupFee)}</span><span class="r">${money(r.lifetimeRevenue)}</span><span class="r" style="color:${(r.netProfit||0)>=0?'var(--pos)':'var(--neg)'}">${money(r.netProfit)}</span></div>`).join('')}
+
+    ${(p.trials&&p.trials.length)?`<div class="fin-row h" style="margin-top:14px"><span>Free trial</span><span class="r">Auto-charges</span><span class="r">Days left</span><span class="r">Then $/mo</span></div>
+      ${p.trials.map(t=>`<div class="fin-row"><span>${esc(t.name)}</span><span class="r">${esc(t.autoChargeDate)}</span><span class="r" style="color:${t.daysLeft<=3?'var(--warn)':'inherit'}">${t.daysLeft}d</span><span class="r">${money(t.priceMonthly)}</span></div>`).join('')}`:''}
+
+    ${(p.formerClients&&p.formerClients.length)?`<div class="fin-row h" style="margin-top:14px"><span>Former client</span><span class="r">Left</span><span class="r">Months</span><span class="r">Lifetime</span></div>
       ${p.formerClients.map(c=>`<div class="fin-row"><span title="${esc(c.reason)}${c.note?' — '+esc(c.note):''}">${esc(c.name)}</span><span class="r">${esc(c.leftDate)}</span><span class="r">${c.monthsActive}</span><span class="r">${money(c.lifetimeRevenue)}</span></div>`).join('')}`:''}
-    <p class="note" style="margin-top:12px">Set each site's <strong>setup fee</strong>, <strong>monthly</strong> and <strong>client-since date</strong> in its ⚙ Site settings. Log ad spend and other costs under <strong>Expenses</strong> there too.</p>
+
+    <div style="border:1px solid var(--line);border-radius:11px;padding:12px;margin-top:16px">
+      <div class="fin-row h" style="border:0;padding:0 0 4px"><span>Business overhead — not tied to a client (${money(f.overheadTotal)})</span></div>
+      <div id="ovList">${(p.overhead||[]).slice().reverse().map((x,i)=>`<div class="fin-row"><span>${esc(x.date)} — ${esc(x.label)}</span><span></span><span class="r">${money(x.amount)}${x.recurring?'/mo':''}</span><span class="r"><button class="link" data-i="${p.overhead.length-1-i}" style="color:var(--neg)">remove</button></span></div>`).join('')||'<div class="note" style="padding:4px 0">Nothing logged — chamber of commerce, software, accountant, etc.</div>'}</div>
+      <div class="btn-row" style="margin-top:8px">
+        <input id="ov_amt" style="width:90px" inputmode="decimal" placeholder="$" />
+        <input id="ov_label" style="flex:1" placeholder="e.g. Chamber of Commerce membership" />
+        <label class="toggle" style="margin:0"><input type="checkbox" id="ov_rec" /> monthly</label>
+        <button class="btn sm" id="ov_add">Add</button>
+      </div>
+    </div>
+
+    <p class="note" style="margin-top:12px">Per-client setup fee / monthly / client-since / <strong>free trial until</strong> are set in each ⚙ Site settings, along with that client's own ad-spend &amp; costs.</p>
   `;
+  $('#ov_add').addEventListener('click',async()=>{
+    const amt=$('#ov_amt').value.trim(); if(!amt||!finKey) return;
+    const j=await post(`/api/site?secret=${encodeURIComponent(finKey)}`,{action:'expense-add',slug:'_business',amount:amt,label:$('#ov_label').value.trim()||'overhead',recurring:$('#ov_rec').checked});
+    if(j.ok) await loadFinances();
+  });
+  $('#ovList').addEventListener('click',async(e)=>{
+    const b=e.target.closest('button[data-i]'); if(!b||!finKey) return;
+    const j=await post(`/api/site?secret=${encodeURIComponent(finKey)}`,{action:'expense-del',slug:'_business',index:+b.dataset.i});
+    if(j.ok) await loadFinances();
+  });
 }
 
 function siteCard(s){
@@ -414,12 +459,13 @@ function siteCard(s){
   const attn=(STATE.portfolio.attention||[]).includes(s.slug);
   const trkTag = s.hasTracker ? (s.awaitingData?'<span class="tag" style="color:var(--faint);background:var(--surface2)">collecting…</span>':'')
     : '<span class="tag" style="color:var(--warn);background:#2c2a17">no tracker</span>';
+  const trialTag = s.onTrial ? `<span class="tag" style="color:var(--green-br);background:var(--green-soft)">trial · ${s.trialDaysLeft}d</span>` : '';
   const isSel=selected.has(s.slug);
   return `<button class="card ${isSel?'sel':''}" data-slug="${s.slug}">
     ${attn&&!selectMode?'<span class="attn-tri" title="Needs attention"></span>':''}
     ${selectMode?`<span class="cbx">${isSel?'✓':''}</span>`:''}
     <div>
-      <div class="name">${esc(s.name)}${s.source==='auto'?'<span class="tag auto">auto</span>':''}${s.billingSoon?'<span class="tag bill">billing soon</span>':''}${trkTag}</div>
+      <div class="name">${esc(s.name)}${s.source==='auto'?'<span class="tag auto">auto</span>':''}${trialTag}${s.billingSoon&&!s.onTrial?'<span class="tag bill">billing soon</span>':''}${trkTag}</div>
       <div class="url">${esc(s.url.replace(/^https?:\/\//,''))}</div>
     </div>
     <div class="grade ${gl.toLowerCase()}" title="Overall health">${g?gl:'—'}</div>
@@ -615,6 +661,7 @@ function openDrawer(slug){
         <label class="field"><span>Setup fee (one-time, $)</span><input id="cf_setup" value="${s.setupFee||''}" placeholder="1500" /></label>
         <label class="field"><span>Client since (date)</span><input id="cf_since" type="date" value="${s.startedAt?new Date(s.startedAt).toISOString().slice(0,10):''}" /></label>
       </div>
+      <label class="field"><span>Free trial until (date) — blank = no trial. They auto-charge ${s.priceMonthly?money(s.priceMonthly)+'/mo':'the monthly'} after this date; MRR &amp; revenue ignore them until then.</span><input id="cf_trial" type="date" value="${s.trialEnds?new Date(s.trialEnds).toISOString().slice(0,10):''}" /></label>
       <div class="row2">
         <label class="field"><span>Billing day (1–28)</span><input id="cf_bday" value="${s.billingDay||''}" /></label>
         <label class="field"><span>Avg $ per enquiry (optional)</span><input id="cf_lead" value="${s.leadValue||''}" /></label>
@@ -809,7 +856,7 @@ function wireDrawer(s,bf){
     const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'save',slug:s.slug,
       url:$('#cf_url').value,name:$('#cf_name').value,client:$('#cf_client').value,email:$('#cf_email').value,
       phone:$('#cf_phone').value,priceMonthly:$('#cf_price').value,setupFee:$('#cf_setup').value,startedAt:$('#cf_since').value,
-      billingDay:$('#cf_bday').value,leadValue:$('#cf_lead').value,reviewUrl:$('#cf_review').value,
+      trialEnds:$('#cf_trial').value,billingDay:$('#cf_bday').value,leadValue:$('#cf_lead').value,reviewUrl:$('#cf_review').value,
       conversionEvents:$('#cf_conv').value,autoSend:$('#cf_auto').checked});
     if(j.ok){ await load(); openDrawer(j.site.slug); const d=$('.log.block'); if(d) d.open=true; } else { e.target.disabled=false; e.target.textContent='Failed'; }
   });

@@ -158,6 +158,7 @@ export default async function handler(req, res) {
         priceMonthly: body.priceMonthly,
         setupFee: body.setupFee,
         startedAt: body.startedAt,
+        trialEnds: body.trialEnds,
         billingDay: body.billingDay,
         autoSend: body.autoSend,
         leadValue: body.leadValue,
@@ -185,27 +186,27 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, removed: slugs.length });
     }
 
-    if (action === 'expense-add') {
-      if (!body.slug) return res.status(400).json({ ok: false, error: 'need slug' });
-      const amt = Math.max(0, Number(String(body.amount).replace(/[^0-9.]/g, '')) || 0);
-      if (!amt) return res.status(400).json({ ok: false, error: 'need amount' });
-      const list = await readList(`expenses:${body.slug}`);
-      list.push({
-        amount: amt,
-        label: String(body.label || 'expense').slice(0, 60),
-        kind: String(body.kind || 'other').slice(0, 20),
-        date: (body.date && String(body.date).slice(0, 10)) || new Date().toISOString().slice(0, 10),
-        recurring: !!body.recurring,
-      });
-      while (list.length > 200) list.shift();
-      await store.set(`expenses:${body.slug}`, JSON.stringify(list));
-      return res.status(200).json({ ok: true, expenses: list });
-    }
-
-    if (action === 'expense-del') {
-      const list = await readList(`expenses:${body.slug}`);
-      if (Number.isInteger(body.index) && body.index >= 0 && body.index < list.length) list.splice(body.index, 1);
-      await store.set(`expenses:${body.slug}`, JSON.stringify(list));
+    if (action === 'expense-add' || action === 'expense-del') {
+      // slug '_business' => company overhead not tied to a client
+      const slug = body.slug === '_business' ? '_business' : slugify(body.slug || '');
+      if (!slug) return res.status(400).json({ ok: false, error: 'need slug' });
+      const key = `expenses:${slug}`;
+      const list = await readList(key);
+      if (action === 'expense-add') {
+        const amt = Math.max(0, Number(String(body.amount).replace(/[^0-9.]/g, '')) || 0);
+        if (!amt) return res.status(400).json({ ok: false, error: 'need amount' });
+        list.push({
+          amount: amt,
+          label: String(body.label || 'expense').slice(0, 80),
+          kind: String(body.kind || 'other').slice(0, 24),
+          date: (body.date && String(body.date).slice(0, 10)) || new Date().toISOString().slice(0, 10),
+          recurring: !!body.recurring,
+        });
+        while (list.length > 300) list.shift();
+      } else if (Number.isInteger(body.index) && body.index >= 0 && body.index < list.length) {
+        list.splice(body.index, 1);
+      }
+      await store.set(key, JSON.stringify(list));
       return res.status(200).json({ ok: true, expenses: list });
     }
 

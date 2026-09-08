@@ -22,11 +22,6 @@ async function readArr(key) {
 }
 const readLog = (slug) => readArr(`changelog:${slug}`);
 
-const monthsBetween = (from) => {
-  if (!from) return 1;
-  return Math.max(1, Math.round((Date.now() - from) / (30 * 864e5)));
-};
-
 export default async function handler(req, res) {
   const list = await listSites();
   const today = new Date().getUTCDate();
@@ -42,9 +37,9 @@ export default async function handler(req, res) {
         readLog(site.slug),
         readArr(`expenses:${site.slug}`),
       ]);
-      const monthsActive = monthsBetween(site.startedAt);
-      const lifetimeRevenue = (site.setupFee || 0) + (site.priceMonthly || 0) * monthsActive;
       const expensesTotal = expenses.reduce((t, e) => t + (Number(e.amount) || 0), 0);
+      const onTrial = !!(site.trialEnds && site.trialEnds > Date.now());
+      const trialDaysLeft = onTrial ? Math.ceil((site.trialEnds - Date.now()) / 864e5) : 0;
       const findings = buildFindings(audit, stats);
       const grade = overallGrade(audit, stats);
       const rep = report ? (typeof report === 'string' ? JSON.parse(report) : report) : null;
@@ -58,11 +53,11 @@ export default async function handler(req, res) {
         priceMonthly: site.priceMonthly || 0,
         setupFee: site.setupFee || 0,
         startedAt: site.startedAt || 0,
-        monthsActive,
-        lifetimeRevenue,
+        trialEnds: site.trialEnds || 0,
+        onTrial,
+        trialDaysLeft,
         expenses,
         expensesTotal,
-        netProfit: lifetimeRevenue - expensesTotal,
         leadValue: site.leadValue || 0,
         billingDay: site.billingDay || null,
         autoSend: !!site.autoSend,
@@ -100,59 +95,17 @@ export default async function handler(req, res) {
     })
   );
 
-  // former clients (churn records survive site deletion)
-  let formerClients = [];
-  try {
-    const churnSlugs = await store.smembers('churn:index');
-    if (churnSlugs.length) {
-      const recs = await store.mget(churnSlugs.map((s) => `churn:${s}`));
-      formerClients = recs
-        .map((r) => {
-          try {
-            return typeof r === 'string' ? JSON.parse(r) : r;
-          } catch {
-            return null;
-          }
-        })
-        .filter(Boolean)
-        .sort((a, b) => (b.recordedAt || 0) - (a.recordedAt || 0));
-    }
-  } catch {
-    /* churn optional */
-  }
-
   const withData = rows.filter((r) => r.stats?.hasData);
-  const mrr = rows.reduce((t, r) => t + (r.priceMonthly || 0), 0);
-  const lifetimeRevenue = rows.reduce((t, r) => t + (r.lifetimeRevenue || 0), 0);
-  const setupTotal = rows.reduce((t, r) => t + (r.setupFee || 0), 0);
-  const expensesTotal = rows.reduce((t, r) => t + (r.expensesTotal || 0), 0);
-  const churnRevenue = formerClients.reduce((t, c) => t + (c.lifetimeRevenue || 0), 0);
   const portfolio = {
     sites: rows.length,
     visitors30: withData.reduce((t, r) => t + (r.stats?.visitors || 0), 0),
     conversions30: withData.reduce((t, r) => t + (r.stats?.conversions || 0), 0),
-    mrr,
-    finances: {
-      mrr,
-      annualRunRate: mrr * 12,
-      setupTotal,
-      recurringToDate: lifetimeRevenue - setupTotal,
-      lifetimeRevenue: lifetimeRevenue + churnRevenue,
-      activeRevenue: lifetimeRevenue,
-      churnRevenue,
-      expensesTotal,
-      netProfit: lifetimeRevenue + churnRevenue - expensesTotal,
-      perSite: rows
-        .map((r) => ({
-          slug: r.slug, name: r.name, setupFee: r.setupFee, priceMonthly: r.priceMonthly,
-          monthsActive: r.monthsActive, lifetimeRevenue: r.lifetimeRevenue,
-          expensesTotal: r.expensesTotal, netProfit: r.netProfit,
-        }))
-        .sort((a, b) => b.lifetimeRevenue - a.lifetimeRevenue),
-    },
-    formerClients,
-    churnedCount: formerClients.length,
-    mrrLost: formerClients.reduce((t, c) => t + (c.priceMonthly || 0), 0),
+    // MRR counts only paying clients — trial clients contribute $0 until their trial ends
+    mrr: rows.reduce((t, r) => t + (r.onTrial ? 0 : r.priceMonthly || 0), 0),
+    trials: rows.filter((r) => r.onTrial).length,
+    trialMrr: rows.reduce((t, r) => t + (r.onTrial ? r.priceMonthly || 0 : 0), 0),
+    // detailed money (lifetime sales, expenses, net profit, churn) lives in
+    // /api/finances and needs the admin key — never in this public response
     avgSeo: (() => {
       const v = rows.filter((r) => r.audit?.ok).map((r) => r.audit.scores.seo);
       return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null;
