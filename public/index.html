@@ -73,6 +73,7 @@
   .fin-row{display:grid;grid-template-columns:1.6fr 1fr 1fr 1fr;gap:10px;font-size:12.5px;padding:6px 0;border-top:1px solid var(--line);}
   .fin-row.h{color:var(--faint);text-transform:uppercase;letter-spacing:.04em;font-size:10.5px;border-top:0;}
   .fin-row .r{text-align:right;font-variant-numeric:tabular-nums;}
+  .fin-row.r5{grid-template-columns:1.7fr .75fr .7fr .95fr .75fr;}
 
   .overview{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:30px;}
   .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 15px 14px;}
@@ -112,6 +113,14 @@
   .drawer{position:fixed;top:0;right:0;height:100%;width:min(580px,96vw);background:var(--bg);border-left:1px solid var(--line);box-shadow:var(--shadow);z-index:50;transform:translateX(100%);transition:transform .26s cubic-bezier(.22,1,.36,1);overflow-y:auto;}
   .drawer.open{transform:translateX(0);}
   .drawer-in{padding:24px 26px 70px;}
+  .dtabs{display:flex;gap:4px;position:sticky;top:0;background:var(--bg);padding:12px 0 9px;margin:16px -4px 2px;border-bottom:1px solid var(--line);z-index:6;overflow-x:auto;-webkit-overflow-scrolling:touch;}
+  .dtabs::-webkit-scrollbar{height:0;}
+  .dtabs button{flex:none;background:none;border:none;color:var(--muted);font:600 12.5px "Inter",sans-serif;padding:7px 12px;border-radius:9px;white-space:nowrap;transition:color .12s ease,background .12s ease;}
+  .dtabs button:hover{color:var(--ink);}
+  .dtabs button.on{background:var(--surface2);color:var(--ink);}
+  .dtabs .tabnum{background:var(--neg);color:#fff;font-size:10px;border-radius:999px;padding:0 5px;margin-left:3px;vertical-align:1px;}
+  .tabpane{animation:fadein .16s ease;}
+  @keyframes fadein{from{opacity:0;transform:translateY(3px);}to{opacity:1;transform:none;}}
   .drawer h2{font-size:20px;} .drawer .url{color:var(--faint);font-size:13px;margin-top:2px;}
   .x{position:absolute;top:16px;right:18px;border:1px solid var(--line);background:var(--surface);width:32px;height:32px;border-radius:9px;color:var(--muted);}
   .x:hover{color:var(--ink);}
@@ -268,6 +277,7 @@
 
 <script>
 const $ = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
 const esc=(s)=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const fmt=(n)=> n>=1000 ? (n/1000).toFixed(n>=10000?0:1)+'k' : String(Math.round(n||0));
 const money=(n)=>'$'+Math.round(n||0).toLocaleString('en-US');
@@ -319,6 +329,7 @@ const trendOf=(s)=>{
 let STATE=null, EMAIL_ENABLED=false, AI_ENABLED=false;
 let selectMode=false; const selected=new Set();
 let attnDismissedKey=null;   // session-level: which attention set has been dismissed
+let drawerPane='overview';   // remembered drawer tab
 const dur=(s)=>{ s=Math.round(s||0); if(s<60) return s+'s'; const m=Math.floor(s/60); return m+'m '+(s%60)+'s'; };
 
 async function load(){
@@ -372,8 +383,9 @@ function render(data){
   $('#siteCount').textContent=`${data.sites.length} tracked`;
   const upd=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
   $('#footNote').innerHTML=(p.auditQuota?`${upd} <strong>SEO scans rate-limited</strong> — set a free <code>PAGESPEED_API_KEY</code> in Vercel.`:upd)+
-    ` <button type="button" class="link" id="finBtn">🔒 Lifetime sales ▾</button>`;
-  $('#finBtn').addEventListener('click',openFinances);
+    ` <button type="button" class="link" id="finBtn">🔒 Lifetime sales</button> · <button type="button" class="link" id="coBtn">🔒 Company stats</button>`;
+  $('#finBtn').addEventListener('click',()=>openFinances('money'));
+  $('#coBtn').addEventListener('click',()=>openFinances('company'));
 
   $('#sites').innerHTML=data.sites.map(siteCard).join('');
   $('#sites').classList.toggle('picking',selectMode);
@@ -383,30 +395,61 @@ function render(data){
   updateBulkBar();
 }
 
-// Finances are admin-only: prompt for the key every time (even if unlocked),
-// fetch from /api/finances (never in the public /api/sites payload).
-let finKey=null;
-async function openFinances(){
+// Admin-only company / finance dashboard. Prompts for the key each time it's
+// opened (even when the dashboard is unlocked). Data comes from /api/finances,
+// never the public /api/sites payload.
+let finKey=null, finData=null, finTab='money';
+async function openFinances(tab){
   const el=$('#finPanel');
-  if(!el.hidden){ el.hidden=true; el.innerHTML=''; finKey=null; return; }
-  const k=prompt('Enter your admin key to view lifetime sales & finances:');
-  if(!k) return;
-  finKey=k;
+  if(!el.hidden && (!tab || tab===finTab)){ el.hidden=true; el.innerHTML=''; finKey=null; finData=null; return; }
+  finTab=tab||'money';
+  if(!finKey){
+    const k=prompt('Enter your admin key:');
+    if(!k) return;
+    finKey=k;
+  }
   el.hidden=false; el.innerHTML='<div class="note">Loading…</div>';
   await loadFinances();
 }
 async function loadFinances(){
   const el=$('#finPanel');
   const j=await fetch(`/api/finances?secret=${encodeURIComponent(finKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
-  if(!j.ok){ el.innerHTML=`<div class="note" style="color:var(--neg)">${j.error==='bad secret'?'Wrong key — finances are admin-only.':'Could not load finances.'}</div>`; finKey=null; return; }
-  renderFinances(j);
+  if(!j.ok){ el.innerHTML=`<div class="note" style="color:var(--neg)">${j.error==='bad secret'?'Wrong key — this is admin-only.':'Could not load.'}</div>`; finKey=null; return; }
+  finData=j;
+  renderPanel();
 }
-
-function renderFinances(p){
-  const el=$('#finPanel');
-  const f=p.finances||{};
+function renderPanel(){
+  const el=$('#finPanel'), j=finData; if(!j) return;
+  const body = finTab==='company' ? companyHTML(j) : finTab==='roster' ? rosterHTML(j) : moneyHTML(j);
   el.hidden=false;
   el.innerHTML=`
+    <div class="dtabs" style="margin:0 0 12px;top:auto;position:static;border:0;padding:0">
+      ${[['money','Money'],['company','Company stats'],['roster','Client roster']].map(([id,lab])=>`<button data-t="${id}" class="${finTab===id?'on':''}">${lab}</button>`).join('')}
+      <button data-t="_close" class="link" style="margin-left:auto;align-self:center">✕ close</button>
+    </div>
+    ${body}
+  `;
+  $$('#finPanel .dtabs button').forEach(b=>b.onclick=()=>{
+    if(b.dataset.t==='_close'){ el.hidden=true; el.innerHTML=''; finKey=null; finData=null; return; }
+    finTab=b.dataset.t; renderPanel();
+  });
+  if(finTab==='money'){
+    $('#ov_add')?.addEventListener('click',async()=>{
+      const amt=$('#ov_amt').value.trim(); if(!amt||!finKey) return;
+      const r=await post(`/api/site?secret=${encodeURIComponent(finKey)}`,{action:'expense-add',slug:'_business',amount:amt,label:$('#ov_label').value.trim()||'overhead',recurring:$('#ov_rec').checked});
+      if(r.ok) await loadFinances();
+    });
+    $('#ovList')?.addEventListener('click',async(e)=>{
+      const b=e.target.closest('button[data-i]'); if(!b||!finKey) return;
+      const r=await post(`/api/site?secret=${encodeURIComponent(finKey)}`,{action:'expense-del',slug:'_business',index:+b.dataset.i});
+      if(r.ok) await loadFinances();
+    });
+  }
+}
+
+function moneyHTML(p){
+  const f=p.finances||{};
+  return `
     <div class="fin-grid">
       <div class="b"><div class="k">Lifetime sales</div><div class="v">${money(f.lifetimeRevenue)}</div></div>
       <div class="b"><div class="k">Setup fees (total)</div><div class="v">${money(f.setupTotal)}</div></div>
@@ -417,16 +460,12 @@ function renderFinances(p){
       ${p.trials&&p.trials.length?`<div class="b"><div class="k">Free trials</div><div class="v">${p.trials.length}<span style="font-family:'Inter';font-size:12px;color:var(--faint)"> · ${money(p.trialMrr)}/mo pipeline</span></div></div>`:''}
       ${p.churnedCount?`<div class="b neg"><div class="k">Former clients</div><div class="v">${p.churnedCount}<span style="font-family:'Inter';font-size:12px;color:var(--faint)"> · -${money(p.mrrLost)}/mo</span></div></div>`:''}
     </div>
-
     <div class="fin-row h"><span>Site</span><span class="r">Setup</span><span class="r">To date</span><span class="r">Net</span></div>
     ${(f.perSite||[]).map(r=>`<div class="fin-row"><span>${esc(r.name)}${r.onTrial?' <span class="pillmini">trial</span>':''}</span><span class="r">${money(r.setupFee)}</span><span class="r">${money(r.lifetimeRevenue)}</span><span class="r" style="color:${(r.netProfit||0)>=0?'var(--pos)':'var(--neg)'}">${money(r.netProfit)}</span></div>`).join('')}
-
     ${(p.trials&&p.trials.length)?`<div class="fin-row h" style="margin-top:14px"><span>Free trial</span><span class="r">Auto-charges</span><span class="r">Days left</span><span class="r">Then $/mo</span></div>
       ${p.trials.map(t=>`<div class="fin-row"><span>${esc(t.name)}</span><span class="r">${esc(t.autoChargeDate)}</span><span class="r" style="color:${t.daysLeft<=3?'var(--warn)':'inherit'}">${t.daysLeft}d</span><span class="r">${money(t.priceMonthly)}</span></div>`).join('')}`:''}
-
     ${(p.formerClients&&p.formerClients.length)?`<div class="fin-row h" style="margin-top:14px"><span>Former client</span><span class="r">Left</span><span class="r">Months</span><span class="r">Lifetime</span></div>
       ${p.formerClients.map(c=>`<div class="fin-row"><span title="${esc(c.reason)}${c.note?' — '+esc(c.note):''}">${esc(c.name)}</span><span class="r">${esc(c.leftDate)}</span><span class="r">${c.monthsActive}</span><span class="r">${money(c.lifetimeRevenue)}</span></div>`).join('')}`:''}
-
     <div style="border:1px solid var(--line);border-radius:11px;padding:12px;margin-top:16px">
       <div class="fin-row h" style="border:0;padding:0 0 4px"><span>Business overhead — not tied to a client (${money(f.overheadTotal)})</span></div>
       <div id="ovList">${(p.overhead||[]).slice().reverse().map((x,i)=>`<div class="fin-row"><span>${esc(x.date)} — ${esc(x.label)}</span><span></span><span class="r">${money(x.amount)}${x.recurring?'/mo':''}</span><span class="r"><button class="link" data-i="${p.overhead.length-1-i}" style="color:var(--neg)">remove</button></span></div>`).join('')||'<div class="note" style="padding:4px 0">Nothing logged — chamber of commerce, software, accountant, etc.</div>'}</div>
@@ -437,19 +476,41 @@ function renderFinances(p){
         <button class="btn sm" id="ov_add">Add</button>
       </div>
     </div>
+    <p class="note" style="margin-top:12px">Per-client setup fee / monthly / client-since / <strong>free trial until</strong> are set in each ⚙ Site settings, along with that client's own ad-spend &amp; costs.</p>`;
+}
 
-    <p class="note" style="margin-top:12px">Per-client setup fee / monthly / client-since / <strong>free trial until</strong> are set in each ⚙ Site settings, along with that client's own ad-spend &amp; costs.</p>
-  `;
-  $('#ov_add').addEventListener('click',async()=>{
-    const amt=$('#ov_amt').value.trim(); if(!amt||!finKey) return;
-    const j=await post(`/api/site?secret=${encodeURIComponent(finKey)}`,{action:'expense-add',slug:'_business',amount:amt,label:$('#ov_label').value.trim()||'overhead',recurring:$('#ov_rec').checked});
-    if(j.ok) await loadFinances();
-  });
-  $('#ovList').addEventListener('click',async(e)=>{
-    const b=e.target.closest('button[data-i]'); if(!b||!finKey) return;
-    const j=await post(`/api/site?secret=${encodeURIComponent(finKey)}`,{action:'expense-del',slug:'_business',index:+b.dataset.i});
-    if(j.ok) await loadFinances();
-  });
+function companyHTML(p){
+  const c=p.company||{};
+  const tile=(k,v,d,cls)=>`<div class="b ${cls||''}"><div class="k">${k}</div><div class="v">${v}</div>${d?`<div class="d" style="font-size:11px;color:var(--faint);margin-top:3px">${d}</div>`:''}</div>`;
+  return `
+    <div class="fin-grid">
+      ${tile('Active clients', c.activeClients, `${c.trialClients} on trial · ${c.formerClients} former`)}
+      ${tile('MRR', money(c.mrr), money(c.arr)+'/yr')}
+      ${tile('Avg per client', money(c.arpu)+'/mo', 'ARPU')}
+      ${tile('Est. client value', money(c.ltv), 'LTV (rev/mo × avg lifetime)')}
+      ${tile('Retention', Math.round(c.retentionPct)+'%', `churn ${c.churnRatePct.toFixed(0)}%`, c.retentionPct>=80?'pos':'neg')}
+      ${tile('Avg client lifetime', c.avgClientLifetimeMonths.toFixed(1)+' mo', c.avgMonthsBeforeChurn?`churned clients lasted ${c.avgMonthsBeforeChurn.toFixed(1)} mo`:'')}
+      ${tile('Net profit', money(c.netProfit), Math.round(c.profitMarginPct)+'% margin', c.netProfit>=0?'pos':'neg')}
+      ${tile('Total revenue ever', money(c.lifetimeRevenue), `− ${money(c.expensesTotal)} costs`)}
+    </div>
+    <div class="fin-row h" style="border:0"><span>Value delivered to clients (last 30 days)</span></div>
+    <div class="fin-grid" style="margin-top:6px">
+      ${tile('Visitors driven', fmt(c.visitorsDriven30), `across ${c.sitesTracked} tracked sites`)}
+      ${tile('Leads driven', fmt(c.leadsDriven30), 'calls · forms · bookings')}
+      ${tile('Avg time on site', c.avgTimeOnSite!=null?dur(c.avgTimeOnSite):'—', 'engagement')}
+      ${tile('Momentum', `${c.sitesImproving} ↑ / ${c.sitesDeclining} ↓`, 'vs last month')}
+    </div>
+    <p class="note" style="margin-top:12px">Client-count & retention update as you add sites and record why past clients left (the "why are you removing this?" prompt). "Value delivered" pulls straight from the tracking snippets.</p>`;
+}
+
+function rosterHTML(p){
+  const rows=(p.clients||[]);
+  const st=(x)=> x==='trial'?'<span class="pillmini good">trial</span>':x==='active'?'<span class="pillmini">active</span>':esc(x);
+  return `
+    <div class="fin-row r5 h"><span>Client</span><span class="r">$/mo</span><span class="r">Months</span><span class="r">Lifetime</span><span class="r">Leads 30d</span></div>
+    ${rows.map(r=>`<div class="fin-row r5"><span>${esc(r.name)} ${st(r.status)}</span><span class="r">${money(r.priceMonthly)}</span><span class="r">${r.monthsWith}</span><span class="r">${money(r.lifetimeValue)}</span><span class="r">${r.leads30}</span></div>`).join('')||'<div class="note">No clients yet.</div>'}
+    ${(p.formerClients&&p.formerClients.length)?`<div class="fin-row r5 h" style="margin-top:14px"><span>Former client</span><span class="r">$/mo</span><span class="r">Months</span><span class="r">Lifetime</span><span class="r">Left</span></div>
+      ${p.formerClients.map(c=>`<div class="fin-row r5"><span title="${esc(c.note||c.reason)}">${esc(c.name)}</span><span class="r">${money(c.priceMonthly)}</span><span class="r">${c.monthsActive}</span><span class="r">${money(c.lifetimeRevenue)}</span><span class="r">${esc(c.leftDate)}</span></div>`).join('')}`:''}`;
 }
 
 function siteCard(s){
@@ -563,6 +624,15 @@ function openDrawer(slug){
     <div class="url"><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.url.replace(/^https?:\/\//,''))}</a>${s.client?' · '+esc(s.client):''}${s.priceMonthly?' · '+money(s.priceMonthly)+'/mo':''}${s.billingDay?' · bills on the '+s.billingDay:''}</div>
     <a href="${esc(s.url)}" target="_blank" rel="noopener"><img class="site-shot" src="/api/shot?slug=${encodeURIComponent(s.slug)}" alt="Screenshot of ${esc(s.name)}" loading="lazy" onerror="this.style.display='none'" /></a>
 
+    <nav class="dtabs">
+      <button data-pane="overview">Overview</button>
+      <button data-pane="traffic">Traffic</button>
+      <button data-pane="todos">To-dos${(bf.filter(f=>f.severity!=='good').length)?` <span class="tabnum">${bf.filter(f=>f.severity!=='good').length}</span>`:''}</button>
+      <button data-pane="report">Report &amp; email</button>
+      <button data-pane="settings">Settings</button>
+    </nav>
+
+    <div class="tabpane" data-pane="overview">
     <div class="mgrid">
       <div class="box"><div class="k">Visitors 30d</div><div class="v">${st.hasData?fmt(st.visitors):'—'}</div><div class="d">${st.hasData?deltaHTML(st.deltas?.visitors):'add snippet'}</div></div>
       <div class="box"><div class="k">Conversions</div><div class="v">${st.hasData?(st.conversions??0):'—'}</div><div class="d">${st.hasData?deltaHTML(st.deltas?.conversions):''}</div></div>
@@ -580,9 +650,13 @@ function openDrawer(slug){
       ${vitalRow('Page jump while loading', typeof vit.cls==='number'?vit.cls.toFixed(2):'—', vit.cls, 0.1, 0.25, 'How much the layout shifts as it loads. Under 0.1 means it feels stable.')}
       ${vitalRow('Frozen / unresponsive for', vfmt(vit.tbt,2), vit.tbt, 200, 600, 'How long taps and scrolls are ignored while scripts run. Lower is better.')}
     </div>`:''}
+    </div><!-- /overview -->
 
+    <div class="tabpane" data-pane="traffic" hidden>
     ${st.hasData?`<div class="block"><h3>Traffic sources <span class="ang">where visitors came from</span></h3>${bars(st.sources)}</div><div class="block"><h3>Top pages <span class="ang">what they landed on</span></h3>${bars(st.topPages)}</div>${eventsBlock(s)}`:noTrackerBlock(s)}
+    </div><!-- /traffic -->
 
+    <div class="tabpane" data-pane="todos" hidden>
     <div class="block">
       <h3>Builder suggestions <span class="ang">you only</span></h3>
       <div id="bfList">${bf.slice(0,4).map(fRow).join('')||'<div class="note">Nothing outstanding.</div>'}</div>
@@ -598,7 +672,9 @@ function openDrawer(slug){
       <h3>We're improving <span class="ang">website work — for the email</span></h3>
       ${improv.map(x=>`<div class="finding"><span class="sev good">→</span><div><div class="ft">${esc(x.title)}</div><div class="fd">${esc(x.why||'')}</div></div></div>`).join('')||'<div class="note">Generate a report to build these.</div>'}
     </div>
+    </div><!-- /todos -->
 
+    <div class="tabpane" data-pane="report" hidden>
     <div class="block">
       <h3>Monthly report ${rep?`<span class="ang">${esc(rep.month)} · ${rep.aiGenerated?'AI':'rules'}${rep.angle?' · '+esc(rep.angle):''}</span>`:''}</h3>
       ${rep?`<p style="margin:0 0 8px"><strong>${esc(rep.headline||'')}</strong></p><p style="margin:0 0 6px;color:var(--muted)">${esc(rep.summary||'')}</p>${(rep.wins||[]).map(w=>`<div class="win">${esc(w)}</div>`).join('')}`:'<div class="note">Not generated yet.</div>'}
@@ -631,7 +707,9 @@ function openDrawer(slug){
 
       ${rep&&rep.email?`<div class="email-draft" id="ecDraft"><strong>Subject: ${esc(rep.email.subject||'')}</strong>\n\n${esc(rep.email.body_text||'')}</div>`:''}
     </div>
+    </div><!-- /report -->
 
+    <div class="tabpane" data-pane="settings" hidden>
     <div class="block">
       <h3>Builder notes <span class="ang">private</span></h3>
       <textarea id="notes" placeholder="Anything you want to remember about this site…">${esc(s.notes||'')}</textarea>
@@ -644,7 +722,7 @@ function openDrawer(slug){
       <div class="btn-row"><input id="logInput" class="field" style="flex:1;margin:0" placeholder="e.g. Added FAQ schema, compressed hero image" /><button class="btn sm" id="logAdd">Add</button></div>
     </div>
 
-    <details class="log block"><summary>⚙ Site settings</summary>
+    <details class="log block" open><summary>⚙ Site settings</summary>
       <div class="row2">
         <label class="field"><span>Live URL</span><input id="cf_url" value="${esc(s.url)}" /></label>
         <label class="field"><span>Business name</span><input id="cf_name" value="${esc(s.name)}" /></label>
@@ -687,11 +765,24 @@ function openDrawer(slug){
       <label class="toggle"><input type="checkbox" id="cf_auto" ${s.autoSend?'checked':''}/> Auto-send the report email on the billing day</label>
       <div class="btn-row"><button class="btn sm" id="cfSave">Save settings</button><button class="btn danger sm" id="cfDel">Remove site</button></div>
     </details>
+    </div><!-- /settings -->
   `;
 
+  $$('.dtabs button',$('#drawerIn')).forEach(b=>b.onclick=()=>switchPane(b.dataset.pane));
+  switchPane(drawerPane);
   wireDrawer(s,bf);
-  initUptick($('#drawerIn'));
   $('#scrim').classList.add('open'); $('#drawer').classList.add('open'); $('#drawer').setAttribute('aria-hidden','false');
+}
+
+function switchPane(name){
+  const root=$('#drawerIn');
+  const panes=$$('.tabpane',root);
+  if(!panes.some(p=>p.dataset.pane===name)) name='overview';
+  panes.forEach(p=>{ p.hidden = p.dataset.pane!==name; });
+  $$('.dtabs button',root).forEach(b=>b.classList.toggle('on',b.dataset.pane===name));
+  drawerPane=name;
+  $('#drawer').scrollTop=0;
+  if(name==='overview') requestAnimationFrame(()=>initUptick(root));
 }
 function fRow(f){ return `<div class="finding"><span class="sev ${f.severity}">${f.severity==='med'?'MED':f.severity}</span><div><div class="ft">${esc(f.title)}</div>${f.detail?`<div class="fd">${esc(f.detail)}</div>`:''}</div></div>`; }
 function logRow(c,idx){ return `<div class="logitem"><span>${esc(c.date)} — ${esc(c.text)}</span><button data-i="${idx}">✕</button></div>`; }

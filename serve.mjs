@@ -132,7 +132,15 @@ createServer(async (req, res) => {
   }
   if (path === '/api/finances') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
-    return res.end(JSON.stringify({ ok: true, finances: DEMO.portfolio._fin, overhead: _overhead, trials: _trials, trialMrr: 100, formerClients: _former, churnedCount: 1, mrrLost: 90 }));
+    const company = {
+      activeClients: 2, trialClients: 1, formerClients: 1, totalEver: 4,
+      mrr: 350, arr: 4200, arpu: 175, ltv: 2400, avgSetupFee: 1200,
+      avgClientLifetimeMonths: 6.75, churnRatePct: 25, retentionPct: 75, avgMonthsBeforeChurn: 9,
+      mrrLost: 90, lifetimeRevenue: 7710, expensesTotal: 945, netProfit: 6765, profitMarginPct: 87.7,
+      visitorsDriven30: 1284, leadsDriven30: 47, avgTimeOnSite: 22, sitesImproving: 2, sitesDeclining: 1, sitesTracked: 3,
+    };
+    const clients = DEMO.sites.map(s => ({ slug: s.slug, name: s.name, client: s.client, priceMonthly: s.priceMonthly, setupFee: s.setupFee, startedAt: s.startedAt, monthsWith: 6, status: s.onTrial ? 'trial' : 'active', lifetimeValue: s.lifetimeRevenue, visitors30: s.stats.visitors, leads30: s.stats.conversions, avgDwell: s.stats.avgDwell, deltaVisitors: s.stats.deltas.visitors }));
+    return res.end(JSON.stringify({ ok: true, company, clients, finances: DEMO.portfolio._fin, overhead: _overhead, trials: _trials, trialMrr: 100, formerClients: _former, churnedCount: 1, mrrLost: 90 }));
   }
   if (path === '/api/shot') {
     // local preview: 1x1 transparent gif so the layout shows without hitting mShots
