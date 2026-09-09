@@ -128,16 +128,31 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
   }
 }
 
-async function sendEmail({ site, subject, body, cardPng, reportUrl }) {
-  if (!process.env.RESEND_API_KEY || !site.email) return { sent: false, reason: 'no resend key or client email' };
+async function sendEmail({ site, subject, body, cardPng, reportUrl, to }) {
+  const dest = to || site.email;
+  if (!process.env.RESEND_API_KEY) return { sent: false, reason: 'RESEND_API_KEY not set in Vercel' };
+  if (!dest) return { sent: false, reason: 'no recipient — set the client email' };
+  if (!process.env.REPORT_FROM) return { sent: false, reason: 'REPORT_FROM not set in Vercel (must be an address on a Resend-verified domain)' };
   let Resend;
   try {
     ({ Resend } = await import('resend'));
   } catch {
-    return { sent: false, reason: 'resend not installed' };
+    return { sent: false, reason: 'resend package not installed' };
   }
   const resend = new Resend(process.env.RESEND_API_KEY);
-  const from = process.env.REPORT_FROM || 'reports@example.com';
+  const from = process.env.REPORT_FROM;
+
+  // is the sending domain actually verified?
+  let domainStatus = 'unknown';
+  try {
+    const fromDomain = from.split('@')[1] || '';
+    const dl = await resend.domains.list();
+    const list = dl?.data?.data || dl?.data || [];
+    const d = Array.isArray(list) ? list.find((x) => x.name === fromDomain) : null;
+    domainStatus = d ? d.status : `no domain "${fromDomain}" in this Resend account`;
+  } catch (e) {
+    domainStatus = 'could not check (' + (e.message || e) + ')';
+  }
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;');
   const html = `<div style="font:16px/1.65 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#12160f;max-width:580px">
     ${body.split('\n').map((p) => (p.trim() ? `<p style="margin:0 0 13px">${esc(p)}</p>` : '<div style="height:6px"></div>')).join('')}
@@ -147,10 +162,23 @@ async function sendEmail({ site, subject, body, cardPng, reportUrl }) {
     ? [{ filename: `${site.slug}-report-${MK}.png`, content: cardPng.toString('base64') }]
     : [];
   try {
-    const r = await resend.emails.send({ from, to: site.email, subject, text: body, html, attachments });
-    return { sent: !r.error, id: r.data?.id, reason: r.error?.message };
+    const r = await resend.emails.send({ from, to: dest, subject, text: body, html, attachments });
+    const accepted = !r.error;
+    return {
+      sent: accepted && domainStatus === 'verified',
+      accepted,
+      id: r.data?.id || null,
+      to: dest,
+      from,
+      domainStatus,
+      reason:
+        r.error?.message ||
+        (domainStatus !== 'verified'
+          ? `Resend accepted it (id ${r.data?.id || '?'}) but the sending domain is "${domainStatus}" — until it says "verified" Resend will not deliver to real inboxes. Verify ${from.split('@')[1]} in Resend → Domains and add the DNS records.`
+          : null),
+    };
   } catch (e) {
-    return { sent: false, reason: String(e.message || e) };
+    return { sent: false, to: dest, from, domainStatus, reason: String(e.message || e) };
   }
 }
 
