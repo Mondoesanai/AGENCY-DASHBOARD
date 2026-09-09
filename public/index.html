@@ -743,6 +743,7 @@ function openDrawer(slug){
     <div class="block">
       <h3>Monthly report ${rep?`<span class="ang">${esc(rep.month)} · ${rep.aiGenerated?'AI':'rules'}${rep.angle?' · '+esc(rep.angle):''}</span>`:''}</h3>
       ${rep?`<p style="margin:0 0 8px"><strong>${esc(rep.headline||'')}</strong></p><p style="margin:0 0 6px;color:var(--muted)">${esc(rep.summary||'')}</p>${(rep.wins||[]).map(w=>`<div class="win">${esc(w)}</div>`).join('')}`:'<div class="note">Not generated yet.</div>'}
+      ${rep&&rep.aiError?`<p class="note" style="color:var(--neg)">AI polish failed — using the rules version. <code style="font-size:11px">${esc(rep.aiError)}</code></p>`:''}
       <p style="margin:10px 0 0"><a href="${esc(s.reportUrl||('/r/'+s.slug))}" target="_blank" rel="noopener">Open client report ↗</a></p>
       <img class="card-thumb" src="/api/card?slug=${encodeURIComponent(s.slug)}&v=${rep?rep.generatedAt||1:1}" alt="" loading="lazy" onerror="this.style.display='none'"/>
       <div class="btn-row"><button class="btn sm" id="genOne">${rep?'Regenerate full report':'Generate report'}</button></div>
@@ -950,7 +951,7 @@ function wireDrawer(s,bf){
       setTimeout(()=>{ const el=$('#ecDraft')||$('#ecRegen'); if(el) el.scrollIntoView({block:'center'}); },100);
     } else if(j.ok && !r0.aiUsed){
       e.target.disabled=false; e.target.textContent='Regenerate email';
-      $('#ecMsg').textContent='AI didn’t respond — check ANTHROPIC_API_KEY is set in Vercel and the account has credit. (Email left unchanged.)';
+      $('#ecMsg').innerHTML=`<span style="color:var(--neg)">AI call didn't go through — email left unchanged.</span>${r0.aiError?`<br><code style="font-size:11px">${esc(r0.aiError)}</code>`:' Check ANTHROPIC_API_KEY / credit / model access.'}`;
     } else {
       setKey(''); e.target.textContent='Failed — key?'; e.target.disabled=false;
     }

@@ -52,15 +52,17 @@ function monthsSince(baseline, history) {
 }
 
 async function aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins, style, dropped }) {
-  if (!process.env.ANTHROPIC_API_KEY) return null;
+  if (!process.env.ANTHROPIC_API_KEY) return { __error: 'no ANTHROPIC_API_KEY set' };
   let Anthropic;
   try {
     ({ default: Anthropic } = await import('@anthropic-ai/sdk'));
-  } catch {
-    return null;
+  } catch (e) {
+    return { __error: 'sdk import failed: ' + (e.message || e) };
   }
   const client = new Anthropic();
-  const model = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
+  // Sonnet 5 is the practical default here (widely available on any key, cheap
+  // enough for monthly emails across dozens of sites). Set ANTHROPIC_MODEL to override.
+  const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
   const system = [
     'You are the account manager at a small web studio (Inspiring Websites) writing the',
     'monthly performance update for a client who is NOT technical. Warm, specific, encouraging,',
@@ -105,14 +107,24 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
   try {
     const r = await client.messages.create({
       model,
-      max_tokens: 2000,
+      max_tokens: 8000,
       system,
       messages: [{ role: 'user', content: JSON.stringify(payload) }],
     });
-    const t = r.content.find((b) => b.type === 'text')?.text || '';
-    return JSON.parse(t.replace(/^```json\s*|\s*```$/g, '').trim());
-  } catch {
-    return null;
+    const t = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
+    if (!t.trim()) return { __error: 'model returned no text (stop_reason: ' + (r.stop_reason || '?') + ')' };
+    // tolerate ```json fences or a preamble — grab the outermost {...}
+    let raw = t.replace(/```json|```/g, '').trim();
+    const a = raw.indexOf('{');
+    const b = raw.lastIndexOf('}');
+    if (a >= 0 && b > a) raw = raw.slice(a, b + 1);
+    try {
+      return JSON.parse(raw);
+    } catch (pe) {
+      return { __error: 'could not parse model JSON: ' + (pe.message || pe) + ' — first 120 chars: ' + t.slice(0, 120) };
+    }
+  } catch (e) {
+    return { __error: 'model call failed: ' + (e.status ? e.status + ' ' : '') + (e.message || e) };
   }
 }
 
@@ -188,7 +200,7 @@ async function buildForSite(site, { doSend, req, style }) {
     leadValue: site.leadValue || 0,
   });
 
-  const ai = await aiPolish({
+  const aiRaw = await aiPolish({
     site,
     stats,
     audit,
@@ -200,7 +212,9 @@ async function buildForSite(site, { doSend, req, style }) {
     wins: rules.wins,
     style,
     dropped: rules.dropped,
-  }).catch(() => null);
+  }).catch((e) => ({ __error: 'aiPolish threw: ' + (e.message || e) }));
+  const aiError = aiRaw && aiRaw.__error ? aiRaw.__error : null;
+  const ai = aiError ? null : aiRaw;
 
   const email = ai?.email || { subject: rules.subject, body_text: rules.body_text };
 
@@ -224,6 +238,7 @@ async function buildForSite(site, { doSend, req, style }) {
     reportUrl,
     metrics: row,
     aiGenerated: !!ai,
+    aiError,
   };
   await store.set(`report:${site.slug}:latest`, JSON.stringify(report));
   await store.set(`report:${site.slug}:${MK}`, JSON.stringify(report));
@@ -240,7 +255,7 @@ async function buildForSite(site, { doSend, req, style }) {
     if (emailResult.sent) await store.set(`lastSent:${site.slug}`, MK);
   }
 
-  return { ...report, emailResult };
+  return { ...report, emailResult, aiUsed: !!ai, aiError };
 }
 
 // Fast path: reword the email only. Reuses the last report's numbers, skips the
@@ -275,7 +290,9 @@ async function regenEmail(site, { style, req }) {
     signature: process.env.REPORT_SIGNATURE || 'Inspiring Websites',
     reviewUrl: site.reviewUrl, leadValue: site.leadValue || 0,
   });
-  const ai = await aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins: rules.wins, style, dropped: rules.dropped }).catch(() => null);
+  const aiRaw = await aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins: rules.wins, style, dropped: rules.dropped }).catch((e) => ({ __error: 'aiPolish threw: ' + (e.message || e) }));
+  const aiError = aiRaw && aiRaw.__error ? aiRaw.__error : null;
+  const ai = aiError ? null : aiRaw;
   const email = ai?.email || { subject: rules.subject, body_text: rules.body_text };
 
   const report = {
@@ -287,11 +304,11 @@ async function regenEmail(site, { style, req }) {
     wins: rules.wins,
     improvements: ai?.improvements || improvements,
     clientActions: ai?.client_actions || actions,
-    email, reportUrl, metrics: row, aiGenerated: !!ai, lastStyle: style || null,
+    email, reportUrl, metrics: row, aiGenerated: !!ai, aiError, lastStyle: style || null,
   };
   await store.set(`report:${site.slug}:latest`, JSON.stringify(report));
   await store.set(`report:${site.slug}:${MK}`, JSON.stringify(report));
-  return { ...report, aiUsed: !!ai };
+  return { ...report, aiUsed: !!ai, aiError };
 }
 
 export default async function handler(req, res) {

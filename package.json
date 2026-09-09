@@ -9,7 +9,7 @@
     "deploy": "vercel --prod"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.68.0",
+    "@anthropic-ai/sdk": "^0.124.0",
     "@vercel/kv": "^3.0.0",
     "resend": "^4.0.0",
     "sharp": "^0.33.5"
