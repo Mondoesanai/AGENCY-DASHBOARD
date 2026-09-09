@@ -11,6 +11,55 @@ import { monthKey } from '../lib/history.js';
 import { buildForSite } from './report.js';
 
 const MK = monthKey();
+const monthsBetween = (from) => (from ? Math.max(1, Math.round((Date.now() - from) / (30 * 864e5))) : 1);
+
+async function readArr(key) {
+  const raw = await store.get(key).catch(() => null);
+  try {
+    const a = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(a) ? a : [];
+  } catch {
+    return [];
+  }
+}
+
+// month-over-month company snapshot so /api/finances can show growth trends
+async function snapshotCompany(sites) {
+  let mrr = 0, lifetimeRevenue = 0, setupTotal = 0, active = 0, trial = 0, siteExpenses = 0;
+  for (const s of sites) {
+    const onTrial = !!(s.trialEnds && s.trialEnds > Date.now());
+    onTrial ? trial++ : active++;
+    const paidSince = s.trialEnds && s.trialEnds > (s.startedAt || 0) ? s.trialEnds : s.startedAt;
+    const months = onTrial ? 0 : monthsBetween(paidSince);
+    mrr += onTrial ? 0 : s.priceMonthly || 0;
+    setupTotal += s.setupFee || 0;
+    lifetimeRevenue += (s.setupFee || 0) + (s.priceMonthly || 0) * months;
+    const ex = await readArr(`expenses:${s.slug}`);
+    siteExpenses += ex.reduce((t, e) => t + (Number(e.amount) || 0), 0);
+  }
+  const overhead = await readArr('expenses:_business');
+  const overheadTotal = overhead.reduce((t, e) => t + (Number(e.amount) || 0), 0);
+  let churnRevenue = 0, former = 0;
+  try {
+    const cs = await store.smembers('churn:index');
+    former = cs.length;
+    const recs = await store.mget(cs.map((x) => `churn:${x}`));
+    churnRevenue = recs
+      .map((r) => { try { return typeof r === 'string' ? JSON.parse(r) : r; } catch { return null; } })
+      .filter(Boolean)
+      .reduce((t, c) => t + (c.lifetimeRevenue || 0), 0);
+  } catch { /* churn optional */ }
+  const expensesTotal = siteExpenses + overheadTotal;
+  const totalRev = lifetimeRevenue + churnRevenue;
+  const snap = {
+    month: MK, at: Date.now(),
+    mrr, arr: mrr * 12, activeClients: active, trialClients: trial, formerClients: former,
+    lifetimeRevenue: totalRev, expensesTotal, netProfit: totalRev - expensesTotal, setupTotal,
+  };
+  await store.set(`company:snap:${MK}`, JSON.stringify(snap));
+  await store.sadd('company:snap:index', MK);
+  return snap;
+}
 
 function authed(req) {
   const secret = process.env.CRON_SECRET;
@@ -90,6 +139,17 @@ export default async function handler(req, res) {
         log.push({ slug: site.slug, action: 'month snapshot', error: String(e.message || e) });
       }
     }
+  }
+
+  // company snapshot: on the 1st, or any day it's missing this month
+  try {
+    const have = await store.get(`company:snap:${MK}`).catch(() => null);
+    if (isFirst || !have) {
+      const snap = await snapshotCompany(sites);
+      log.push({ action: 'company snapshot', mrr: snap.mrr, clients: snap.activeClients });
+    }
+  } catch (e) {
+    log.push({ action: 'company snapshot', error: String(e.message || e) });
   }
 
   res.status(200).json({ ok: true, day: today, isFirst, processed: sites.length, log });

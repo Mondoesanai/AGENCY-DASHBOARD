@@ -2,7 +2,10 @@
 // Kept out of /api/sites so the financial data is never in a public response.
 import { listSites } from '../lib/registry.js';
 import { siteStats } from '../lib/stats.js';
+import { runAudit } from '../lib/audit.js';
 import { store } from '../lib/store.js';
+
+const THIS_MONTH = new Date().toISOString().slice(0, 7);
 
 function authed(req) {
   const s = process.env.CRON_SECRET;
@@ -12,6 +15,13 @@ function authed(req) {
 }
 
 const monthsBetween = (from) => (from ? Math.max(1, Math.round((Date.now() - from) / (30 * 864e5))) : 1);
+
+// cached audit only — don't let a cold PageSpeed call stall the whole panel
+const cachedAudit = (url) =>
+  Promise.race([
+    runAudit(url).catch(() => ({ ok: false })),
+    new Promise((r) => setTimeout(() => r({ ok: false }), 7000)),
+  ]);
 
 async function readArr(key) {
   const raw = await store.get(key).catch(() => null);
@@ -30,11 +40,20 @@ export default async function handler(req, res) {
   const perSite = [];
   const trials = [];
   const clients = [];
+  let pageviews30 = 0, upCount = 0, healthChecked = 0, needAttention = 0;
   for (const s of sites) {
-    const [expenses, st] = await Promise.all([
+    const [expenses, st, auditC, healthRaw] = await Promise.all([
       readArr(`expenses:${s.slug}`),
       siteStats(s.slug, s.conversionEvents || []).catch(() => null),
+      cachedAudit(s.url),
+      store.get(`health:${s.slug}`).catch(() => null),
     ]);
+    pageviews30 += st?.pageviews || 0;
+    try {
+      const h = typeof healthRaw === 'string' ? JSON.parse(healthRaw) : healthRaw;
+      if (h) { healthChecked++; if (h.up) upCount++; if (h.sslDaysLeft != null && h.sslDaysLeft < 14) needAttention++; }
+    } catch { /* skip */ }
+    if (!auditC?.ok || (auditC.scores && auditC.scores.seo < 65)) needAttention++;
     // paid months start when a free trial ends (if there is/was one)
     const paidSince = s.trialEnds && s.trialEnds > (s.startedAt || 0) ? s.trialEnds : s.startedAt;
     const onTrial = !!(s.trialEnds && s.trialEnds > Date.now());
@@ -57,6 +76,9 @@ export default async function handler(req, res) {
       leads30: st?.conversions || 0,
       avgDwell: st?.avgDwell ?? null,
       deltaVisitors: st?.deltas?.visitors ?? null,
+      seo: auditC?.ok ? auditC.scores.seo : null,
+      speed: auditC?.ok ? auditC.scores.performance : null,
+      startedThisMonth: !!(s.startedAt && new Date(s.startedAt).toISOString().slice(0, 7) === THIS_MONTH),
     });
     if (onTrial) {
       trials.push({
@@ -113,32 +135,79 @@ export default async function handler(req, res) {
   const avgMonthsBeforeChurn = formerCount ? formerClients.reduce((t, c) => t + (c.monthsActive || 0), 0) / formerCount : 0;
   const dwells = clients.map((c) => c.avgDwell).filter((v) => v != null);
   const withData = clients.filter((c) => c.visitors30 > 0);
+  const seos = clients.map((c) => c.seo).filter((v) => v != null);
+  const speeds = clients.map((c) => c.speed).filter((v) => v != null);
+  const mrrLost = formerClients.reduce((t, c) => t + (c.priceMonthly || 0), 0);
+  const netProfit = lifetimeRevenue - expensesTotal;
+
+  // month-over-month trend from the daily-cron company snapshots
+  let trend = [];
+  try {
+    const months = (await store.smembers('company:snap:index')).sort();
+    if (months.length) {
+      const raws = await store.mget(months.map((m) => `company:snap:${m}`));
+      trend = raws
+        .map((r) => { try { return typeof r === 'string' ? JSON.parse(r) : r; } catch { return null; } })
+        .filter(Boolean)
+        .filter((s) => s.month !== THIS_MONTH) // exclude the in-progress month
+        .slice(-6);
+    }
+  } catch { /* snapshots optional */ }
+  const prev = trend.length ? trend[trend.length - 1] : null;
+  const pct = (now, was) => (was ? ((now - was) / was) * 100 : now ? 100 : 0);
+
+  // recurring monthly cost = recurring overhead + recurring per-client expenses
+  const recurringOverhead = overhead.filter((e) => e.recurring).reduce((t, e) => t + (Number(e.amount) || 0), 0);
+  const topClientMrr = Math.max(0, ...clients.filter((c) => c.status === 'active').map((c) => c.priceMonthly));
+
   const company = {
+    // clients
     activeClients: activeCount,
     trialClients: trialCount,
     formerClients: formerCount,
     totalEver: activeCount + trialCount + formerCount,
+    newThisMonth: clients.filter((c) => c.startedThisMonth).length,
+    churnedThisMonth: formerClients.filter((c) => (c.leftDate || '').slice(0, 7) === THIS_MONTH).length,
+    // revenue
     mrr,
     arr: mrr * 12,
-    arpu: mrr / payingCount, // avg revenue per paying client / month
+    mrrDeltaPct: prev ? pct(mrr, prev.mrr) : null,
+    clientsDeltaPct: prev ? pct(activeCount, prev.activeClients) : null,
+    arpu: mrr / payingCount,
     ltv: (mrr / payingCount) * (avgClientLifetimeMonths || 1) + setupTotal / Math.max(1, clients.length + formerCount),
     avgSetupFee: setupTotal / payingCount,
+    setupToMonthly: mrr ? setupTotal / clients.length / (mrr / payingCount || 1) : 0, // setup covers ~N months
+    trialPipelineMrr: trials.reduce((t, x) => t + x.priceMonthly, 0),
+    revenueConcentrationPct: mrr ? (topClientMrr / mrr) * 100 : 0,
+    // retention
     avgClientLifetimeMonths,
     churnRatePct,
     retentionPct: 100 - churnRatePct,
     avgMonthsBeforeChurn,
-    mrrLost: formerClients.reduce((t, c) => t + (c.priceMonthly || 0), 0),
+    mrrLost,
+    // profit
     lifetimeRevenue,
     expensesTotal,
-    netProfit: lifetimeRevenue - expensesTotal,
-    profitMarginPct: lifetimeRevenue ? ((lifetimeRevenue - expensesTotal) / lifetimeRevenue) * 100 : 0,
+    overheadTotal,
+    netProfit,
+    profitMarginPct: lifetimeRevenue ? (netProfit / lifetimeRevenue) * 100 : 0,
+    recurringMonthlyCost: recurringOverhead,
+    costPerClient: expensesTotal / Math.max(1, activeCount + formerCount),
+    overheadRatioPct: lifetimeRevenue ? (overheadTotal / lifetimeRevenue) * 100 : 0,
     // value delivered to clients (portfolio performance)
     visitorsDriven30: clients.reduce((t, c) => t + c.visitors30, 0),
     leadsDriven30: clients.reduce((t, c) => t + c.leads30, 0),
+    pageviews30,
     avgTimeOnSite: dwells.length ? Math.round(dwells.reduce((a, b) => a + b, 0) / dwells.length) : null,
+    avgSeoReady: seos.length ? Math.round(seos.reduce((a, b) => a + b, 0) / seos.length) : null,
+    avgSpeed: speeds.length ? Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length) : null,
     sitesImproving: withData.filter((c) => (c.deltaVisitors || 0) >= 10).length,
     sitesDeclining: withData.filter((c) => (c.deltaVisitors || 0) <= -10).length,
     sitesTracked: withData.length,
+    sitesTotal: sites.length,
+    uptimePct: healthChecked ? Math.round((upCount / healthChecked) * 100) : null,
+    sitesNeedAttention: needAttention,
+    trend, // last ~6 months: [{month, mrr, activeClients, netProfit, ...}]
   };
 
   res.setHeader('Cache-Control', 'no-store, max-age=0');
@@ -165,6 +234,6 @@ export default async function handler(req, res) {
     trialMrr: trials.reduce((t, x) => t + x.priceMonthly, 0),
     formerClients,
     churnedCount: formerClients.length,
-    mrrLost: formerClients.reduce((t, c) => t + (c.priceMonthly || 0), 0),
+    mrrLost,
   });
 }

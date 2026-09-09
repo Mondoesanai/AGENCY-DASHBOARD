@@ -133,13 +133,21 @@ createServer(async (req, res) => {
   if (path === '/api/finances') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     const company = {
-      activeClients: 2, trialClients: 1, formerClients: 1, totalEver: 4,
-      mrr: 350, arr: 4200, arpu: 175, ltv: 2400, avgSetupFee: 1200,
-      avgClientLifetimeMonths: 6.75, churnRatePct: 25, retentionPct: 75, avgMonthsBeforeChurn: 9,
-      mrrLost: 90, lifetimeRevenue: 7710, expensesTotal: 945, netProfit: 6765, profitMarginPct: 87.7,
-      visitorsDriven30: 1284, leadsDriven30: 47, avgTimeOnSite: 22, sitesImproving: 2, sitesDeclining: 1, sitesTracked: 3,
+      activeClients: 2, trialClients: 1, formerClients: 1, totalEver: 4, newThisMonth: 1, churnedThisMonth: 0,
+      mrr: 350, arr: 4200, mrrDeltaPct: 16.7, clientsDeltaPct: 0, arpu: 175, ltv: 2400, avgSetupFee: 1200,
+      setupToMonthly: 6.9, trialPipelineMrr: 100, revenueConcentrationPct: 57,
+      avgClientLifetimeMonths: 6.75, churnRatePct: 25, retentionPct: 75, avgMonthsBeforeChurn: 9, mrrLost: 90,
+      lifetimeRevenue: 7710, expensesTotal: 945, overheadTotal: 585, netProfit: 6765, profitMarginPct: 87.7,
+      recurringMonthlyCost: 45, costPerClient: 315, overheadRatioPct: 7.6,
+      visitorsDriven30: 1284, leadsDriven30: 47, pageviews30: 2800, avgTimeOnSite: 22, avgSeoReady: 90, avgSpeed: 86,
+      sitesImproving: 2, sitesDeclining: 1, sitesTracked: 3, sitesTotal: 3, uptimePct: 100, sitesNeedAttention: 1,
+      trend: [
+        { month: '2026-06', mrr: 200, activeClients: 1, netProfit: 2100 },
+        { month: '2026-07', mrr: 250, activeClients: 2, netProfit: 3400 },
+        { month: '2026-08', mrr: 300, activeClients: 2, netProfit: 5100 },
+      ],
     };
-    const clients = DEMO.sites.map(s => ({ slug: s.slug, name: s.name, client: s.client, priceMonthly: s.priceMonthly, setupFee: s.setupFee, startedAt: s.startedAt, monthsWith: 6, status: s.onTrial ? 'trial' : 'active', lifetimeValue: s.lifetimeRevenue, visitors30: s.stats.visitors, leads30: s.stats.conversions, avgDwell: s.stats.avgDwell, deltaVisitors: s.stats.deltas.visitors }));
+    const clients = DEMO.sites.map(s => ({ slug: s.slug, name: s.name, client: s.client, priceMonthly: s.priceMonthly, setupFee: s.setupFee, startedAt: s.startedAt, monthsWith: 6, status: s.onTrial ? 'trial' : 'active', lifetimeValue: s.lifetimeRevenue, visitors30: s.stats.visitors, leads30: s.stats.conversions, avgDwell: s.stats.avgDwell, deltaVisitors: s.stats.deltas.visitors, seo: s.audit.scores.seo, speed: s.audit.scores.performance, startedThisMonth: false }));
     return res.end(JSON.stringify({ ok: true, company, clients, finances: DEMO.portfolio._fin, overhead: _overhead, trials: _trials, trialMrr: 100, formerClients: _former, churnedCount: 1, mrrLost: 90 }));
   }
   if (path === '/api/shot') {

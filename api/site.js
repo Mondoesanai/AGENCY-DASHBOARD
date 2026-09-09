@@ -1,7 +1,10 @@
 // Create / update / delete a client site, plus builder notes and the
 // "what we did this month" changelog. All writes require CRON_SECRET.
 import { store } from '../lib/store.js';
-import { saveSiteConfig, deleteSiteConfig, getSiteConfig, slugify, listSites } from '../lib/registry.js';
+import {
+  saveSiteConfig, deleteSiteConfig, getSiteConfig, slugify, listSites,
+  hostKey, slugForHost, rememberHost,
+} from '../lib/registry.js';
 
 const normEvent = (s) =>
   String(s || '')
@@ -147,8 +150,20 @@ export default async function handler(req, res) {
 
   try {
     if (action === 'save') {
-      const slug = (body.slug || slugify(body.url || body.name || '')).trim();
+      let slug = (body.slug || slugify(body.url || body.name || '')).trim();
       if (!slug) return res.status(400).json({ ok: false, error: 'need a url or name' });
+      // if this exact site already exists (added before, OR auto-registered by
+      // the tracker) reuse THAT slug so we update one entry instead of forking a
+      // duplicate. Only do this for brand-new adds (no explicit body.slug).
+      if (!body.slug && body.url) {
+        const existing = await slugForHost(body.url).catch(() => null);
+        if (existing) slug = existing;
+        else {
+          const wantHost = hostKey(body.url);
+          const auto = (await listSites()).find((s) => s.source === 'auto' && hostKey(s.url) === wantHost);
+          if (auto) slug = auto.slug;
+        }
+      }
       const cfg = await saveSiteConfig(slug, {
         url: body.url,
         name: body.name || slug,
@@ -184,6 +199,35 @@ export default async function handler(req, res) {
         await deleteSiteConfig(slug);
       }
       return res.status(200).json({ ok: true, removed: slugs.length });
+    }
+
+    if (action === 'merge') {
+      const keep = slugify(body.keep || '');
+      const drop = slugify(body.drop || '');
+      if (!keep || !drop || keep === drop) return res.status(400).json({ ok: false, error: 'need keep + drop' });
+      // pull config/ancillary data off the "drop" site onto "keep" (visitor
+      // counters already live under whichever slug — we don't move those)
+      const [dcfg, kcfg] = await Promise.all([getSiteConfig(drop), getSiteConfig(keep)]);
+      const src = dcfg || {};
+      const patch = {};
+      for (const f of ['url', 'name', 'client', 'email', 'phone', 'priceMonthly', 'setupFee',
+        'startedAt', 'trialEnds', 'billingDay', 'leadValue', 'reviewUrl', 'autoSend']) {
+        if (src[f] !== undefined && src[f] !== '' && src[f] !== null && !(kcfg && kcfg[f])) patch[f] = src[f];
+      }
+      if (src.conversionEvents?.length && !(kcfg && kcfg.conversionEvents?.length))
+        patch.conversionEvents = src.conversionEvents.join(', ');
+      if (!patch.url && kcfg?.url) patch.url = kcfg.url;
+      await saveSiteConfig(keep, patch);
+      // move notes / changelog / expenses only if keep doesn't already have them
+      for (const k of ['notes', 'changelog', 'expenses', 'baseline']) {
+        const [s, d] = await Promise.all([store.get(`${k}:${drop}`), store.get(`${k}:${keep}`)]);
+        if (s && !d) await store.set(`${k}:${keep}`, s);
+      }
+      // point both hostnames at the kept slug
+      if (src.url) await rememberHost(src.url, keep);
+      if (kcfg?.url || patch.url) await rememberHost(kcfg?.url || patch.url, keep);
+      await deleteSiteConfig(drop);
+      return res.status(200).json({ ok: true, keep });
     }
 
     if (action === 'expense-add' || action === 'expense-del') {

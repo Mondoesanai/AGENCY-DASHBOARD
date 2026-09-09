@@ -1,7 +1,7 @@
 // Receives tracking beacons from t.js and rolls them into daily counters.
 // Cost: $0 — it's just your own function writing to your own KV store.
 import { store, dayKey } from '../lib/store.js';
-import { slugify } from '../lib/registry.js';
+import { slugify, slugForHost, rememberHost } from '../lib/registry.js';
 
 function hash(str) {
   let h = 5381;
@@ -61,7 +61,16 @@ export default async function handler(req, res) {
       .json({ ok: true, message: 'Tracker endpoint is reachable. Beacons POST here from t.js.' });
   }
 
-  const slug = cleanSlug(d.s);
+  // hostname the beacon came from — prefer the real origin, fall back to the id
+  let host = '';
+  try {
+    host = new URL(d.u || '').hostname;
+  } catch {
+    host = String(d.s || '');
+  }
+  // one host = one slug: if this host is already known (e.g. it was "Added" in
+  // the UI, or auto-registered earlier), route this beacon to that same slug.
+  const slug = (await slugForHost(host || d.s).catch(() => null)) || cleanSlug(d.s);
   if (slug === 'unknown') return res.status(400).json({ ok: false, error: 'missing site id' });
 
   const type = d.e === 'ev' ? 'ev' : d.e === 'dur' ? 'dur' : 'pv';
@@ -95,6 +104,7 @@ export default async function handler(req, res) {
       JSON.stringify({ slug, url: origin || `https://${slug}`, lastSeen: Date.now() })
     )
   );
+  if (host) tasks.push(rememberHost(host, slug)); // seed the host->slug index
 
   if (type === 'pv') {
     tasks.push(store.incr(`${p}:day:${day}:pv`));

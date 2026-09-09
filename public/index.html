@@ -222,6 +222,7 @@
 
 <div class="bulkbar" id="bulkbar" hidden>
   <span id="bulkCount">0 selected</span>
+  <button class="btn sm" id="bulkMerge" hidden>Merge these 2</button>
   <button class="btn danger sm" id="bulkRemove">Remove from dashboard</button>
   <button class="btn ghost sm" id="bulkCancel">Cancel</button>
 </div>
@@ -234,27 +235,60 @@
 
 <div class="modal" id="modal">
   <div class="modal-in">
-    <h2>Add a site</h2>
-    <p class="note" style="margin-top:0">Paste the live link. Everything else is optional and editable later.</p>
-    <label class="field"><span>Live URL *</span><input id="m_url" placeholder="https://client-site.vercel.app" /></label>
-    <div class="row2">
-      <label class="field"><span>Business name</span><input id="m_name" placeholder="Acme Co." /></label>
-      <label class="field"><span>Client first name</span><input id="m_client" placeholder="Kyle" /></label>
+    <div class="dtabs" style="position:static;top:auto;border:0;margin:0 0 12px;padding:0">
+      <button data-mt="form" class="on">Add a site</button>
+      <button data-mt="help">How it works</button>
     </div>
-    <div class="row2">
-      <label class="field"><span>Client email</span><input id="m_email" type="email" placeholder="kyle@acme.com" /></label>
-      <label class="field"><span>Phone</span><input id="m_phone" placeholder="(555) 123-4567" /></label>
+
+    <div id="m_form">
+      <p class="note" style="margin-top:0">Only the URL is required — everything else is editable later in ⚙ Site settings.</p>
+      <label class="field"><span>Live URL * — the exact address people actually visit</span><input id="m_url" placeholder="https://abovepar.com  (or the .vercel.app if there's no domain)" /></label>
+      <div class="row2">
+        <label class="field"><span>Business name</span><input id="m_name" placeholder="Above Par Bookkeeping" /></label>
+        <label class="field"><span>Client first name</span><input id="m_client" placeholder="Debbie" /></label>
+      </div>
+      <div class="row2">
+        <label class="field"><span>Client email — where reports go</span><input id="m_email" type="email" placeholder="debbie@abovepar.com" /></label>
+        <label class="field"><span>Phone</span><input id="m_phone" placeholder="(555) 123-4567" /></label>
+      </div>
+      <div class="row2">
+        <label class="field"><span>$ / month</span><input id="m_price" inputmode="decimal" placeholder="150" /></label>
+        <label class="field"><span>Setup fee (one-time)</span><input id="m_setup" inputmode="decimal" placeholder="1500" /></label>
+      </div>
+      <div class="row2">
+        <label class="field"><span>Client since</span><input id="m_since" type="date" /></label>
+        <label class="field"><span>Billing day (1–28)</span><input id="m_bday" inputmode="numeric" placeholder="14" /></label>
+      </div>
+      <label class="field"><span>Free trial until (optional) — blank = paying now</span><input id="m_trial" type="date" /></label>
+      <label class="toggle"><input type="checkbox" id="m_auto" /> Auto-send the monthly report email on the billing day</label>
+      <div class="btn-row">
+        <button class="btn" id="m_save">Add site</button>
+        <button class="btn ghost" id="m_cancel">Cancel</button>
+      </div>
+      <p class="note" id="m_msg"></p>
     </div>
-    <div class="row2">
-      <label class="field"><span>$ / month</span><input id="m_price" inputmode="decimal" placeholder="150" /></label>
-      <label class="field"><span>Billing day (1–28)</span><input id="m_bday" inputmode="numeric" placeholder="14" /></label>
+
+    <div id="m_help" hidden style="font-size:13.5px;line-height:1.7;color:var(--muted)">
+      <p style="margin-top:0"><strong style="color:var(--ink)">What to paste in "Live URL"</strong><br>
+      The real address people type or click to reach the site. If the client has a domain (<code>abovepar.com</code>), use that — not the <code>abovepar.vercel.app</code>. Only use the <code>.vercel.app</code> if there's no domain yet. Whatever you pick, be consistent with what's on the tracker snippet.</p>
+
+      <p><strong style="color:var(--ink)">Do I add it here, or does the snippet do it?</strong><br>
+      Either works, and they now <em>merge automatically</em> by domain:
+      <br>• If you already put <code>t.js</code> on the site, it's probably here already (tagged <span class="tag auto">auto</span>). Adding it here just fills in the business details — same domain = same client, one entry.
+      <br>• If you add it here first, then drop the snippet on later, the visitor data flows into this same entry.</p>
+
+      <p><strong style="color:var(--ink)">The one-line snippet</strong><br>
+      After adding, open the site → <strong>Settings</strong> tab → copy the <code>&lt;script&gt;</code> line and put it in the <code>&lt;head&gt;</code> of every page. Data starts within a minute of the next visit.</p>
+
+      <p><strong style="color:var(--ink)">Nice to fill in now (all optional)</strong><br>
+      • <strong>$ / month</strong> + <strong>Setup fee</strong> — drives MRR, lifetime sales, company stats.
+      <br>• <strong>Client since</strong> — how long they've been a client (retention math).
+      <br>• <strong>Free trial until</strong> — if you gave them "30 days free, then auto-charge". They won't count toward MRR until that date.
+      <br>• <strong>Billing day</strong> + <strong>auto-send</strong> — the report email goes out on that day each month.</p>
+
+      <p><strong style="color:var(--ink)">Later, in ⚙ Site settings</strong><br>
+      Google review link, which events count as a conversion, ad-spend &amp; expenses for that client, and the AI "figure out my conversion" helper.</p>
     </div>
-    <label class="toggle"><input type="checkbox" id="m_auto" /> Auto-send the monthly report email on the billing day</label>
-    <div class="btn-row">
-      <button class="btn" id="m_save">Add site</button>
-      <button class="btn ghost" id="m_cancel">Cancel</button>
-    </div>
-    <p class="note" id="m_msg"></p>
   </div>
 </div>
 
@@ -479,28 +513,59 @@ function moneyHTML(p){
     <p class="note" style="margin-top:12px">Per-client setup fee / monthly / client-since / <strong>free trial until</strong> are set in each ⚙ Site settings, along with that client's own ad-spend &amp; costs.</p>`;
 }
 
+function delTag(v){ if(v==null) return ''; const s=v>=0?'▲':'▼'; return ` <span style="font-size:10.5px;color:${v>=0?'var(--pos)':'var(--neg)'}">${s}${Math.abs(Math.round(v))}%</span>`; }
+function miniTrend(trend,key,col){
+  const rows=(trend||[]).filter(x=>x&&x[key]!=null); if(rows.length<2) return '';
+  const vals=rows.map(x=>x[key]); const max=Math.max(...vals,1)*1.15,min=Math.min(...vals,0);
+  const W=260,H=48; const X=i=>i*(W/(rows.length-1)); const Y=v=>H-2-((v-min)/((max-min)||1))*(H-6);
+  const d=vals.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
+  return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;margin-top:4px"><path d="${d}" fill="none" stroke="${col||'var(--green-br)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+}
 function companyHTML(p){
   const c=p.company||{};
+  const n=(v,d=1)=>v==null?'—':(+v).toFixed(d).replace(/\.0$/,'');
   const tile=(k,v,d,cls)=>`<div class="b ${cls||''}"><div class="k">${k}</div><div class="v">${v}</div>${d?`<div class="d" style="font-size:11px;color:var(--faint);margin-top:3px">${d}</div>`:''}</div>`;
   return `
-    <div class="fin-grid">
-      ${tile('Active clients', c.activeClients, `${c.trialClients} on trial · ${c.formerClients} former`)}
-      ${tile('MRR', money(c.mrr), money(c.arr)+'/yr')}
-      ${tile('Avg per client', money(c.arpu)+'/mo', 'ARPU')}
-      ${tile('Est. client value', money(c.ltv), 'LTV (rev/mo × avg lifetime)')}
-      ${tile('Retention', Math.round(c.retentionPct)+'%', `churn ${c.churnRatePct.toFixed(0)}%`, c.retentionPct>=80?'pos':'neg')}
-      ${tile('Avg client lifetime', c.avgClientLifetimeMonths.toFixed(1)+' mo', c.avgMonthsBeforeChurn?`churned clients lasted ${c.avgMonthsBeforeChurn.toFixed(1)} mo`:'')}
-      ${tile('Net profit', money(c.netProfit), Math.round(c.profitMarginPct)+'% margin', c.netProfit>=0?'pos':'neg')}
-      ${tile('Total revenue ever', money(c.lifetimeRevenue), `− ${money(c.expensesTotal)} costs`)}
-    </div>
-    <div class="fin-row h" style="border:0"><span>Value delivered to clients (last 30 days)</span></div>
+    <div class="fin-row h" style="border:0"><span>Recurring revenue</span></div>
     <div class="fin-grid" style="margin-top:6px">
-      ${tile('Visitors driven', fmt(c.visitorsDriven30), `across ${c.sitesTracked} tracked sites`)}
+      ${tile('MRR', money(c.mrr)+delTag(c.mrrDeltaPct), money(c.arr)+'/yr'+(c.trialPipelineMrr?` · +${money(c.trialPipelineMrr)} in trials`:''))}
+      ${tile('Active clients', c.activeClients+delTag(c.clientsDeltaPct), `${c.trialClients} trial · ${c.formerClients} former · ${c.totalEver} ever`)}
+      ${tile('This month', `+${c.newThisMonth} / −${c.churnedThisMonth}`, 'new / churned')}
+      ${tile('Avg per client', money(c.arpu)+'/mo', `ARPU · setup avg ${money(c.avgSetupFee)}`)}
+      ${tile('Est. client LTV', money(c.ltv), 'rev/mo × avg lifetime + setup')}
+      ${tile('Setup covers', n(c.setupToMonthly)+' mo', 'of the monthly fee, up front')}
+      ${tile('Biggest client', n(c.revenueConcentrationPct,0)+'% of MRR', c.revenueConcentrationPct>35?'⚠ concentration risk':'healthy spread', c.revenueConcentrationPct>45?'neg':'')}
+    </div>
+    ${(c.trend&&c.trend.length>1)?`<div class="b" style="margin:8px 0 4px"><div class="k">MRR — last ${c.trend.length} months</div>${miniTrend(c.trend,'mrr')}<div class="d" style="font-size:11px;color:var(--faint)">${c.trend.map(t=>money(t.mrr)).join('  →  ')}</div></div>`:''}
+
+    <div class="fin-row h" style="border:0;margin-top:12px"><span>Retention</span></div>
+    <div class="fin-grid" style="margin-top:6px">
+      ${tile('Retention', n(c.retentionPct,0)+'%', `logo churn ${n(c.churnRatePct,0)}%`, c.retentionPct>=80?'pos':'neg')}
+      ${tile('Avg client lifetime', n(c.avgClientLifetimeMonths)+' mo', c.avgMonthsBeforeChurn?`churned lasted ${n(c.avgMonthsBeforeChurn)} mo`:'')}
+      ${tile('MRR at risk', money(c.trialPipelineMrr), 'still on free trial')}
+      ${tile('MRR lost to churn', money(c.mrrLost), `${c.formerClients} former client${c.formerClients===1?'':'s'}`)}
+    </div>
+
+    <div class="fin-row h" style="border:0;margin-top:12px"><span>Profit &amp; costs</span></div>
+    <div class="fin-grid" style="margin-top:6px">
+      ${tile('Net profit', money(c.netProfit), n(c.profitMarginPct,0)+'% margin', c.netProfit>=0?'pos':'neg')}
+      ${tile('Total revenue ever', money(c.lifetimeRevenue), `− ${money(c.expensesTotal)} costs`)}
+      ${tile('Recurring costs', money(c.recurringMonthlyCost)+'/mo', 'software, memberships…')}
+      ${tile('Cost per client', money(c.costPerClient), `overhead = ${n(c.overheadRatioPct,0)}% of revenue`)}
+    </div>
+
+    <div class="fin-row h" style="border:0;margin-top:12px"><span>Value delivered to clients (last 30 days)</span></div>
+    <div class="fin-grid" style="margin-top:6px">
+      ${tile('Visitors driven', fmt(c.visitorsDriven30), `${fmt(c.pageviews30)} pageviews · ${c.sitesTracked} tracked`)}
       ${tile('Leads driven', fmt(c.leadsDriven30), 'calls · forms · bookings')}
       ${tile('Avg time on site', c.avgTimeOnSite!=null?dur(c.avgTimeOnSite):'—', 'engagement')}
-      ${tile('Momentum', `${c.sitesImproving} ↑ / ${c.sitesDeclining} ↓`, 'vs last month')}
+      ${tile('Momentum', `${c.sitesImproving} ↑ / ${c.sitesDeclining} ↓`, 'sites vs last month')}
+      ${tile('Avg SEO-ready', c.avgSeoReady??'—', 'technical setup score')}
+      ${tile('Avg speed', c.avgSpeed??'—', 'Google performance')}
+      ${tile('Uptime', c.uptimePct!=null?c.uptimePct+'%':'—', `${c.sitesTotal} sites monitored`)}
+      ${tile('Need attention', c.sitesNeedAttention, 'down / SSL / low score', c.sitesNeedAttention?'neg':'')}
     </div>
-    <p class="note" style="margin-top:12px">Client-count & retention update as you add sites and record why past clients left (the "why are you removing this?" prompt). "Value delivered" pulls straight from the tracking snippets.</p>`;
+    <p class="note" style="margin-top:12px">Client counts, retention and this-month new/churned build up as you add sites and record why past clients left (the removal prompt). Month-over-month deltas need at least one <strong>company snapshot</strong> — the daily cron writes one on the 1st (and any day it's missing). Everything under "value delivered" pulls straight from the tracking snippets.</p>`;
 }
 
 function rosterHTML(p){
@@ -996,8 +1061,22 @@ function updateBulkBar(){
   bar.hidden=!selectMode;
   $('#bulkCount').textContent=`${selected.size} selected`;
   $('#bulkRemove').disabled=selected.size===0;
+  $('#bulkMerge').hidden=selected.size!==2;
   $('#selectBtn').textContent=selectMode?'Done':'Select';
 }
+$('#bulkMerge')?.addEventListener('click',async(e)=>{
+  const slugs=[...selected]; if(slugs.length!==2) return;
+  const a=STATE.sites.find(s=>s.slug===slugs[0]), b=STATE.sites.find(s=>s.slug===slugs[1]);
+  // keep = the one carrying the visitor data
+  const score=s=>((s.stats&&s.stats.hasData)?1e6:0)+((s.stats&&s.stats.visitors)||0)+(s.hasTracker?1:0);
+  const keep=score(a)>=score(b)?a:b, drop=keep===a?b:a;
+  if(!confirm(`Merge into one client:\n\n• KEEP  "${keep.name}"  (${keep.stats&&keep.stats.hasData?fmt(keep.stats.visitors)+' visitors':'has the tracker data'})\n• FOLD IN  "${drop.name}"  (its settings — trial, client-since, pricing — move onto the kept one)\n\n"${drop.name}" is then removed. Continue?`)) return;
+  const k=needKey(); if(!k) return;
+  e.target.disabled=true; e.target.textContent='Merging…';
+  const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'merge',keep:keep.slug,drop:drop.slug});
+  if(j.ok){ exitSelect(); await load(); }
+  else { e.target.disabled=false; e.target.textContent='Merge these 2'; alert(j.error||'Failed — check your admin key.'); }
+});
 function exitSelect(){ selectMode=false; selected.clear(); if(STATE) render(STATE); }
 $('#selectBtn').addEventListener('click',()=>{ selectMode=!selectMode; if(!selectMode) selected.clear(); if(STATE) render(STATE); });
 $('#bulkCancel').addEventListener('click',exitSelect);
@@ -1024,9 +1103,14 @@ $('#genBtn').addEventListener('click',async()=>{
 });
 
 /* ---------- add site modal ---------- */
-$('#addBtn').addEventListener('click',()=>{ $('#modal').classList.add('open'); $('#m_url').focus(); });
+$('#addBtn').addEventListener('click',()=>{ mTab('form'); $('#modal').classList.add('open'); $('#m_url').focus(); });
 $('#m_cancel').addEventListener('click',()=>$('#modal').classList.remove('open'));
 $('#modal').addEventListener('click',e=>{ if(e.target.id==='modal') $('#modal').classList.remove('open'); });
+function mTab(t){
+  $('#m_form').hidden=t!=='form'; $('#m_help').hidden=t!=='help';
+  $$('#modal .dtabs button').forEach(b=>b.classList.toggle('on',b.dataset.mt===t));
+}
+$$('#modal .dtabs button').forEach(b=>b.onclick=()=>mTab(b.dataset.mt));
 $('#m_save').addEventListener('click',async()=>{
   const k=needKey(); if(!k) return;
   const url=$('#m_url').value.trim();
@@ -1034,9 +1118,10 @@ $('#m_save').addEventListener('click',async()=>{
   $('#m_save').disabled=true; $('#m_msg').textContent='Adding…';
   const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'save',
     url,name:$('#m_name').value,client:$('#m_client').value,email:$('#m_email').value,phone:$('#m_phone').value,
-    priceMonthly:$('#m_price').value,billingDay:$('#m_bday').value,autoSend:$('#m_auto').checked});
+    priceMonthly:$('#m_price').value,setupFee:$('#m_setup').value,startedAt:$('#m_since').value,trialEnds:$('#m_trial').value,
+    billingDay:$('#m_bday').value,autoSend:$('#m_auto').checked});
   $('#m_save').disabled=false;
-  if(j.ok){ ['m_url','m_name','m_client','m_email','m_phone','m_price','m_bday'].forEach(id=>$('#'+id).value=''); $('#m_auto').checked=false; $('#modal').classList.remove('open'); $('#m_msg').textContent=''; await load(); openDrawer(j.site.slug); }
+  if(j.ok){ ['m_url','m_name','m_client','m_email','m_phone','m_price','m_setup','m_since','m_trial','m_bday'].forEach(id=>$('#'+id).value=''); $('#m_auto').checked=false; $('#modal').classList.remove('open'); $('#m_msg').textContent=''; await load(); openDrawer(j.site.slug); }
   else $('#m_msg').textContent=j.error||'Failed.';
 });
 
