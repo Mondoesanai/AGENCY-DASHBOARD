@@ -916,6 +916,16 @@ function openDrawer(slug){
         <div id="cf_convout" class="note" style="margin-top:8px"></div>
       </div>
       <label class="toggle"><input type="checkbox" id="cf_auto" ${s.autoSend?'checked':''}/> Auto-send the report email on the billing day</label>
+      <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:8px 0">
+        <div class="note" style="margin:0 0 8px"><strong>Automation</strong> — turns on once your API keys are connected. Set it up now; it'll start working after.</div>
+        <label class="field"><span>GitHub repo (owner/name) — where this site's code lives. Leave blank to auto-find from the URL.</span><input id="cf_repo" value="${esc(s.repo||'')}" placeholder="Mondoesanai/apostellodetailing" /></label>
+        <label class="toggle" style="margin:6px 0"><input type="checkbox" id="cf_seo" ${s.seoAgent!==false?'checked':''}/> Run the autonomous SEO agent on this site</label>
+        <div class="row2">
+          <label class="field"><span>Monthly budget ($)</span><input id="cf_budget" inputmode="decimal" value="${s.agentBudget||18}" /></label>
+          <label class="field"><span>Hard cap ($)</span><input id="cf_cap" inputmode="decimal" value="${s.agentCap||20}" /></label>
+        </div>
+        <label class="toggle" style="margin:6px 0 0"><input type="checkbox" id="cf_rev" ${s.revisionsAuto!==false?'checked':''}/> Handle revision‑request emails for this client (auto‑reply + calendar block + preview)</label>
+      </div>
       <div class="btn-row"><button class="btn sm" id="cfSave">Save settings</button><button class="btn danger sm" id="cfDel">Remove site</button></div>
     </details>
     </div><!-- /settings -->
@@ -1107,6 +1117,7 @@ function wireDrawer(s,bf){
       phone:$('#cf_phone').value,priceMonthly:$('#cf_price').value,setupFee:$('#cf_setup').value,startedAt:$('#cf_since').value,
       trialEnds:$('#cf_trial').value,billingDay:$('#cf_bday').value,leadValue:$('#cf_lead').value,reviewUrl:$('#cf_review').value,
       leadSource:$('#cf_leadsrc').value,leadSourceDate:$('#cf_leaddate').value,
+      repo:$('#cf_repo').value,seoAgent:$('#cf_seo').checked,agentBudget:$('#cf_budget').value,agentCap:$('#cf_cap').value,revisionsAuto:$('#cf_rev').checked,
       conversionEvents:$('#cf_conv').value,autoSend:$('#cf_auto').checked});
     if(j.ok){ const v=$('#cf_leadsrc').value.trim(); if(v) rememberLeadSource(v); await load(); openDrawer(j.site.slug); const d=$('.log.block'); if(d) d.open=true; } else { e.target.disabled=false; e.target.textContent='Failed'; }
   });
