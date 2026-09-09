@@ -146,6 +146,19 @@ createServer(async (req, res) => {
         { month: '2026-07', mrr: 250, activeClients: 2, netProfit: 3400 },
         { month: '2026-08', mrr: 300, activeClients: 2, netProfit: 5100 },
       ],
+      retentionSeries: [
+        ...DEMO.sites.map(s => ({
+          slug: s.slug, name: s.name, startedAt: s.startedAt, paidFrom: s.startedAt, endedAt: null,
+          priceMonthly: s.priceMonthly, setupFee: s.setupFee, status: s.onTrial ? 'trial' : 'active',
+          monthsActive: s.monthsActive, lifetimeValue: s.lifetimeRevenue,
+        })),
+        ..._former.map(c => ({
+          slug: c.slug, name: c.name, startedAt: Date.parse(c.leftDate) - c.monthsActive * 30 * 864e5,
+          paidFrom: Date.parse(c.leftDate) - c.monthsActive * 30 * 864e5, endedAt: Date.parse(c.leftDate),
+          priceMonthly: c.priceMonthly, setupFee: c.setupFee, status: 'former', reason: c.reason, note: c.note,
+          monthsActive: c.monthsActive, lifetimeValue: c.lifetimeRevenue,
+        })),
+      ],
     };
     const clients = DEMO.sites.map(s => ({ slug: s.slug, name: s.name, client: s.client, priceMonthly: s.priceMonthly, setupFee: s.setupFee, startedAt: s.startedAt, monthsWith: 6, status: s.onTrial ? 'trial' : 'active', lifetimeValue: s.lifetimeRevenue, visitors30: s.stats.visitors, leads30: s.stats.conversions, avgDwell: s.stats.avgDwell, deltaVisitors: s.stats.deltas.visitors, seo: s.audit.scores.seo, speed: s.audit.scores.performance, startedThisMonth: false }));
     return res.end(JSON.stringify({ ok: true, company, clients, finances: DEMO.portfolio._fin, overhead: _overhead, trials: _trials, trialMrr: 100, formerClients: _former, churnedCount: 1, mrrLost: 90 }));

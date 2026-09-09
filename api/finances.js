@@ -114,6 +114,40 @@ export default async function handler(req, res) {
     /* churn optional */
   }
 
+  // one row per client ever (active + former) → the Company-stats retention graph
+  const retentionSeries = [
+    ...clients.map((c) => {
+      const s = sites.find((x) => x.slug === c.slug) || {};
+      const paidFrom = s.trialEnds && s.trialEnds > (c.startedAt || 0) ? s.trialEnds : c.startedAt || 0;
+      return {
+        slug: c.slug, name: c.name,
+        startedAt: c.startedAt || 0,
+        paidFrom,
+        endedAt: null,
+        priceMonthly: c.priceMonthly || 0,
+        setupFee: c.setupFee || 0,
+        status: c.status, // 'active' | 'trial'
+        monthsActive: c.monthsWith || 0,
+        lifetimeValue: c.lifetimeValue || 0,
+      };
+    }),
+    ...formerClients.map((c) => ({
+      slug: c.slug, name: c.name,
+      startedAt: c.startedAt || 0,
+      paidFrom: c.startedAt || 0,
+      endedAt: (c.leftDate ? Date.parse(c.leftDate) : c.recordedAt) || Date.now(),
+      priceMonthly: c.priceMonthly || 0,
+      setupFee: c.setupFee || 0,
+      status: 'former',
+      reason: c.reason || '',
+      note: c.note || '',
+      monthsActive: c.monthsActive || 0,
+      lifetimeValue: c.lifetimeRevenue || 0,
+    })),
+  ]
+    .filter((r) => r.startedAt)
+    .sort((a, b) => a.startedAt - b.startedAt);
+
   const mrr = perSite.reduce((t, r) => t + (r.onTrial ? 0 : r.priceMonthly), 0);
   const setupTotal = perSite.reduce((t, r) => t + r.setupFee, 0);
   const activeRevenue = perSite.reduce((t, r) => t + r.lifetimeRevenue, 0);
@@ -208,6 +242,7 @@ export default async function handler(req, res) {
     uptimePct: healthChecked ? Math.round((upCount / healthChecked) * 100) : null,
     sitesNeedAttention: needAttention,
     trend, // last ~6 months: [{month, mrr, activeClients, netProfit, ...}]
+    retentionSeries, // one row per client ever, for the retention graph
   };
 
   res.setHeader('Cache-Control', 'no-store, max-age=0');

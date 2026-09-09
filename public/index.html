@@ -107,6 +107,13 @@
   .pillmini.ok{background:#2c2a17;color:var(--warn);}
   .pillmini.bad{background:#2e1a15;color:var(--neg);}
   .spark{display:block;}
+  .rtbars{display:flex;flex-direction:column;gap:5px;margin:2px 0 4px;}
+  .rtrow{display:grid;grid-template-columns:1.15fr 2fr 1.25fr;gap:8px;align-items:center;font-size:11.5px;}
+  .rtname{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .rttrack{position:relative;height:12px;border-radius:6px;background:var(--surface2);overflow:hidden;}
+  .rtbar{position:absolute;top:0;height:100%;border-radius:6px;min-width:3px;}
+  .rtmeta{text-align:right;color:var(--faint);font-variant-numeric:tabular-nums;white-space:nowrap;}
+  @media(max-width:560px){.rtrow{grid-template-columns:1fr 1.4fr;}.rtmeta{display:none;}}
 
   .scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:40;backdrop-filter:blur(2px);}
   .scrim.open{opacity:1;pointer-events:auto;}
@@ -521,6 +528,73 @@ function miniTrend(trend,key,col){
   const d=vals.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;margin-top:4px"><path d="${d}" fill="none" stroke="${col||'var(--green-br)'}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
 }
+function retentionChart(series){
+  const rows=(series||[]).filter(s=>s&&s.startedAt).slice().sort((a,b)=>a.startedAt-b.startedAt);
+  if(!rows.length) return '<p class="note">No client history yet — this graph fills in as you add sites and log why past clients leave (the removal prompt).</p>';
+  const now=Date.now();
+  const mkey=t=>{const d=new Date(t);return d.getFullYear()*12+d.getMonth();};
+  const maxM=mkey(now);
+  let minM=Math.min(...rows.map(r=>mkey(r.startedAt)));
+  if(maxM-minM>23) minM=maxM-23;                 // cap at 24 months
+  const months=[]; for(let m=minM;m<=maxM;m++) months.push(m);
+  const span=Math.max(1,months.length-1);
+  const label=m=>{const y=Math.floor(m/12),mo=((m%12)+12)%12;return new Date(y,mo,1).toLocaleDateString(undefined,{month:'short'})+(mo===0?" '"+String(y).slice(2):'');};
+  const cols=['#2f7d54','#57c08c','#1f6b46','#7ad3ac','#3d9968','#96e0c4','#245c3f','#6fd0a3'];
+  const colFor=(i,st)=>st==='former'?'#c96f4a':cols[i%cols.length];
+  const contrib=(r,m)=>{
+    if(r.status==='trial') return 0;
+    const from=mkey(r.paidFrom||r.startedAt);
+    const to=r.endedAt?mkey(r.endedAt):Infinity;
+    return (m>=from&&m<to)?(r.priceMonthly||0):0;
+  };
+  const totals=months.map(m=>rows.reduce((t,r)=>t+contrib(r,m),0));
+  const maxTot=Math.max(...totals,1)*1.15;
+  const W=Math.max(280,months.length*26),H=150,PADB=18;
+  const X=i=>i*(W/span), Y=v=>H-PADB-(v/maxTot)*(H-PADB-8);
+  let acc=months.map(()=>0);
+  const bands=rows.map((r,ri)=>{
+    const lower=acc.slice();
+    const upper=months.map((m,i)=>lower[i]+contrib(r,m));
+    acc=upper;
+    if(upper.every((v,i)=>v===lower[i])) return '';
+    const top=upper.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
+    const bot=lower.map((_,k)=>{const i=months.length-1-k;return `L${X(i).toFixed(1)} ${Y(lower[i]).toFixed(1)}`;}).join(' ');
+    const tip=r.status==='former'
+      ? `${r.name} — ${money(r.priceMonthly)}/mo · left ${new Date(r.endedAt).toISOString().slice(0,7)} (${r.reason||'cancelled'}) · lasted ${r.monthsActive}mo · ${money(r.lifetimeValue)} total`
+      : `${r.name} — ${money(r.priceMonthly)}/mo · ${r.monthsActive}mo · ${money(r.lifetimeValue)} lifetime`;
+    return `<path d="${top} ${bot} Z" fill="${colFor(ri,r.status)}" fill-opacity="${r.status==='former'?0.5:0.9}" stroke="var(--bg)" stroke-width="0.75"><title>${esc(tip)}</title></path>`;
+  }).join('');
+  const outline=totals.map((v,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(v).toFixed(1)}`).join(' ');
+  const marks=rows.filter(r=>r.status==='former'&&r.endedAt).map(r=>{
+    const i=months.indexOf(mkey(r.endedAt)); if(i<0) return '';
+    return `<g><circle cx="${X(i).toFixed(1)}" cy="${Y(totals[i]).toFixed(1)}" r="3.5" fill="#c96f4a"/><text x="${X(i).toFixed(1)}" y="${(Y(totals[i])-6).toFixed(1)}" font-size="9" fill="#c96f4a" text-anchor="middle">−${money(r.priceMonthly)}</text></g>`;
+  }).join('');
+  const step=Math.max(1,Math.ceil(months.length/6));
+  const xlab=months.map((m,i)=> (i%step===0||i===months.length-1)?`<text x="${X(i).toFixed(1)}" y="${H-4}" font-size="9" fill="var(--faint)" text-anchor="${i===0?'start':i===months.length-1?'end':'middle'}">${label(m)}</text>`:'').join('');
+  const barRows=rows.slice().sort((a,b)=>((a.status==='former')-(b.status==='former'))||a.startedAt-b.startedAt).map((r,ri)=>{
+    const s=Math.max(0,mkey(r.startedAt)-minM);
+    const e=r.endedAt?Math.max(s+0.4,mkey(r.endedAt)-minM):span;
+    const L=(s/span)*100, Wd=Math.max(2,((e-s)/span)*100);
+    const tip=`${r.name} · ${money(r.priceMonthly)}/mo · ${r.monthsActive}mo · ${money(r.lifetimeValue)} lifetime`+(r.status==='former'?` · left ${new Date(r.endedAt).toISOString().slice(0,10)} (${r.reason||'cancelled'}${r.note?': '+r.note:''})`:'');
+    const tag=r.status==='trial'?' <span class="pillmini good">trial</span>':r.status==='former'?' <span class="pillmini" style="color:#c96f4a;background:#2e1a15">left</span>':'';
+    return `<div class="rtrow"><div class="rtname" title="${esc(r.name)}">${esc(r.name)}${tag}</div>
+      <div class="rttrack"><div class="rtbar" style="left:${L.toFixed(1)}%;width:${Wd.toFixed(1)}%;background:${colFor(ri,r.status)};opacity:${r.status==='former'?0.6:1}" title="${esc(tip)}"></div></div>
+      <div class="rtmeta">${money(r.priceMonthly)}/mo · ${r.monthsActive}mo · ${money(r.lifetimeValue)}</div></div>`;
+  }).join('');
+  const byCoh={};
+  rows.forEach(r=>{const k=label(mkey(r.startedAt));(byCoh[k]=byCoh[k]||{n:0,keep:0});byCoh[k].n++;if(r.status!=='former')byCoh[k].keep++;});
+  const cohRows=Object.entries(byCoh).map(([k,v])=>`<div class="fin-row"><span>${k}</span><span class="r">${v.n} signed</span><span class="r">${v.keep} active</span><span class="r">${Math.round(v.keep/v.n*100)}%</span></div>`).join('');
+  return `
+   <div style="overflow-x:auto;margin:6px 0 2px;-webkit-overflow-scrolling:touch">
+     <svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" style="display:block;min-width:100%">
+       ${bands}<path d="${outline}" fill="none" stroke="var(--green-br)" stroke-width="2" stroke-linejoin="round"/>${marks}${xlab}
+     </svg>
+   </div>
+   <div class="d" style="font-size:11px;color:var(--faint);margin-bottom:8px">Recurring revenue by client, month by month — every step down is a client leaving. Hover a band or bar for detail.</div>
+   <div class="rtbars">${barRows}</div>
+   ${cohRows?`<div class="fin-row h" style="border:0;margin-top:10px"><span>Cohort</span><span class="r">signed</span><span class="r">still active</span><span class="r">kept</span></div>${cohRows}`:''}
+  `;
+}
 function companyHTML(p){
   const c=p.company||{};
   const n=(v,d=1)=>v==null?'—':(+v).toFixed(d).replace(/\.0$/,'');
@@ -545,6 +619,7 @@ function companyHTML(p){
       ${tile('MRR at risk', money(c.trialPipelineMrr), 'still on free trial')}
       ${tile('MRR lost to churn', money(c.mrrLost), `${c.formerClients} former client${c.formerClients===1?'':'s'}`)}
     </div>
+    <div class="b" style="margin:8px 0 4px"><div class="k">Customer retention — MRR by client over time</div>${retentionChart(c.retentionSeries)}</div>
 
     <div class="fin-row h" style="border:0;margin-top:12px"><span>Profit &amp; costs</span></div>
     <div class="fin-grid" style="margin-top:6px">
