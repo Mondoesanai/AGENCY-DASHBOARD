@@ -334,7 +334,7 @@ function setKey(v){ try{ v?localStorage.setItem('iw_secret',v):localStorage.remo
 function needKey(){
   const k=key();
   if(k) return k;
-  const v=prompt('Enter your admin key (CRON_SECRET from Vercel):');
+  const v=prompt('What’s your password?');
   if(v) setKey(v);
   return v;
 }
@@ -342,12 +342,12 @@ function renderUnlock(){
   const el=$('#unlock');
   if(key()){
     el.className='unlock ok';
-    el.innerHTML=`🔓 Admin unlocked on this device <button class="link" id="lockBtn">lock</button>`;
+    el.innerHTML=`🔓 Unlocked on this device <button class="link" id="lockBtn">lock</button>`;
     $('#lockBtn').onclick=()=>setKey('');
   } else {
     el.className='unlock';
-    el.innerHTML=`🔒 Locked — paste your admin key once to manage sites, notes &amp; reports
-      <input id="ukInput" type="password" placeholder="CRON_SECRET" />
+    el.innerHTML=`🔒 Locked — enter your password once to manage sites, notes &amp; reports
+      <input id="ukInput" type="password" placeholder="Password" />
       <button class="btn sm" id="ukBtn">Unlock</button>`;
     $('#ukBtn').onclick=()=>{ const v=$('#ukInput').value.trim(); if(v) setKey(v); };
     $('#ukInput').onkeydown=(e)=>{ if(e.key==='Enter'){ const v=e.target.value.trim(); if(v) setKey(v); } };
@@ -449,7 +449,7 @@ async function openFinances(tab){
   if(!el.hidden && (!tab || tab===finTab)){ el.hidden=true; el.innerHTML=''; finKey=null; finData=null; return; }
   finTab=tab||'money';
   if(!finKey){
-    const k=prompt('Enter your admin key:');
+    const k=prompt('What’s your password?');
     if(!k) return;
     finKey=k;
   }
@@ -1169,7 +1169,7 @@ $('#bulkMerge')?.addEventListener('click',async(e)=>{
   e.target.disabled=true; e.target.textContent='Merging…';
   const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'merge',keep:keep.slug,drop:drop.slug});
   if(j.ok){ exitSelect(); await load(); }
-  else { e.target.disabled=false; e.target.textContent='Merge these 2'; alert(j.error||'Failed — check your admin key.'); }
+  else { e.target.disabled=false; e.target.textContent='Merge these 2'; alert(j.error||'Failed — check your password.'); }
 });
 function exitSelect(){ selectMode=false; selected.clear(); if(STATE) render(STATE); }
 $('#selectBtn').addEventListener('click',()=>{ selectMode=!selectMode; if(!selectMode) selected.clear(); if(STATE) render(STATE); });
@@ -1185,7 +1185,7 @@ $('#bulkRemove').addEventListener('click',async(e)=>{
   if(churn.reason==='cancelled') slugs.forEach(sl=>churnMap[sl]=churn);
   const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'delete-many',slugs,churn:churnMap});
   if(j.ok){ exitSelect(); await load(); }
-  else { e.target.disabled=false; e.target.textContent='Remove from dashboard'; alert(j.error||'Failed — check your admin key.'); }
+  else { e.target.disabled=false; e.target.textContent='Remove from dashboard'; alert(j.error||'Failed — check your password.'); }
 });
 
 $('#genBtn').addEventListener('click',async()=>{
