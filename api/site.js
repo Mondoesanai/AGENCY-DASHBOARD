@@ -42,6 +42,7 @@ async function recordChurn(slug, churn) {
     monthsActive,
     priceMonthly: cfg.priceMonthly || 0,
     setupFee: cfg.setupFee || 0,
+    leadSource: cfg.leadSource || '',
     lifetimeRevenue: (cfg.setupFee || 0) + (cfg.priceMonthly || 0) * monthsActive,
     recordedAt: Date.now(),
   };

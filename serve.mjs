@@ -146,6 +146,11 @@ createServer(async (req, res) => {
         { month: '2026-07', mrr: 250, activeClients: 2, netProfit: 3400 },
         { month: '2026-08', mrr: 300, activeClients: 2, netProfit: 5100 },
       ],
+      leadSources: [
+        { source: 'Corinth Chamber mixer', clients: 2, active: 2, mrr: 350, lifetime: 4200 },
+        { source: 'Referral', clients: 1, active: 1, mrr: 0, lifetime: 800 },
+        { source: 'Google search', clients: 1, active: 0, mrr: 0, lifetime: 1410 },
+      ],
       retentionSeries: [
         ...DEMO.sites.map(s => ({
           slug: s.slug, name: s.name, startedAt: s.startedAt, paidFrom: s.startedAt, endedAt: null,

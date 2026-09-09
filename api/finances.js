@@ -148,6 +148,23 @@ export default async function handler(req, res) {
     .filter((r) => r.startedAt)
     .sort((a, b) => a.startedAt - b.startedAt);
 
+  // where clients come from (attribution)
+  const leadMap = {};
+  const addLead = (src, mrrAdd, lifeAdd, isActive) => {
+    const key = String(src || '').trim() || 'Unknown';
+    const e = (leadMap[key] = leadMap[key] || { source: key, clients: 0, active: 0, mrr: 0, lifetime: 0 });
+    e.clients++;
+    if (isActive) e.active++;
+    e.mrr += mrrAdd || 0;
+    e.lifetime += lifeAdd || 0;
+  };
+  clients.forEach((c) => {
+    const s = sites.find((x) => x.slug === c.slug) || {};
+    addLead(s.leadSource, c.status === 'active' ? c.priceMonthly : 0, c.lifetimeValue, true);
+  });
+  formerClients.forEach((c) => addLead(c.leadSource, 0, c.lifetimeRevenue || 0, false));
+  const leadSources = Object.values(leadMap).sort((a, b) => b.clients - a.clients || b.mrr - a.mrr);
+
   const mrr = perSite.reduce((t, r) => t + (r.onTrial ? 0 : r.priceMonthly), 0);
   const setupTotal = perSite.reduce((t, r) => t + r.setupFee, 0);
   const activeRevenue = perSite.reduce((t, r) => t + r.lifetimeRevenue, 0);
@@ -243,6 +260,7 @@ export default async function handler(req, res) {
     sitesNeedAttention: needAttention,
     trend, // last ~6 months: [{month, mrr, activeClients, netProfit, ...}]
     retentionSeries, // one row per client ever, for the retention graph
+    leadSources, // [{source, clients, active, mrr, lifetime}] — client attribution
   };
 
   res.setHeader('Cache-Control', 'no-store, max-age=0');
