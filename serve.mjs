@@ -181,6 +181,21 @@ createServer(async (req, res) => {
     const clients = DEMO.sites.map(s => ({ slug: s.slug, name: s.name, client: s.client, priceMonthly: s.priceMonthly, setupFee: s.setupFee, startedAt: s.startedAt, monthsWith: 6, status: s.onTrial ? 'trial' : 'active', lifetimeValue: s.lifetimeRevenue, visitors30: s.stats.visitors, leads30: s.stats.conversions, avgDwell: s.stats.avgDwell, deltaVisitors: s.stats.deltas.visitors, seo: s.audit.scores.seo, speed: s.audit.scores.performance, startedThisMonth: false }));
     return res.end(JSON.stringify({ ok: true, company, clients, finances: DEMO.portfolio._fin, overhead: _overhead, trials: _trials, trialMrr: 100, formerClients: _former, churnedCount: 1, mrrLost: 90 }));
   }
+  if (path === '/api/coach' && req.method === 'POST') {
+    let raw = '';
+    for await (const c of req) raw += c;
+    let b = {};
+    try { b = JSON.parse(raw || '{}'); } catch {}
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      ok: true,
+      reply: `(local preview) You asked: "${(b.message || '').slice(0, 80)}". In production I'd answer from your live numbers — MRR, SEO scores, trials, expenses, all of it.`,
+      usage: { in: 2200, out: 180, usd: 0.009 },
+      today: { spent: 0.09, soft: 0.75 },
+      month: { spent: 1.4, cap: 15 },
+      warning: null,
+    }));
+  }
   if (path === '/api/audit') {
     const s = DEMO.sites.find(x => x.url === u.searchParams.get('url')) || DEMO.sites[0];
     res.writeHead(200, { 'Content-Type': 'application/json' });
