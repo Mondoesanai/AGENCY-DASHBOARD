@@ -6,12 +6,18 @@
 import { coachHandler } from '../lib/coach.js';
 import { receiptsHandler } from '../lib/receipts.js';
 import { reposHandler } from '../lib/repos.js';
+import { listSites } from '../lib/registry.js';
+import { runAgentCycle, agentStatus } from '../lib/agent.js';
 
 function authed(req) {
   const s = process.env.CRON_SECRET;
   if (!s) return true;
   const h = req.headers.authorization || '';
   return h === `Bearer ${s}` || req.query.secret === s;
+}
+
+async function siteBySlug(slug) {
+  return (await listSites()).find((s) => s.slug === slug) || null;
 }
 
 export default async function handler(req, res) {
@@ -23,6 +29,17 @@ export default async function handler(req, res) {
       return receiptsHandler(req, res);
     case 'repos':
       return reposHandler(req, res);
+    case 'agent-status': {
+      const site = await siteBySlug(req.query.slug);
+      if (!site) return res.status(404).json({ ok: false, error: 'unknown site' });
+      return res.status(200).json({ ok: true, status: await agentStatus(site) });
+    }
+    case 'agent-run': {
+      const site = await siteBySlug(req.query.slug);
+      if (!site) return res.status(404).json({ ok: false, error: 'unknown site' });
+      const out = await runAgentCycle(site, { manual: true });
+      return res.status(200).json(out);
+    }
     default:
       return res.status(400).json({ ok: false, error: 'unknown admin action' });
   }

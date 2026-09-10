@@ -183,7 +183,7 @@ export default async function handler(req, res) {
         conversionEvents: body.conversionEvents,
       };
       // only forward these when the caller sent them (modal vs settings vs API)
-      for (const k of ['leadSource', 'leadSourceDate', 'repo', 'seoAgent', 'agentBudget', 'agentCap', 'revisionsAuto']) {
+      for (const k of ['leadSource', 'leadSourceDate', 'repo', 'seoAgent', 'agentAutoMerge', 'agentKeywords', 'agentBudget', 'agentCap', 'revisionsAuto']) {
         if (pass(k)) patch[k] = body[k];
       }
 

@@ -9,6 +9,7 @@ import { listSites } from '../lib/registry.js';
 import { store } from '../lib/store.js';
 import { monthKey } from '../lib/history.js';
 import { buildForSite } from './report.js';
+import { runAgentCycle, agentStatus } from '../lib/agent.js';
 
 const MK = monthKey();
 const monthsBetween = (from) => (from ? Math.max(1, Math.round((Date.now() - from) / (30 * 864e5))) : 1);
@@ -150,6 +151,32 @@ export default async function handler(req, res) {
     }
   } catch (e) {
     log.push({ action: 'company snapshot', error: String(e.message || e) });
+  }
+
+  // SEO agent — run a couple of eligible sites per day, rotating by day-of-month
+  // so every site gets worked through the week without one cron run timing out.
+  try {
+    const eligible = [];
+    for (const s of sites) {
+      const es = await agentStatus(s).catch(() => ({ eligible: false }));
+      if (es.eligible) eligible.push(s);
+    }
+    if (eligible.length) {
+      const perDay = 2;
+      const start = (today * perDay) % eligible.length;
+      const todays = [];
+      for (let i = 0; i < Math.min(perDay, eligible.length); i++) todays.push(eligible[(start + i) % eligible.length]);
+      for (const s of todays) {
+        try {
+          const r = await runAgentCycle(s, { manual: false });
+          log.push({ slug: s.slug, action: 'seo agent', result: r.action || (r.skipped ? 'skipped' : r.error ? 'error' : 'ok'), pr: r.pr?.prUrl });
+        } catch (e) {
+          log.push({ slug: s.slug, action: 'seo agent', error: String(e.message || e) });
+        }
+      }
+    }
+  } catch (e) {
+    log.push({ action: 'seo agent', error: String(e.message || e) });
   }
 
   res.status(200).json({ ok: true, day: today, isFirst, processed: sites.length, log });

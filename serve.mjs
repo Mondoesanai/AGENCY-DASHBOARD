@@ -209,6 +209,24 @@ createServer(async (req, res) => {
       summary: { year: 2026, grossIncome: 1350, byCategory: { 'Dues & memberships': 540, 'Software & subscriptions': 150 }, totalExpenses: 690, netProfit: 660, estTaxOnProfit: 178, reservedIfTwentyPctRevenue: 270, cushion: 92, quarterlyDue: ['2026-04-15', '2026-06-16', '2026-09-15', '2027-01-15'] },
     }));
   }
+  if (path === '/api/agent-status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      ok: true,
+      status: {
+        eligible: false,
+        reasons: ['GITHUB_TOKEN not set in Vercel (local preview)'],
+        spentThisMonth: 3.2, budget: 18, cap: 20,
+        keywords: ['mobile detailing corinth tx', 'ceramic coating denton', 'auto detailing near me'],
+        lastLog: [{ at: Date.now() - 86400000, action: 'keywords', detail: 'Set 10 target keywords' }],
+        ranks: { at: Date.now(), results: [{ keyword: 'ceramic coating denton', rank: 8 }, { keyword: 'mobile detailing corinth tx', rank: 14 }] },
+      },
+    }));
+  }
+  if (path === '/api/agent-run') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: false, skipped: true, reason: 'GITHUB_TOKEN not set in Vercel (local preview stub)' }));
+  }
   if (path === '/api/coach' && req.method === 'POST') {
     let raw = '';
     for await (const c of req) raw += c;

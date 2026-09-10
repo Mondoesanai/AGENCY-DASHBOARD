@@ -1128,7 +1128,13 @@ function openDrawer(slug){
           <label class="field"><span>Monthly budget ($)</span><input id="cf_budget" inputmode="decimal" value="${s.agentBudget||18}" /></label>
           <label class="field"><span>Hard cap ($)</span><input id="cf_cap" inputmode="decimal" value="${s.agentCap||20}" /></label>
         </div>
+        <label class="field"><span>Target keywords (blank = the agent picks them on its first run)</span><input id="cf_kw" value="${esc(s.agentKeywords||'')}" placeholder="mobile detailing corinth tx, ceramic coating denton…" /></label>
+        <label class="toggle" style="margin:6px 0"><input type="checkbox" id="cf_automerge" ${s.agentAutoMerge?'checked':''}/> Auto‑merge the agent's changes (off = it opens a pull request for you to approve)</label>
         <label class="toggle" style="margin:6px 0 0"><input type="checkbox" id="cf_rev" ${s.revisionsAuto!==false?'checked':''}/> Handle revision‑request emails for this client (auto‑reply + calendar block + preview)</label>
+        <div id="agentBox" style="margin-top:10px;border-top:1px solid var(--line);padding-top:9px">
+          <div class="btn-row"><button class="btn sm" id="agentRun" type="button" data-slug="${s.slug}">▶ Run SEO agent now</button><span id="agentStat" class="note" style="margin:0"></span></div>
+          <div id="agentLog" class="note" style="margin-top:7px;white-space:pre-wrap;font-size:11.5px"></div>
+        </div>
       </div>
       <div class="btn-row"><button class="btn sm" id="cfSave">Save settings</button><button class="btn danger sm" id="cfDel">Remove site</button></div>
     </details>
@@ -1340,6 +1346,32 @@ function wireDrawer(s,bf){
     });
   });
 
+  async function refreshAgent(){
+    const k=key(); if(!k||!$('#agentStat')) return;
+    const j=await fetch(`/api/admin?do=agent-status&slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+    if(!j||!j.ok){ $('#agentStat').textContent=''; return; }
+    const st=j.status;
+    $('#agentStat').innerHTML=st.eligible
+      ? `<span style="color:var(--pos)">ready</span> · $${(st.spentThisMonth||0).toFixed(2)}/$${st.cap} this month`
+      : `<span style="color:var(--warn)">paused</span> — ${esc(st.reasons[0]||'')}`;
+    const lines=[];
+    if(st.keywords&&st.keywords.length) lines.push('Targets: '+st.keywords.slice(0,6).join(', ')+(st.keywords.length>6?'…':''));
+    if(st.ranks){ try{ const rk=typeof st.ranks==='string'?JSON.parse(st.ranks):st.ranks; const won=(rk.results||[]).filter(r=>r.rank&&r.rank<=10); if(won.length) lines.push('Top 10: '+won.slice(0,4).map(r=>`#${r.rank} ${r.keyword}`).join(' · ')); }catch{} }
+    (st.lastLog||[]).slice(0,6).forEach(l=>lines.push(`${new Date(l.at).toLocaleDateString()} — ${l.action}: ${l.detail||''}${l.prUrl?' ('+l.prUrl+')':''}`));
+    $('#agentLog').textContent=lines.join('\n');
+  }
+  $('#agentRun')?.addEventListener('click',async(e)=>{
+    const k=needKey(); if(!k) return;
+    e.target.disabled=true; e.target.textContent='Working… (up to a minute)';
+    $('#agentStat').textContent='running…';
+    const j=await fetch(`/api/admin?do=agent-run&slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false,error:'network'}));
+    e.target.disabled=false; e.target.textContent='▶ Run SEO agent now';
+    if(j.ok){ toast(j.action==='change'?`Agent shipped: ${j.summary||'a change'}`:j.action==='keywords'?`Agent set ${(j.keywords||[]).length} target keywords`:j.action==='no-change'?'Agent ran — nothing safe to change this cycle':'Agent ran'); }
+    else toast((j.reason||j.error||'Agent could not run'),'err');
+    refreshAgent();
+  });
+  refreshAgent();
+
   $('#cfSave').addEventListener('click',async(e)=>{
     const k=needKey(); if(!k) return;
     e.target.disabled=true;
@@ -1349,6 +1381,7 @@ function wireDrawer(s,bf){
       trialEnds:$('#cf_trial').value,billingDay:$('#cf_bday').value,leadValue:$('#cf_lead').value,reviewUrl:$('#cf_review').value,
       leadSource:$('#cf_leadsrc').value,leadSourceDate:$('#cf_leaddate').value,
       repo:$('#cf_repo').value,seoAgent:$('#cf_seo').checked,agentBudget:$('#cf_budget').value,agentCap:$('#cf_cap').value,revisionsAuto:$('#cf_rev').checked,
+      agentKeywords:$('#cf_kw').value,agentAutoMerge:$('#cf_automerge').checked,
       conversionEvents:$('#cf_conv').value,autoSend:$('#cf_auto').checked});
     if(j.ok){ const v=$('#cf_leadsrc').value.trim(); if(v) rememberLeadSource(v); await load(); openDrawer(j.site.slug); const d=$('.log.block'); if(d) d.open=true; } else { e.target.disabled=false; e.target.textContent='Failed'; }
   });
