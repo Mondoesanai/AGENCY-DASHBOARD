@@ -174,7 +174,7 @@ async function sendEmail({ site, subject, body, cardPng, reportUrl, to }) {
       reason:
         r.error?.message ||
         (domainStatus !== 'verified'
-          ? `Resend accepted it (id ${r.data?.id || '?'}) but the sending domain is "${domainStatus}" — until it says "verified" Resend will not deliver to real inboxes. Verify ${from.split('@')[1]} in Resend → Domains and add the DNS records.`
+          ? `Resend took the message (id ${r.data?.id || '?'}) but won't deliver it yet — the sending domain ${from.split('@')[1]} shows "${domainStatus}", not "verified". It'll go out on its own once that flips.`
           : null),
     };
   } catch (e) {
@@ -193,17 +193,23 @@ async function buildForSite(site, { doSend, req, style }) {
   const improvements = improvementsForClient(audit, stats);
   const actions = clientActions(audit, stats, site);
 
-  const row = await snapshot(site.slug, {
-    seo: audit?.ok ? audit.scores.seo : null,
-    perf: audit?.ok ? audit.scores.performance : null,
-    a11y: audit?.ok ? audit.scores.accessibility : null,
-    grade,
-    visitors: stats?.visitors || 0,
-    conversions: stats?.conversions || 0,
-    pageviews: stats?.pageviews || 0,
-  });
-  const history = await getHistory(site.slug);
-  const baseline = await getBaseline(site.slug);
+  const row =
+    (await snapshot(site.slug, {
+      seo: audit?.ok ? audit.scores.seo : null,
+      perf: audit?.ok ? audit.scores.performance : null,
+      a11y: audit?.ok ? audit.scores.accessibility : null,
+      grade,
+      visitors: stats?.visitors || 0,
+      conversions: stats?.conversions || 0,
+      pageviews: stats?.pageviews || 0,
+    }).catch(() => null)) || {
+      seo: audit?.ok ? audit.scores.seo : null,
+      visitors: stats?.visitors || 0,
+      conversions: stats?.conversions || 0,
+      pageviews: stats?.pageviews || 0,
+    };
+  const history = await getHistory(site.slug).catch(() => []);
+  const baseline = await getBaseline(site.slug).catch(() => null);
   const msl = monthsSince(baseline, history);
   const angle = pickAngle(msl);
   const tok = reportToken(site.slug);
@@ -339,6 +345,36 @@ async function regenEmail(site, { style, req }) {
   return { ...report, aiUsed: !!ai, aiError };
 }
 
+// Fast "Send now": email the report that's already on file. No fresh audit, no
+// AI, no history snapshot — just render the card and send, so it can't hit the
+// 60s function limit the way a full rebuild can.
+async function sendLatest(site, { req }) {
+  const prevRaw = await store.get(`report:${site.slug}:latest`).catch(() => null);
+  const prev = prevRaw ? (typeof prevRaw === 'string' ? JSON.parse(prevRaw) : prevRaw) : null;
+  if (!prev || !prev.email) {
+    // nothing generated yet — fall back to a full build (may be slow)
+    return buildForSite(site, { doSend: true, req });
+  }
+  const history = await getHistory(site.slug).catch(() => []);
+  const row = prev.metrics || {};
+  const grade = prev.grade || null;
+  let cardPng = null;
+  try {
+    cardPng = await renderPNG(buildCardSVG({ biz: site.name, url: site.url, month: MONTH, row, history, grade }));
+  } catch {
+    cardPng = null;
+  }
+  const emailResult = await sendEmail({
+    site,
+    subject: prev.email.subject,
+    body: prev.email.body_text,
+    cardPng,
+    reportUrl: prev.reportUrl,
+  });
+  if (emailResult.sent) await store.set(`lastSent:${site.slug}`, MK);
+  return { ...prev, emailResult, aiUsed: !!prev.aiGenerated, aiError: prev.aiError || null };
+}
+
 export default async function handler(req, res) {
   if (!authed(req)) return res.status(401).json({ ok: false, error: 'bad secret' });
 
@@ -346,15 +382,22 @@ export default async function handler(req, res) {
   const only = req.query.slug ? all.filter((s) => s.slug === req.query.slug) : all;
   const doSend = req.query.send === '1';
   const emailOnly = req.query.emailonly === '1';
+  const rebuild = req.query.rebuild === '1'; // force a full fresh build + send
   const style = String(req.query.style || '').slice(0, 140);
 
   const reports = [];
   for (const site of only) {
     try {
       if (emailOnly && !doSend) reports.push(await regenEmail(site, { style, req }));
+      else if (doSend && !rebuild) reports.push(await sendLatest(site, { req }));
       else reports.push(await buildForSite(site, { doSend, req, style }));
     } catch (e) {
-      reports.push({ slug: site.slug, error: String(e.message || e) });
+      const msg = String(e.message || e);
+      reports.push({
+        slug: site.slug,
+        error: msg,
+        emailResult: { sent: false, reason: `couldn't build the report before sending — ${msg}` },
+      });
     }
   }
 

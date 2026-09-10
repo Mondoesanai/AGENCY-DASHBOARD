@@ -1071,13 +1071,15 @@ function wireDrawer(s,bf){
     // make sure the saved email matches what's on screen
     await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'save',slug:s.slug,email:addr,url:s.url,name:s.name});
     const j=await fetch(`/api/report?slug=${encodeURIComponent(s.slug)}&send=1&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-    const er=((j.reports&&j.reports[0])||{}).emailResult||{};
+    const r0=(j.reports&&j.reports[0])||{};
+    const er=r0.emailResult||{};
     if(er.sent){
       e.target.textContent='Sent ✓';
-      $('#ecMsg').innerHTML=`Sent to <strong>${esc(er.to||'')}</strong> from <strong>${esc(er.from||'')}</strong> · Resend id <code style="font-size:11px">${esc(er.id||'?')}</code>. Not in the inbox in a few minutes? Check Resend → Emails for the delivery status.`;
+      $('#ecMsg').innerHTML=`Sent to <strong>${esc(er.to||'')}</strong>${er.id?` · Resend id <code style="font-size:11px">${esc(er.id)}</code>`:''}. Give it a few minutes; if it doesn't show, look in Resend → Emails.`;
     } else {
       e.target.textContent='Send now'; e.target.disabled=false;
-      $('#ecMsg').innerHTML=`<span style="color:var(--neg)">Not delivered.</span>${er.domainStatus?` Domain status: <strong>${esc(er.domainStatus)}</strong>.`:''}<br><code style="font-size:11px">${esc(er.reason||'unknown — check RESEND_API_KEY, REPORT_FROM, and that the domain is verified in Resend')}</code>`;
+      const why = er.reason || r0.error || j.error || (j.ok===false?'the request was rejected — the password may be wrong':'no details came back');
+      $('#ecMsg').innerHTML=`<span style="color:var(--neg)">Didn’t send.</span>${er.domainStatus&&er.domainStatus!=='verified'?` Sending domain shows <strong>${esc(er.domainStatus)}</strong> in Resend.`:''}<br><span style="font-size:12px">${esc(why)}</span>`;
     }
   });
 
