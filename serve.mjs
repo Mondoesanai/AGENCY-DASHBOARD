@@ -82,7 +82,7 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
 }
 
 const _former = [{ slug: 'old-client', name: 'Corner Cafe', client: 'Dana', reason: 'cancelled', note: 'sold the business', leftDate: '2026-07-15', monthsActive: 9, priceMonthly: 90, setupFee: 600, lifetimeRevenue: 1410, recordedAt: Date.now() - 40 * 864e5 }];
-const _overhead = [{ date: '2026-09-02', label: 'Chamber of Commerce membership', amount: 540, recurring: false }, { date: '2026-09-01', label: 'Figma + hosting', amount: 45, recurring: true }];
+const _overhead = [{ date: '2026-09-02', label: 'Chamber of Commerce membership', amount: 540, recurring: false }, { date: '2026-09-01', label: 'Figma + hosting', amount: 45, recurring: true }, { date: '2026-09-10', label: 'AI & automation — Compass + SEO agent', amount: 41.2, recurring: true, auto: true }];
 const _trials = [{ slug: 'one-more-thing', name: 'One More Thing Services', priceMonthly: 100, autoChargeDate: new Date(Date.now() + 12 * 864e5).toISOString().slice(0, 10), daysLeft: 12 }];
 const DEMO = {
   portfolio: { sites: 3, visitors30: 1284, conversions30: 47, mrr: 350, trials: 1, trialMrr: 100, avgSeo: 88, improving: 2, openFindings: 15, attention: ['apostello-detailing'], noTracker: [], auditQuota: false, emailEnabled: true, aiEnabled: true, backend: 'demo',
@@ -166,6 +166,7 @@ createServer(async (req, res) => {
         { source: 'Referral', clients: 1, active: 1, mrr: 0, lifetime: 800 },
         { source: 'Google search', clients: 1, active: 0, mrr: 0, lifetime: 1410 },
       ],
+      aiCost: { total: 41.2, thisMonth: 41.2, months: [{ month: '2026-08', coach: 6, agent: 9, total: 15 }, { month: '2026-09', coach: 8.2, agent: 18, total: 26.2 }] },
       retentionSeries: [
         ...DEMO.sites.map(s => ({
           slug: s.slug, name: s.name, startedAt: s.startedAt, paidFrom: s.startedAt, endedAt: null,

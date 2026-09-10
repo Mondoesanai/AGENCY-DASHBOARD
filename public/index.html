@@ -713,7 +713,7 @@ function moneyHTML(p){
       ${p.formerClients.map(c=>`<div class="fin-row"><span title="${esc(c.reason)}${c.note?' — '+esc(c.note):''}">${esc(c.name)}</span><span class="r">${esc(c.leftDate)}</span><span class="r">${c.monthsActive}</span><span class="r">${money(c.lifetimeRevenue)}</span></div>`).join('')}`:''}
     <div style="border:1px solid var(--line);border-radius:11px;padding:12px;margin-top:16px">
       <div class="fin-row h" style="border:0;padding:0 0 4px"><span>Business overhead — not tied to a client (${money(f.overheadTotal)})</span></div>
-      <div id="ovList">${(p.overhead||[]).slice().reverse().map((x,i)=>`<div class="fin-row"><span>${esc(x.date)} — ${esc(x.label)}</span><span></span><span class="r">${money(x.amount)}${x.recurring?'/mo':''}</span><span class="r"><button class="link" data-i="${p.overhead.length-1-i}" style="color:var(--neg)">remove</button></span></div>`).join('')||'<div class="note" style="padding:4px 0">Nothing logged — chamber of commerce, software, accountant, etc.</div>'}</div>
+      <div id="ovList">${(p.overhead||[]).slice().reverse().map((x,i)=>`<div class="fin-row"><span>${esc(x.date)} — ${esc(x.label)}${x.auto?' <span class="pillmini" title="pulled from tracked usage">auto</span>':''}</span><span></span><span class="r">${money(x.amount)}${x.recurring?'/mo':''}</span><span class="r">${x.auto?'<span style="color:var(--faint);font-size:11px">tracked</span>':`<button class="link" data-i="${p.overhead.length-1-i}" style="color:var(--neg)">remove</button>`}</span></div>`).join('')||'<div class="note" style="padding:4px 0">Nothing logged — chamber of commerce, software, accountant, etc.</div>'}</div>
       <div class="btn-row" style="margin-top:8px">
         <input id="ov_amt" style="width:90px" inputmode="decimal" placeholder="$" />
         <input id="ov_label" style="flex:1" placeholder="e.g. Chamber of Commerce membership" />
@@ -835,7 +835,9 @@ function companyHTML(p){
       ${tile('Total revenue ever', money(c.lifetimeRevenue), `− ${money(c.expensesTotal)} costs`)}
       ${tile('Recurring costs', money(c.recurringMonthlyCost)+'/mo', 'software, memberships…')}
       ${tile('Cost per client', money(c.costPerClient), `overhead = ${n(c.overheadRatioPct,0)}% of revenue`)}
+      ${c.aiCost?tile('AI & automation', money(c.aiCost.thisMonth)+'/mo', `${money(c.aiCost.total)} all-time · Compass + SEO agent`):''}
     </div>
+    ${(c.aiCost&&c.aiCost.months&&c.aiCost.months.length>1)?`<div class="fin-row h" style="border:0;margin-top:6px"><span>AI spend by month</span><span class="r">Compass</span><span class="r">SEO agent</span><span class="r">total</span></div>${c.aiCost.months.map(m=>`<div class="fin-row"><span>${m.month}</span><span class="r">${money(m.coach)}</span><span class="r">${money(m.agent)}</span><span class="r">${money(m.total)}</span></div>`).join('')}`:''}
 
     <div class="fin-row h" style="border:0;margin-top:12px"><span>Value delivered to clients (last 30 days)</span></div>
     <div class="fin-grid" style="margin-top:6px">

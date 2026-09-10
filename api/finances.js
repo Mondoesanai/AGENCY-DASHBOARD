@@ -4,6 +4,7 @@ import { listSites } from '../lib/registry.js';
 import { siteStats } from '../lib/stats.js';
 import { runAudit } from '../lib/audit.js';
 import { store } from '../lib/store.js';
+import { allAiCost } from '../lib/aicost.js';
 
 const THIS_MONTH = new Date().toISOString().slice(0, 7);
 
@@ -91,7 +92,21 @@ export default async function handler(req, res) {
   trials.sort((a, b) => a.daysLeft - b.daysLeft);
   clients.sort((a, b) => b.lifetimeValue - a.lifetimeValue);
 
-  const overhead = await readArr('expenses:_business');
+  const manualOverhead = await readArr('expenses:_business');
+  const ai = await allAiCost().catch(() => ({ rows: [], total: 0 }));
+  // fold the tracked automation spend in as a real, auto expense line
+  const overhead = ai.total > 0
+    ? [
+        ...manualOverhead,
+        {
+          date: new Date().toISOString().slice(0, 10),
+          label: `AI & automation — Compass + SEO agent${ai.rows.length > 1 ? ` (${ai.rows.length} months)` : ''}`,
+          amount: ai.total,
+          recurring: true,
+          auto: true,
+        },
+      ]
+    : manualOverhead;
   const overheadTotal = overhead.reduce((t, e) => t + (Number(e.amount) || 0), 0);
 
   let formerClients = [];
@@ -261,6 +276,7 @@ export default async function handler(req, res) {
     trend, // last ~6 months: [{month, mrr, activeClients, netProfit, ...}]
     retentionSeries, // one row per client ever, for the retention graph
     leadSources, // [{source, clients, active, mrr, lifetime}] — client attribution
+    aiCost: { total: ai.total, thisMonth: ai.rows.at(-1)?.total || 0, months: ai.rows },
   };
 
   res.setHeader('Cache-Control', 'no-store, max-age=0');
