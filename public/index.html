@@ -561,7 +561,7 @@ async function openReceipts(){
   const k=prompt('What’s your password?'); if(!k) return; rcptKey=k;
   el.hidden=false; el.innerHTML='<div class="note">Building the ledger…</div>';
   $('#finPanel').hidden=true; $('#coachPanel').hidden=true;
-  const j=await fetch(`/api/receipts?secret=${encodeURIComponent(rcptKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+  const j=await fetch(`/api/admin?do=receipts&secret=${encodeURIComponent(rcptKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
   if(!j.ok){ el.innerHTML=`<div class="note" style="color:var(--neg)">${j.error==='bad password'?'Wrong password.':'Could not load receipts.'}</div>`; rcptKey=null; return; }
   rcptData=j; renderReceipts();
 }
@@ -589,10 +589,10 @@ function renderReceipts(){
   : `
     <div class="btn-row" style="margin-bottom:8px">
       <input id="rcptSearch" style="flex:1" placeholder="filter by client, vendor, number…" value="${esc(rcptFilter)}" />
-      <a class="btn sm" href="/api/receipts?format=csv&secret=${secret}" download>⬇ CSV (${s.year})</a>
+      <a class="btn sm" href="/api/admin?do=receipts&format=csv&secret=${secret}" download>⬇ CSV (${s.year})</a>
     </div>
     <div class="fin-row h"><span>#</span><span>Date</span><span>Who / what</span><span class="r">Amount</span></div>
-    ${rows.slice(0,400).map(r=>`<div class="fin-row"><span><a class="link" href="/api/receipts?one=${encodeURIComponent(r.id)}&secret=${secret}" target="_blank" title="open printable receipt">${esc(r.id)}</a></span><span>${r.date}</span><span title="${esc(r.description)}">${esc(r.counterparty)}${r.type==='expense'?' <span class="pillmini" style="color:var(--neg)">out</span>':''}</span><span class="r" style="color:${r.type==='income'?'var(--pos)':'var(--neg)'}">${r.type==='income'?'+':'−'}${money(r.amount)}</span></div>`).join('')||'<div class="note">Nothing matches.</div>'}
+    ${rows.slice(0,400).map(r=>`<div class="fin-row"><span><a class="link" href="/api/admin?do=receipts&one=${encodeURIComponent(r.id)}&secret=${secret}" target="_blank" title="open printable receipt">${esc(r.id)}</a></span><span>${r.date}</span><span title="${esc(r.description)}">${esc(r.counterparty)}${r.type==='expense'?' <span class="pillmini" style="color:var(--neg)">out</span>':''}</span><span class="r" style="color:${r.type==='income'?'var(--pos)':'var(--neg)'}">${r.type==='income'?'+':'−'}${money(r.amount)}</span></div>`).join('')||'<div class="note">Nothing matches.</div>'}
     ${rows.length>400?`<p class="note">Showing first 400 of ${rows.length}. Narrow with the filter or use the CSV.</p>`:`<p class="note">${rows.length} receipt${rows.length===1?'':'s'}. Click a number to open a printable copy (browser Print → Save as PDF).</p>`}`;
   el.innerHTML=`
     <div class="dtabs" style="margin:0 0 12px;top:auto;position:static;border:0;padding:0">
@@ -647,7 +647,7 @@ async function sendCoach(text){
   coachBusy=true; renderCoach();
   let j;
   try{
-    j=await fetch(`/api/coach?secret=${encodeURIComponent(coachKey)}`,{method:'POST',headers:{'Content-Type':'application/json'},
+    j=await fetch(`/api/admin?do=coach&secret=${encodeURIComponent(coachKey)}`,{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({message:text,history:coachMsgs.slice(0,-1).slice(-10)})}).then(r=>r.json());
   }catch(e){ j={ok:false,error:'network — '+(e.message||e)}; }
   coachBusy=false;
@@ -1285,7 +1285,7 @@ function wireDrawer(s,bf){
     const k=needKey(); if(!k) return;
     const box=$('#repoPick'); box.hidden=false; box.innerHTML='<div class="note">Searching GitHub…</div>';
     const url=e.target.dataset.url||$('#cf_url').value||'';
-    const j=await fetch(`/api/repos?secret=${encodeURIComponent(k)}&match=${encodeURIComponent(url)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+    const j=await fetch(`/api/admin?do=repos&secret=${encodeURIComponent(k)}&match=${encodeURIComponent(url)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
     if(!j.ok){ box.innerHTML=`<div class="note" style="color:var(--neg)">${esc(j.error||'Could not reach GitHub — is GITHUB_TOKEN set in Vercel?')}</div>`; return; }
     if(!j.repos.length){ box.innerHTML='<div class="note">No repos visible to this token.</div>'; return; }
     const cur=$('#cf_repo').value.trim();

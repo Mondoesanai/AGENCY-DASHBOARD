@@ -99,6 +99,8 @@ const DEMO = {
 createServer(async (req, res) => {
   const u = new URL(req.url, 'http://x');
   let path = decodeURIComponent(u.pathname);
+  // mirror prod: /api/admin?do=X routes to the X handler
+  if (path === '/api/admin' && u.searchParams.get('do')) path = '/api/' + u.searchParams.get('do');
 
   if (path === '/api/sites') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
