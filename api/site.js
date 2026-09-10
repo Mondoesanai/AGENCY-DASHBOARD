@@ -165,7 +165,8 @@ export default async function handler(req, res) {
           if (auto) slug = auto.slug;
         }
       }
-      const cfg = await saveSiteConfig(slug, {
+      const pass = (k) => body[k] !== undefined;
+      const patch = {
         url: body.url,
         name: body.name || slug,
         client: body.client || '',
@@ -180,8 +181,30 @@ export default async function handler(req, res) {
         leadValue: body.leadValue,
         reviewUrl: body.reviewUrl || '',
         conversionEvents: body.conversionEvents,
-      });
-      return res.status(200).json({ ok: true, site: cfg });
+      };
+      // only forward these when the caller sent them (modal vs settings vs API)
+      for (const k of ['leadSource', 'leadSourceDate', 'repo', 'seoAgent', 'agentBudget', 'agentCap', 'revisionsAuto']) {
+        if (pass(k)) patch[k] = body[k];
+      }
+
+      // brand-new site, no repo given → try to auto-find it on GitHub
+      let repoMatch = null;
+      const before = await getSiteConfig(slug).catch(() => null);
+      if (!patch.repo && !(before && before.repo) && (body.url || (before && before.url))) {
+        try {
+          const { findRepoForUrl } = await import('../lib/github.js');
+          const g = await findRepoForUrl(body.url || before.url);
+          if (g && g.ok && g.match) {
+            patch.repo = g.match;
+            repoMatch = g.match;
+          }
+        } catch {
+          /* github optional */
+        }
+      }
+
+      const cfg = await saveSiteConfig(slug, patch);
+      return res.status(200).json({ ok: true, site: cfg, repoMatch });
     }
 
     if (action === 'delete') {

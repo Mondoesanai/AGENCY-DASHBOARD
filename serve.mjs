@@ -126,6 +126,19 @@ createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/javascript', 'Access-Control-Allow-Origin': '*' });
     return res.end(TRACKER_JS.replace('__ENDPOINT__', `http://localhost:${PORT}/api/collect`));
   }
+  if (path === '/api/site' && req.method === 'POST') {
+    let raw = '';
+    for await (const c of req) raw += c;
+    let body = {};
+    try { body = JSON.parse(raw || '{}'); } catch {}
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    const action = body.action || 'save';
+    if (action === 'save') {
+      const slug = (body.slug || (body.url || body.name || 'site').replace(/^https?:\/\//, '').replace(/[^a-z0-9]+/gi, '-').replace(/^-+|-+$/g, '').toLowerCase()).slice(0, 48);
+      return res.end(JSON.stringify({ ok: true, site: { slug, name: body.name || slug, url: body.url || '', repo: body.repo || '' }, repoMatch: /relax/i.test(body.url || '') ? 'Mondoesanai/relaxtax' : null }));
+    }
+    return res.end(JSON.stringify({ ok: true }));
+  }
   if (path === '/api/collect') {
     res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
     return res.end('{"ok":true,"message":"reachable (local preview stub)"}');
@@ -167,6 +180,25 @@ createServer(async (req, res) => {
     };
     const clients = DEMO.sites.map(s => ({ slug: s.slug, name: s.name, client: s.client, priceMonthly: s.priceMonthly, setupFee: s.setupFee, startedAt: s.startedAt, monthsWith: 6, status: s.onTrial ? 'trial' : 'active', lifetimeValue: s.lifetimeRevenue, visitors30: s.stats.visitors, leads30: s.stats.conversions, avgDwell: s.stats.avgDwell, deltaVisitors: s.stats.deltas.visitors, seo: s.audit.scores.seo, speed: s.audit.scores.performance, startedThisMonth: false }));
     return res.end(JSON.stringify({ ok: true, company, clients, finances: DEMO.portfolio._fin, overhead: _overhead, trials: _trials, trialMrr: 100, formerClients: _former, churnedCount: 1, mrrLost: 90 }));
+  }
+  if (path === '/api/audit') {
+    const s = DEMO.sites.find(x => x.url === u.searchParams.get('url')) || DEMO.sites[0];
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ url: s.url, ok: true, fetchedAt: Date.now(), scores: s.audit.scores, vitals: s.audit.vitals, checks: {} }));
+  }
+  if (path === '/api/repos') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      ok: true,
+      repos: [
+        { full_name: 'Mondoesanai/relaxtax', private: false, pushed_at: '2026-09-01', description: 'Relax Tax site' },
+        { full_name: 'Mondoesanai/apostellodetailing', private: false, pushed_at: '2026-08-20', description: '' },
+        { full_name: 'Mondoesanai/Onemorething', private: false, pushed_at: '2026-08-11', description: '' },
+        { full_name: 'Mondoesanai/mondo-davis-website', private: true, pushed_at: '2026-07-02', description: '' },
+      ],
+      match: (u.searchParams.get('match') || '').includes('relax') ? 'Mondoesanai/relaxtax' : null,
+      candidates: [],
+    }));
   }
   if (path === '/api/shot') {
     // local preview: 1x1 transparent gif so the layout shows without hitting mShots

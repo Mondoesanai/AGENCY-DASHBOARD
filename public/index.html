@@ -177,6 +177,14 @@
   .card.sel{border-left-color:var(--green);background:var(--green-soft);}
   .card.sel .cbx{background:var(--green);border-color:var(--green);}
   .bulkbar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:55;display:flex;align-items:center;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:10px 14px;box-shadow:var(--shadow);font-size:13px;}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,14px);z-index:70;background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--green-br);border-radius:11px;padding:11px 16px;box-shadow:var(--shadow);font-size:13px;max-width:min(460px,92vw);opacity:0;transition:opacity .22s ease,transform .22s ease;pointer-events:none;}
+  .toast.show{opacity:1;transform:translate(-50%,0);}
+  .toast.err{border-left-color:var(--neg);}
+  .repopick{border:1px solid var(--line);border-radius:9px;padding:9px;margin-top:6px;background:var(--surface2);}
+  .repopick .rp-list{max-height:180px;overflow-y:auto;margin-top:6px;display:flex;flex-direction:column;gap:2px;}
+  .repopick .rp-item{text-align:left;background:none;border:0;color:var(--ink);font:inherit;padding:5px 7px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .repopick .rp-item:hover{background:var(--surface);}
+  .repopick .rp-item.on{background:var(--green-soft);color:var(--green-br);}
   .bulkbar[hidden]{display:none;}
   .loading{color:var(--faint);padding:60px 0;text-align:center;}
   details.log summary{cursor:pointer;color:var(--muted);font-size:13px;}
@@ -327,6 +335,8 @@ const esc=(s)=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const fmt=(n)=> n>=1000 ? (n/1000).toFixed(n>=10000?0:1)+'k' : String(Math.round(n||0));
 const money=(n)=>'$'+Math.round(n||0).toLocaleString('en-US');
 const deltaHTML=(d)=>{ if(d==null) return ''; const c=d>0?'up':d<0?'down':''; const s=d>0?'▲':d<0?'▼':'·'; return `<small class="${c}">${s} ${Math.abs(d)}%</small>`; };
+let _toastT=null;
+function toast(msg,kind){ let el=$('#toast'); if(!el){ el=document.createElement('div'); el.id='toast'; document.body.appendChild(el); } el.className='toast'+(kind?' '+kind:''); el.textContent=msg; el.hidden=false; requestAnimationFrame(()=>el.classList.add('show')); clearTimeout(_toastT); _toastT=setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=>{el.hidden=true;},250); },3600); }
 
 /* ---------- admin key (persisted) ---------- */
 function key(){ try{ return localStorage.getItem('iw_secret')||''; }catch{ return ''; } }
@@ -438,6 +448,37 @@ function render(data){
     if(selectMode){ toggleSel(s.slug); } else { openDrawer(s.slug); }
   }));
   updateBulkBar();
+  warmAudits();
+}
+
+// The feed returns instantly with only cached SEO/speed scores; any site whose
+// audit hasn't run yet comes back auditPending. Warm those in the background
+// (2 at a time) and patch the card + STATE as each lands — no full reload.
+let _warming=false;
+async function warmAudits(){
+  if(_warming || !STATE) return;
+  const pend=STATE.sites.filter(s=>s.auditPending); if(!pend.length) return;
+  _warming=true;
+  const q=pend.slice();
+  const worker=async()=>{
+    while(q.length){
+      const s=q.shift();
+      try{
+        const a=await fetch('/api/audit?url='+encodeURIComponent(s.url),{cache:'no-store'}).then(r=>r.json());
+        const cur=STATE.sites.find(x=>x.slug===s.slug); if(!cur) continue;
+        cur.audit=a; cur.auditPending=!!a.pending;
+        if(a&&a.ok){
+          cur.grade=cur.grade||{};
+          const el=$(`#sites [data-slug="${s.slug}"]`);
+          if(el){ const fresh=siteCard(cur); const tmp=document.createElement('div'); tmp.innerHTML=fresh; const node=tmp.firstElementChild;
+            node.addEventListener('click',()=>{ if(selectMode){ toggleSel(s.slug); } else { openDrawer(s.slug); } });
+            el.replaceWith(node); }
+        }
+      }catch{/* leave pending; next load retries */}
+    }
+  };
+  await Promise.all([worker(),worker()]);
+  _warming=false;
 }
 
 // Admin-only company / finance dashboard. Prompts for the key each time it's
@@ -918,7 +959,9 @@ function openDrawer(slug){
       <label class="toggle"><input type="checkbox" id="cf_auto" ${s.autoSend?'checked':''}/> Auto-send the report email on the billing day</label>
       <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:8px 0">
         <div class="note" style="margin:0 0 8px"><strong>Automation</strong> — turns on once your API keys are connected. Set it up now; it'll start working after.</div>
-        <label class="field"><span>GitHub repo (owner/name) — where this site's code lives. Leave blank to auto-find from the URL.</span><input id="cf_repo" value="${esc(s.repo||'')}" placeholder="Mondoesanai/apostellodetailing" /></label>
+        <label class="field"><span>GitHub repo (owner/name) — where this site's code lives.</span><input id="cf_repo" value="${esc(s.repo||'')}" placeholder="Mondoesanai/apostellodetailing" /></label>
+        <div class="btn-row" style="margin:2px 0 0"><button class="btn sm" id="cf_repofind" type="button" data-url="${esc(s.url||'')}">🔍 Find / pick repo</button></div>
+        <div id="repoPick" class="repopick" hidden></div>
         <label class="toggle" style="margin:6px 0"><input type="checkbox" id="cf_seo" ${s.seoAgent!==false?'checked':''}/> Run the autonomous SEO agent on this site</label>
         <div class="row2">
           <label class="field"><span>Monthly budget ($)</span><input id="cf_budget" inputmode="decimal" value="${s.agentBudget||18}" /></label>
@@ -1109,6 +1152,31 @@ function wireDrawer(s,bf){
     if(j.ok){ s.expenses=j.expenses; openDrawer(s.slug); const d=$('.log.block'); if(d) d.open=true; }
   });
 
+  $('#cf_repofind')?.addEventListener('click',async(e)=>{
+    const k=needKey(); if(!k) return;
+    const box=$('#repoPick'); box.hidden=false; box.innerHTML='<div class="note">Searching GitHub…</div>';
+    const url=e.target.dataset.url||$('#cf_url').value||'';
+    const j=await fetch(`/api/repos?secret=${encodeURIComponent(k)}&match=${encodeURIComponent(url)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+    if(!j.ok){ box.innerHTML=`<div class="note" style="color:var(--neg)">${esc(j.error||'Could not reach GitHub — is GITHUB_TOKEN set in Vercel?')}</div>`; return; }
+    if(!j.repos.length){ box.innerHTML='<div class="note">No repos visible to this token.</div>'; return; }
+    const cur=$('#cf_repo').value.trim();
+    const render=(filter)=>{
+      const f=(filter||'').toLowerCase();
+      const list=j.repos.filter(r=>!f||r.full_name.toLowerCase().includes(f)).slice(0,60);
+      box.querySelector('.rp-list').innerHTML=list.map(r=>`<button type="button" class="rp-item ${r.full_name===cur?'on':''}" data-r="${esc(r.full_name)}">${esc(r.full_name)}${r.private?' <span style="color:var(--faint)">· private</span>':''}</button>`).join('')||'<div class="note">No match.</div>';
+    };
+    box.innerHTML=`${j.match?`<div class="note">Best match: <strong>${esc(j.match)}</strong> <button type="button" class="link" id="rp_use">use it</button></div>`:'<div class="note">No confident auto-match — pick from your repos:</div>'}
+      <input id="rp_search" placeholder="filter your repos…" style="width:100%" />
+      <div class="rp-list"></div>`;
+    render('');
+    $('#rp_use')?.addEventListener('click',()=>{ $('#cf_repo').value=j.match; box.hidden=true; toast('Repo set — remember to Save settings'); });
+    $('#rp_search').addEventListener('input',(ev)=>render(ev.target.value));
+    box.querySelector('.rp-list').addEventListener('click',(ev)=>{
+      const b=ev.target.closest('button[data-r]'); if(!b) return;
+      $('#cf_repo').value=b.dataset.r; box.hidden=true; toast('Repo set — remember to Save settings');
+    });
+  });
+
   $('#cfSave').addEventListener('click',async(e)=>{
     const k=needKey(); if(!k) return;
     e.target.disabled=true;
@@ -1231,7 +1299,16 @@ $('#m_save').addEventListener('click',async()=>{
     leadSource:lead,leadSourceDate:$('#m_leaddate').value,
     billingDay:$('#m_bday').value,autoSend:$('#m_auto').checked});
   $('#m_save').disabled=false;
-  if(j.ok){ if(lead) rememberLeadSource(lead); ['m_url','m_name','m_client','m_email','m_phone','m_price','m_setup','m_since','m_trial','m_bday','m_lead','m_leaddate'].forEach(id=>$('#'+id).value=''); $('#m_auto').checked=false; $('#modal').classList.remove('open'); $('#m_msg').textContent=''; await load(); openDrawer(j.site.slug); }
+  if(j.ok){
+    if(lead) rememberLeadSource(lead);
+    ['m_url','m_name','m_client','m_email','m_phone','m_price','m_setup','m_since','m_trial','m_bday','m_lead','m_leaddate'].forEach(id=>$('#'+id).value='');
+    $('#m_auto').checked=false; $('#modal').classList.remove('open'); $('#m_msg').textContent='';
+    toast(j.repoMatch?`Added — matched GitHub repo ${j.repoMatch}`:'Site added — pulling its data now');
+    await load();
+    const newSlug=j.site&&j.site.slug;
+    if(newSlug && STATE.sites.some(x=>x.slug===newSlug)) openDrawer(newSlug);
+    if(!j.repoMatch) setTimeout(()=>toast('No GitHub repo auto-matched — pick it in ⚙ Settings → Automation'),1200);
+  }
   else $('#m_msg').textContent=j.error||'Failed.';
 });
 

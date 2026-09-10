@@ -30,7 +30,7 @@ export default async function handler(req, res) {
     list.map(async (site) => {
       const [stats, audit, report, history, notes, changelog, expenses] = await Promise.all([
         siteStats(site.slug, site.conversionEvents || []).catch(() => null),
-        runAudit(site.url).catch(() => ({ ok: false, error: 'audit failed' })),
+        runAudit(site.url, { cachedOnly: true }).catch(() => ({ ok: false, error: 'audit failed' })),
         store.get(`report:${site.slug}:latest`).catch(() => null),
         getHistory(site.slug).catch(() => []),
         readNotes(site.slug),
@@ -64,6 +64,10 @@ export default async function handler(req, res) {
         reviewUrl: site.reviewUrl || '',
         conversionEvents: site.conversionEvents || [],
         source: site.source,
+        repo: site.repo || '',
+        seoAgent: site.seoAgent !== false,
+        agentBudget: site.agentBudget || 18,
+        auditPending: !!audit?.pending,
         lastSeen: site.lastSeen || 0,
         // tracker is "installed" if any beacon has landed in the last 21 days
         // (or we already have visit data). New sites with no visits yet =>
@@ -115,8 +119,8 @@ export default async function handler(req, res) {
     attention: rows
       .filter(
         (r) =>
-          (r.audit && !r.audit.ok) ||
-          (r.grade && r.grade.score < 65) ||
+          (r.audit && !r.audit.ok && !r.audit.pending) ||
+          (r.grade && r.grade.score < 65 && r.audit?.ok) ||
           (r.stats?.hasData && r.stats.deltas.visitors <= -25)
       )
       .map((r) => r.slug),
