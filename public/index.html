@@ -185,6 +185,19 @@
   .repopick .rp-item{text-align:left;background:none;border:0;color:var(--ink);font:inherit;padding:5px 7px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .repopick .rp-item:hover{background:var(--surface);}
   .repopick .rp-item.on{background:var(--green-soft);color:var(--green-br);}
+  .howto{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.66);backdrop-filter:blur(3px);padding:5vh 16px;}
+  .howto-card{background:var(--bg);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);width:min(680px,96vw);max-height:90vh;display:flex;flex-direction:column;overflow:hidden;}
+  .howto-top{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);font-size:12px;color:var(--faint);}
+  .howto-body{padding:22px 24px;overflow-y:auto;flex:1;}
+  .howto-body h3{font:600 19px "Fraunces",serif;margin:0 0 10px;color:var(--ink);}
+  .howto-body p{font-size:14px;line-height:1.7;color:var(--muted);margin:0 0 10px;}
+  .howto-body li{font-size:14px;line-height:1.65;color:var(--muted);margin:4px 0;}
+  .howto-body code{background:var(--surface2);padding:1px 6px;border-radius:5px;font-size:12.5px;}
+  .howto-body .tag{display:inline-block;background:var(--green-soft);color:var(--green-br);font-size:11px;font-weight:600;padding:2px 8px;border-radius:6px;margin-bottom:10px;}
+  .howto-nav{display:flex;align-items:center;gap:12px;padding:13px 16px;border-top:1px solid var(--line);}
+  .howto-dots{display:flex;gap:5px;margin:0 auto;flex-wrap:wrap;justify-content:center;}
+  .howto-dots i{width:6px;height:6px;border-radius:999px;background:var(--line);cursor:pointer;transition:background .15s;}
+  .howto-dots i.on{background:var(--green-br);}
   #coachPanel{border:1px solid var(--line);border-radius:13px;padding:14px;margin-top:14px;background:var(--surface);}
   .coach-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;}
   .coach-head h3{margin:0;font:600 14px "Inter",sans-serif;}
@@ -239,6 +252,7 @@
       <button class="btn" id="addBtn">+ Add site</button>
       <button class="btn ghost" id="selectBtn">Select</button>
       <button class="btn ghost" id="genBtn">Generate all</button>
+      <button class="btn ghost" id="howtoBtn" title="How to use this dashboard">❔ Guide</button>
     </div>
   </header>
 
@@ -251,6 +265,24 @@
   <div id="finPanel" hidden></div>
   <div id="coachPanel" hidden></div>
   <div id="rcptPanel" hidden></div>
+</div>
+
+<div class="howto" id="howto" hidden>
+  <div class="howto-card">
+    <div class="howto-top">
+      <span id="htStep">1 / 1</span>
+      <div style="margin-left:auto;display:flex;gap:8px">
+        <button class="btn ghost sm" id="htPrint">Print / Save PDF</button>
+        <button class="btn ghost sm" id="htClose">✕ close</button>
+      </div>
+    </div>
+    <div class="howto-body" id="htBody"></div>
+    <div class="howto-nav">
+      <button class="btn ghost" id="htPrev">← Back</button>
+      <div class="howto-dots" id="htDots"></div>
+      <button class="btn" id="htNext">Next →</button>
+    </div>
+  </div>
 </div>
 
 <div class="bulkbar" id="bulkbar" hidden>
@@ -1439,6 +1471,46 @@ $('#m_save').addEventListener('click',async()=>{
     if(!j.repoMatch) setTimeout(()=>toast('No GitHub repo auto-matched — pick it in ⚙ Settings → Automation'),1200);
   }
   else $('#m_msg').textContent=j.error||'Failed.';
+});
+
+/* ---------- How-to guide (slideshow + printable) ---------- */
+const HOWTO_SLIDES=[
+  {t:'What this dashboard is',h:'The control panel for the whole agency',b:`<p>Every client website we build gets tracked here. You add a site once, drop one line of code on it, and from then on this dashboard shows that site's visitors, leads, SEO health and speed — plus it writes and (optionally) sends the client a monthly report.</p><p>It also runs the money side: lifetime sales, company stats, receipts for taxes, and a business coach you can chat with.</p><p>One password unlocks the admin bits. You set it once per device.</p>`},
+  {t:'Adding a client site',h:'Press "+ Add site"',b:`<p>Fill in the live URL (their real domain, e.g. <code>abovepar.com</code> — not a preview link), the business name, client name + email, the monthly price, the billing day, and where the client came from.</p><p>Press <b>Add site</b>. The card appears immediately and its data starts loading. It also tries to find that site's GitHub repo automatically.</p><p>Only the URL is required — everything else is editable later in the site's <b>⚙ Settings</b> tab.</p>`},
+  {t:'The tracker snippet',h:'One line of code per site',b:`<p>For visitor and lead data to flow in, the site needs the tracker. In the client's website code, just before <code>&lt;/body&gt;</code> (or in the <code>&lt;head&gt;</code>), add:</p><p><code>&lt;script defer src="https://agency-dashboard-omega-red.vercel.app/t.js"&gt;&lt;/script&gt;</code></p><p>That's it. No account, no cookie banner. The card shows "collecting…" until the first visit lands, then "no tracker" turns into real numbers.</p>`},
+  {t:'Reading a site card',h:'What the tiles mean',b:`<ul><li><b>Visitors / Leads (30d)</b> — real traffic and conversions (calls, form submits, bookings) from the tracker.</li><li><b>SEO-ready</b> — technical setup score from Google (not the live ranking).</li><li><b>Speed</b> — Google performance score.</li><li><b>Time on site</b> — engaged seconds per visit.</li><li>An amber corner triangle or a "no tracker" tag means it needs attention.</li></ul><p>Click any card to open the full drawer.</p>`},
+  {t:'The site drawer',h:'Five tabs per site',b:`<ul><li><b>Overview</b> — the growth chart + headline numbers.</li><li><b>Traffic</b> — top pages, sources, devices, conversions.</li><li><b>To-dos</b> — technical fixes (private) and client-facing suggestions.</li><li><b>Report &amp; email</b> — generate the monthly report, tweak the email tone, and <b>Send now</b>.</li><li><b>Settings</b> — price, billing day, trial dates, review link, and the <b>Automation</b> block (GitHub repo, SEO agent budget, revision handling).</li></ul>`},
+  {t:'Monthly client reports',h:'Report & email tab',b:`<p><b>Regenerate email</b> rewrites the client email with AI — pick a tone chip or type a steer. <b>Send now</b> emails the report that's on file (fast — it doesn't rebuild).</p><p>If a send fails, the message tells you exactly why (usually the sending domain isn't verified in Resend yet).</p><p>Turn on <b>Auto-send</b> in Settings and the report goes out by itself on the client's billing day.</p>`},
+  {t:'The money screens',h:'Footer buttons',b:`<ul><li><b>🔒 Lifetime sales</b> — every payment, expenses, net profit, per-site breakdown.</li><li><b>🔒 Company stats</b> — MRR, retention graph, churn, ARPU/LTV, where clients come from, value delivered.</li><li><b>🔒 Receipts</b> — a numbered receipt for every sale and expense, printable, plus a CSV export and a Taxes tab with your quarterly due dates.</li></ul><p>Each asks for the password when you open it.</p>`},
+  {t:'Compass — your coach',h:'💬 Ask Compass',b:`<p>A chat box that can see all your numbers. Ask things like <i>"what should I focus on this month?"</i>, <i>"which client has the worst SEO?"</i>, <i>"are we profitable after AI costs?"</i>, or <i>"what's Kyle's email?"</i></p><p>It has a small daily spend budget shown at the top — it warns when you hit it but never cuts you off.</p>`},
+  {t:'The SEO automation',h:'Set it and leave it',b:`<p>In each site's <b>Settings → Automation</b>: point it at the GitHub repo, leave the SEO agent on, and set the monthly budget (default $18). From then on it works that site on its own — technical fixes, location content, rank tracking — inside the budget.</p><p>You do nothing per site. Progress shows up in the monthly client email.</p>`},
+  {t:'Day-to-day',h:'What a new person actually does',b:`<ul><li><b>New client:</b> + Add site → fill details → add the tracker snippet to their site → confirm the repo in Settings.</li><li><b>Monthly:</b> skim the cards, open anything flagged, let auto-send handle the emails (or Send now).</li><li><b>Money:</b> check Company stats + Receipts once a month; log any business expense in Lifetime sales.</li><li><b>Stuck:</b> ask Compass.</li></ul>`},
+];
+let htIndex=0;
+function renderHowto(){
+  const s=HOWTO_SLIDES[htIndex];
+  $('#htStep').textContent=`${htIndex+1} / ${HOWTO_SLIDES.length}`;
+  $('#htBody').innerHTML=`<div class="tag">${esc(s.t)}</div><h3>${esc(s.h)}</h3>${s.b}`;
+  $('#htDots').innerHTML=HOWTO_SLIDES.map((_,i)=>`<i class="${i===htIndex?'on':''}" data-i="${i}"></i>`).join('');
+  $('#htPrev').disabled=htIndex===0;
+  $('#htNext').textContent=htIndex===HOWTO_SLIDES.length-1?'Done':'Next →';
+  $('#htBody').scrollTop=0;
+  $$('#htDots i').forEach(d=>d.onclick=()=>{ htIndex=+d.dataset.i; renderHowto(); });
+}
+function openHowto(){ htIndex=0; $('#howto').hidden=false; renderHowto(); }
+function closeHowto(){ $('#howto').hidden=true; }
+$('#howtoBtn').addEventListener('click',openHowto);
+$('#htClose').addEventListener('click',closeHowto);
+$('#htPrev').addEventListener('click',()=>{ if(htIndex>0){ htIndex--; renderHowto(); } });
+$('#htNext').addEventListener('click',()=>{ if(htIndex<HOWTO_SLIDES.length-1){ htIndex++; renderHowto(); } else closeHowto(); });
+$('#howto').addEventListener('click',(e)=>{ if(e.target.id==='howto') closeHowto(); });
+document.addEventListener('keydown',(e)=>{ if($('#howto').hidden) return; if(e.key==='Escape') closeHowto(); if(e.key==='ArrowRight') $('#htNext').click(); if(e.key==='ArrowLeft') $('#htPrev').click(); });
+$('#htPrint').addEventListener('click',()=>{
+  const w=window.open('','_blank'); if(!w) return;
+  w.document.write(`<title>Inspiring Websites — Dashboard Guide</title><style>body{font:15px/1.7 -apple-system,Segoe UI,Roboto,Arial,sans-serif;color:#12160f;max-width:720px;margin:40px auto;padding:0 28px}h2{font-family:Georgia,serif;margin:34px 0 4px}.t{color:#1f6f4d;font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}code{background:#f1f1ef;padding:1px 5px;border-radius:4px;font-size:13px}hr{border:0;border-top:1px solid #e5e7eb;margin:26px 0}@media print{h2{page-break-after:avoid}}</style>
+    <h1>Working the Inspiring Websites dashboard</h1>
+    ${HOWTO_SLIDES.map(s=>`<div class="t">${s.t}</div><h2>${s.h}</h2>${s.b}`).join('<hr>')}`);
+  w.document.close(); setTimeout(()=>w.print(),300);
 });
 
 renderUnlock();
