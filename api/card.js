@@ -1,5 +1,5 @@
-// Monthly report card image.  /api/card?slug=relax-tax  ->  PNG (falls back to
-// SVG if sharp is unavailable). Non-sensitive — safe to link in an email.
+// Monthly report card image.  /api/card?slug=relax-tax  ->  SVG.
+// Non-sensitive — safe to link in an email.
 import { listSites } from '../lib/registry.js';
 import { getHistory } from '../lib/history.js';
 import { siteStats } from '../lib/stats.js';
