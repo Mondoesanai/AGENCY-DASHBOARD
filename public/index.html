@@ -250,6 +250,7 @@
   <p class="note" id="footNote"></p>
   <div id="finPanel" hidden></div>
   <div id="coachPanel" hidden></div>
+  <div id="rcptPanel" hidden></div>
 </div>
 
 <div class="bulkbar" id="bulkbar" hidden>
@@ -455,9 +456,10 @@ function render(data){
   $('#siteCount').textContent=`${data.sites.length} tracked`;
   const upd=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
   $('#footNote').innerHTML=(p.auditQuota?`${upd} <strong>SEO scans rate-limited</strong> — set a free <code>PAGESPEED_API_KEY</code> in Vercel.`:upd)+
-    ` <button type="button" class="link" id="finBtn">🔒 Lifetime sales</button> · <button type="button" class="link" id="coBtn">🔒 Company stats</button> · <button type="button" class="link" id="coachBtn">💬 Ask Compass</button>`;
+    ` <button type="button" class="link" id="finBtn">🔒 Lifetime sales</button> · <button type="button" class="link" id="coBtn">🔒 Company stats</button> · <button type="button" class="link" id="rcptBtn">🔒 Receipts</button> · <button type="button" class="link" id="coachBtn">💬 Ask Compass</button>`;
   $('#finBtn').addEventListener('click',()=>openFinances('money'));
   $('#coBtn').addEventListener('click',()=>openFinances('company'));
+  $('#rcptBtn').addEventListener('click',openReceipts);
   $('#coachBtn').addEventListener('click',openCoach);
 
   $('#sites').innerHTML=data.sites.map(siteCard).join('');
@@ -549,6 +551,59 @@ function renderPanel(){
       if(r.ok) await loadFinances();
     });
   }
+}
+
+/* ---------- Receipts / tax ---------- */
+let rcptKey=null, rcptData=null, rcptTab='all', rcptFilter='';
+async function openReceipts(){
+  const el=$('#rcptPanel');
+  if(!el.hidden){ el.hidden=true; el.innerHTML=''; rcptKey=null; rcptData=null; return; }
+  const k=prompt('What’s your password?'); if(!k) return; rcptKey=k;
+  el.hidden=false; el.innerHTML='<div class="note">Building the ledger…</div>';
+  $('#finPanel').hidden=true; $('#coachPanel').hidden=true;
+  const j=await fetch(`/api/receipts?secret=${encodeURIComponent(rcptKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+  if(!j.ok){ el.innerHTML=`<div class="note" style="color:var(--neg)">${j.error==='bad password'?'Wrong password.':'Could not load receipts.'}</div>`; rcptKey=null; return; }
+  rcptData=j; renderReceipts();
+}
+function renderReceipts(){
+  const el=$('#rcptPanel'), j=rcptData; if(!j) return;
+  const secret=encodeURIComponent(rcptKey);
+  const all=[...j.income,...j.expenses].sort((a,b)=>b.date.localeCompare(a.date));
+  const f=rcptFilter.toLowerCase();
+  const rows=all.filter(r=>!f||`${r.id} ${r.counterparty} ${r.description} ${r.category}`.toLowerCase().includes(f));
+  const s=j.summary;
+  const body = rcptTab==='tax' ? `
+    <div class="fin-grid">
+      <div class="b"><div class="k">Gross income · ${s.year}</div><div class="v">${money(s.grossIncome)}</div></div>
+      <div class="b neg"><div class="k">Deductible expenses</div><div class="v">${money(s.totalExpenses)}</div></div>
+      <div class="b ${s.netProfit>=0?'pos':'neg'}"><div class="k">Net profit (taxed on this)</div><div class="v">${money(s.netProfit)}</div></div>
+      <div class="b"><div class="k">Est. tax on profit (~27%)</div><div class="v">${money(s.estTaxOnProfit)}</div></div>
+      <div class="b"><div class="k">If you reserve 20% of revenue</div><div class="v">${money(s.reservedIfTwentyPctRevenue)}</div></div>
+      <div class="b ${s.cushion>=0?'pos':'neg'}"><div class="k">Cushion vs estimate</div><div class="v">${money(s.cushion)}</div></div>
+    </div>
+    <div class="fin-row h"><span>Expenses by category</span><span class="r">${s.year}</span></div>
+    ${Object.entries(s.byCategory).sort((a,b)=>b[1]-a[1]).map(([c,v])=>`<div class="fin-row"><span>${esc(c)}</span><span></span><span></span><span class="r">${money(v)}</span></div>`).join('')||'<div class="note">No expenses logged this year.</div>'}
+    <div class="fin-row h" style="margin-top:12px"><span>Quarterly estimated-tax due dates</span></div>
+    ${s.quarterlyDue.map(d=>`<div class="fin-row"><span>${d}</span><span></span><span></span><span class="r">${new Date(d)<new Date()?'passed':'upcoming'}</span></div>`).join('')}
+    <p class="note" style="margin-top:10px">Estimate only — file year one with a CPA. TX has no state income tax; this covers federal + self-employment (~15.3%).</p>`
+  : `
+    <div class="btn-row" style="margin-bottom:8px">
+      <input id="rcptSearch" style="flex:1" placeholder="filter by client, vendor, number…" value="${esc(rcptFilter)}" />
+      <a class="btn sm" href="/api/receipts?format=csv&secret=${secret}" download>⬇ CSV (${s.year})</a>
+    </div>
+    <div class="fin-row h"><span>#</span><span>Date</span><span>Who / what</span><span class="r">Amount</span></div>
+    ${rows.slice(0,400).map(r=>`<div class="fin-row"><span><a class="link" href="/api/receipts?one=${encodeURIComponent(r.id)}&secret=${secret}" target="_blank" title="open printable receipt">${esc(r.id)}</a></span><span>${r.date}</span><span title="${esc(r.description)}">${esc(r.counterparty)}${r.type==='expense'?' <span class="pillmini" style="color:var(--neg)">out</span>':''}</span><span class="r" style="color:${r.type==='income'?'var(--pos)':'var(--neg)'}">${r.type==='income'?'+':'−'}${money(r.amount)}</span></div>`).join('')||'<div class="note">Nothing matches.</div>'}
+    ${rows.length>400?`<p class="note">Showing first 400 of ${rows.length}. Narrow with the filter or use the CSV.</p>`:`<p class="note">${rows.length} receipt${rows.length===1?'':'s'}. Click a number to open a printable copy (browser Print → Save as PDF).</p>`}`;
+  el.innerHTML=`
+    <div class="dtabs" style="margin:0 0 12px;top:auto;position:static;border:0;padding:0">
+      ${[['all','All receipts'],['tax','Taxes']].map(([id,lab])=>`<button data-t="${id}" class="${rcptTab===id?'on':''}">${lab}</button>`).join('')}
+      <button data-t="_close" class="link" style="margin-left:auto;align-self:center">✕ close</button>
+    </div>${body}`;
+  $$('#rcptPanel .dtabs button').forEach(b=>b.onclick=()=>{
+    if(b.dataset.t==='_close'){ el.hidden=true; el.innerHTML=''; rcptKey=null; rcptData=null; return; }
+    rcptTab=b.dataset.t; renderReceipts();
+  });
+  const si=$('#rcptSearch'); if(si) si.oninput=(e)=>{ rcptFilter=e.target.value; const p=e.target.selectionStart; renderReceipts(); const n=$('#rcptSearch'); if(n){ n.focus(); n.setSelectionRange(p,p); } };
 }
 
 /* ---------- Compass — in-dashboard business coach ---------- */

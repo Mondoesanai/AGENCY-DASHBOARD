@@ -181,6 +181,31 @@ createServer(async (req, res) => {
     const clients = DEMO.sites.map(s => ({ slug: s.slug, name: s.name, client: s.client, priceMonthly: s.priceMonthly, setupFee: s.setupFee, startedAt: s.startedAt, monthsWith: 6, status: s.onTrial ? 'trial' : 'active', lifetimeValue: s.lifetimeRevenue, visitors30: s.stats.visitors, leads30: s.stats.conversions, avgDwell: s.stats.avgDwell, deltaVisitors: s.stats.deltas.visitors, seo: s.audit.scores.seo, speed: s.audit.scores.performance, startedThisMonth: false }));
     return res.end(JSON.stringify({ ok: true, company, clients, finances: DEMO.portfolio._fin, overhead: _overhead, trials: _trials, trialMrr: 100, formerClients: _former, churnedCount: 1, mrrLost: 90 }));
   }
+  if (path === '/api/receipts') {
+    const org = { name: 'Inspiring Websites LLC', addr: '2200 Driskell Drive, Corinth, TX 76210' };
+    const income = [
+      { id: 'INV-20260314-1', type: 'income', date: '2026-03-14', time: '09:00', counterparty: 'Relax Tax', client: 'Kyle', description: 'Website setup & onboarding — Relax Tax', category: 'Website services', amount: 1200 },
+      { id: 'INV-202609-relax-tax', type: 'income', date: '2026-09-14', time: '09:00', counterparty: 'Relax Tax', client: 'Kyle', description: 'Monthly website & SEO management — September 2026', category: 'Recurring services', amount: 150 },
+    ];
+    const expenses = [
+      { id: 'EXP-20260826-1', type: 'expense', date: '2026-08-26', time: '—', counterparty: 'Corinth Chamber of Commerce', description: 'Chamber of Commerce membership (business overhead)', category: 'Dues & memberships', amount: 540 },
+      { id: 'EXP-20260909-2', type: 'expense', date: '2026-09-09', time: '—', counterparty: 'Anthropic', description: 'API credits (business overhead)', category: 'Software & subscriptions', amount: 150 },
+    ];
+    if (u.searchParams.get('one')) {
+      const r = [...income, ...expenses].find(x => x.id === u.searchParams.get('one'));
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      return res.end(r ? `<h1>${r.id}</h1><p>${r.description} — $${r.amount}</p>` : 'not found');
+    }
+    if (u.searchParams.get('format') === 'csv') {
+      res.writeHead(200, { 'Content-Type': 'text/csv' });
+      return res.end('id,type,date,amount\r\n' + [...income, ...expenses].map(r => `${r.id},${r.type},${r.date},${r.amount}`).join('\r\n'));
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      ok: true, org, income, expenses,
+      summary: { year: 2026, grossIncome: 1350, byCategory: { 'Dues & memberships': 540, 'Software & subscriptions': 150 }, totalExpenses: 690, netProfit: 660, estTaxOnProfit: 178, reservedIfTwentyPctRevenue: 270, cushion: 92, quarterlyDue: ['2026-04-15', '2026-06-16', '2026-09-15', '2027-01-15'] },
+    }));
+  }
   if (path === '/api/coach' && req.method === 'POST') {
     let raw = '';
     for await (const c of req) raw += c;
