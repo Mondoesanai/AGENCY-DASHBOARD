@@ -1025,6 +1025,7 @@ function openDrawer(slug){
     </div><!-- /todos -->
 
     <div class="tabpane" data-pane="report" hidden>
+    <div id="upsellBox" hidden></div>
     <div class="block">
       <h3>Monthly report ${rep?`<span class="ang">${esc(rep.month)} · ${rep.aiGenerated?'AI':'rules'}${rep.angle?' · '+esc(rep.angle):''}</span>`:''}</h3>
       ${rep?`<p style="margin:0 0 8px"><strong>${esc(rep.headline||'')}</strong></p><p style="margin:0 0 6px;color:var(--muted)">${esc(rep.summary||'')}</p>${(rep.wins||[]).map(w=>`<div class="win">${esc(w)}</div>`).join('')}`:'<div class="note">Not generated yet.</div>'}
@@ -1371,6 +1372,33 @@ function wireDrawer(s,bf){
     refreshAgent();
   });
   refreshAgent();
+
+  async function loadUpsell(){
+    const box=$('#upsellBox'); const k=key(); if(!box||!k) return;
+    const j=await fetch(`/api/admin?do=upsell&slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+    if(!j||!j.ok||!j.state) return;
+    const st=j.state;
+    if(!st.eligible && !st.sentAt) return;
+    box.hidden=false;
+    box.className='block';
+    if(st.sentAt){
+      box.innerHTML=`<h3>Upsell</h3><p class="note" style="margin:0">Upsell email sent ${new Date(st.sentAt).toLocaleDateString()}. Watch your Calendly for a booking.</p>`;
+      return;
+    }
+    box.innerHTML=`<h3>💡 Expansion opportunity</h3>
+      <p class="note" style="margin:0 0 8px">${st.months} months in${st.growthNote?` — ${esc(st.growthNote)}`:''}. Good time for the "one thing that could boost your site" pitch.</p>
+      <details style="margin-bottom:8px"><summary style="cursor:pointer;color:var(--green-br)">Preview the email</summary><pre style="white-space:pre-wrap;font:12px/1.6 inherit;background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:10px;margin:6px 0 0"><strong>${esc(j.draft.subject)}</strong>\n\n${esc(j.draft.body)}</pre></details>
+      <div class="btn-row"><button class="btn sm" id="upSend" data-slug="${s.slug}">Send upsell email</button></div>
+      <p class="note" id="upMsg" style="margin:6px 0 0"></p>`;
+    $('#upSend').onclick=async(e)=>{
+      if(!confirm('Send the upsell email to '+(s.email||'the client')+'?')) return;
+      e.target.disabled=true; e.target.textContent='Sending…';
+      const r=await fetch(`/api/admin?do=upsell&slug=${encodeURIComponent(s.slug)}&send=1&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(x=>x.json()).catch(()=>({ok:false}));
+      if(r.sent){ toast('Upsell sent to '+(r.to||'')); loadUpsell(); }
+      else { e.target.disabled=false; e.target.textContent='Send upsell email'; $('#upMsg').innerHTML=`<span style="color:var(--neg)">${esc(r.reason||'could not send')}</span>`; }
+    };
+  }
+  loadUpsell();
 
   $('#cfSave').addEventListener('click',async(e)=>{
     const k=needKey(); if(!k) return;

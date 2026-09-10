@@ -227,6 +227,15 @@ createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: false, skipped: true, reason: 'GITHUB_TOKEN not set in Vercel (local preview stub)' }));
   }
+  if (path === '/api/upsell') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    if (u.searchParams.get('send') === '1') return res.end(JSON.stringify({ ok: true, sent: false, reason: 'Resend not configured (local preview)', state: {} }));
+    return res.end(JSON.stringify({
+      ok: true,
+      state: { eligible: true, months: 7, growing: true, growthNote: 'traffic is up about 42% since we started', sentAt: 0 },
+      draft: { subject: 'Relax Tax — 7 months in, and it\'s working', body: 'Hi Mr./Mrs. Montgomery,\n\nIt\'s been 7 months...\n\nhttps://calendly.com/mondoesanai/30min\n\n— Inspiring Websites' },
+    }));
+  }
   if (path === '/api/coach' && req.method === 'POST') {
     let raw = '';
     for await (const c of req) raw += c;

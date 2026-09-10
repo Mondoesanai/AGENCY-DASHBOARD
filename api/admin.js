@@ -8,6 +8,7 @@ import { receiptsHandler } from '../lib/receipts.js';
 import { reposHandler } from '../lib/repos.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus } from '../lib/agent.js';
+import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
 
 function authed(req) {
   const s = process.env.CRON_SECRET;
@@ -39,6 +40,16 @@ export default async function handler(req, res) {
       if (!site) return res.status(404).json({ ok: false, error: 'unknown site' });
       const out = await runAgentCycle(site, { manual: true });
       return res.status(200).json(out);
+    }
+    case 'upsell': {
+      const site = await siteBySlug(req.query.slug);
+      if (!site) return res.status(404).json({ ok: false, error: 'unknown site' });
+      const state = await upsellState(site);
+      if (req.query.send === '1') {
+        const r = await sendUpsell(site);
+        return res.status(200).json({ ok: true, ...r, state });
+      }
+      return res.status(200).json({ ok: true, state, draft: draftUpsell(site, state) });
     }
     default:
       return res.status(400).json({ ok: false, error: 'unknown admin action' });

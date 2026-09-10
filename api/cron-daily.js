@@ -10,6 +10,7 @@ import { store } from '../lib/store.js';
 import { monthKey } from '../lib/history.js';
 import { buildForSite } from './report.js';
 import { runAgentCycle, agentStatus } from '../lib/agent.js';
+import { upsellState, sendUpsell } from '../lib/upsell.js';
 
 const MK = monthKey();
 const monthsBetween = (from) => (from ? Math.max(1, Math.round((Date.now() - from) / (30 * 864e5))) : 1);
@@ -177,6 +178,23 @@ export default async function handler(req, res) {
     }
   } catch (e) {
     log.push({ action: 'seo agent', error: String(e.message || e) });
+  }
+
+  // 6-month upsell: flag every eligible client; auto-send only if UPSELL_AUTO=1
+  try {
+    for (const site of sites) {
+      const us = await upsellState(site).catch(() => ({ eligible: false }));
+      if (!us.eligible) continue;
+      if (process.env.UPSELL_AUTO === '1' && process.env.RESEND_API_KEY && site.email) {
+        const r = await sendUpsell(site);
+        log.push({ slug: site.slug, action: 'upsell', sent: r.sent, reason: r.reason });
+      } else {
+        await store.set(`upsell:ready:${site.slug}`, String(Date.now()));
+        log.push({ slug: site.slug, action: 'upsell', ready: true });
+      }
+    }
+  } catch (e) {
+    log.push({ action: 'upsell', error: String(e.message || e) });
   }
 
   res.status(200).json({ ok: true, day: today, isFirst, processed: sites.length, log });
