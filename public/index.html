@@ -185,6 +185,19 @@
   .repopick .rp-item{text-align:left;background:none;border:0;color:var(--ink);font:inherit;padding:5px 7px;border-radius:6px;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
   .repopick .rp-item:hover{background:var(--surface);}
   .repopick .rp-item.on{background:var(--green-soft);color:var(--green-br);}
+  .agent-summary{display:flex;align-items:center;gap:8px;width:100%;background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 11px;font:600 12px "Inter",sans-serif;color:var(--ink);cursor:pointer;text-align:left;}
+  .agent-summary:hover{border-color:var(--green);}
+  .agent-dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none;}
+  .agent-dot.running{background:var(--green-br);animation:agentpulse 1.4s ease-in-out infinite;}
+  .agent-dot.idle{background:var(--green-br);}
+  .agent-dot.paused{background:var(--warn);}
+  @keyframes agentpulse{0%,100%{box-shadow:0 0 0 0 rgba(61,153,104,.5);}50%{box-shadow:0 0 0 5px rgba(61,153,104,0);}}
+  #agentSummary{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:var(--muted);}
+  .agent-caret{flex:none;color:var(--faint);transition:transform .15s ease;}
+  .agent-caret.open{transform:rotate(90deg);}
+  #agentTasks .at-row{display:flex;gap:8px;padding:3px 0;}
+  #agentTasks .at-k{flex:none;width:64px;color:var(--faint);text-transform:uppercase;font-size:10px;letter-spacing:.04em;padding-top:2px;}
+  #agentTasks .at-v{flex:1;color:var(--muted);}
   .howto{position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.66);backdrop-filter:blur(3px);padding:5vh 16px;}
   .howto-card{background:var(--bg);border:1px solid var(--line);border-radius:16px;box-shadow:var(--shadow);width:min(680px,96vw);max-height:90vh;display:flex;flex-direction:column;overflow:hidden;}
   .howto-top{display:flex;align-items:center;gap:10px;padding:13px 16px;border-bottom:1px solid var(--line);font-size:12px;color:var(--faint);}
@@ -948,6 +961,30 @@ function bars(items){
   const max=Math.max(...items.map(i=>i.score),1);
   return items.map(i=>`<div class="bar-row"><span title="${esc(i.member)}">${esc(String(i.member).slice(0,14))}</span><span class="bar-track"><span class="bar-fill" style="width:${Math.max(4,(i.score/max)*100)}%"></span></span><span class="n">${fmt(i.score)}</span></div>`).join('');
 }
+function agoStr(ts){
+  if(!ts) return '';
+  const s=(Date.now()-ts)/1000;
+  if(s<3600) return Math.max(1,Math.round(s/60))+'m ago';
+  if(s<86400) return Math.round(s/3600)+'h ago';
+  return Math.round(s/86400)+'d ago';
+}
+function rankingsBlock(s){
+  const rk=s.agentRanks;
+  const kw=(s.agentKeywords||'').split(',').map(x=>x.trim()).filter(Boolean);
+  if(!s.repo||s.seoAgent===false){
+    return `<div class="block"><h3>Google rankings</h3><p class="note" style="margin:0">Link a GitHub repo and turn on the SEO agent (⚙ Settings → Automation) to start tracking real rankings.</p></div>`;
+  }
+  if(!rk||!rk.results||!rk.results.length){
+    return `<div class="block"><h3>Google rankings</h3><p class="note" style="margin:0">${kw.length?`Targeting ${kw.length} keyword${kw.length===1?'':'s'} — first ranking check runs on the agent's next cycle.`:'The agent picks target keywords on its first run, then starts tracking rank.'}</p></div>`;
+  }
+  const rows=rk.results.slice().sort((a,b)=>(a.rank||999)-(b.rank||999));
+  const top10=rows.filter(r=>r.rank&&r.rank<=10).length;
+  const top3=rows.filter(r=>r.rank&&r.rank<=3).length;
+  return `<div class="block"><h3>Google rankings <span class="ang">${top10}/${rows.length} in the top 10${top3?` · ${top3} in the top 3`:''}</span></h3>
+    <div class="note" style="margin:0 0 8px">Checked ${agoStr(rk.at)} · tracked live by the SEO agent</div>
+    ${rows.slice(0,10).map(r=>`<div class="fin-row"><span title="${esc(r.keyword)}">${esc(r.keyword)}</span><span class="r" style="color:${r.rank&&r.rank<=3?'var(--pos)':r.rank&&r.rank<=10?'var(--green-br)':'var(--faint)'}">${r.rank?'#'+r.rank:'not in top '+(rk.results[0]?.total||100)}</span></div>`).join('')}
+  </div>`;
+}
 function histChart(hist){
   const rows=(hist||[]).slice(-10).filter(r=>r&&r.month);
   if(rows.length<2) return '<div class="block"><h3>Visitors by month</h3><div class="note">Grows here once there are two months of data.</div></div>';
@@ -1046,7 +1083,8 @@ function openDrawer(slug){
       <div class="box"><div class="k">Speed</div><div class="v">${a?a.scores.performance:'—'}</div><div class="d">real load performance</div></div>
       <div class="box"><div class="k">Accessibility</div><div class="v">${a?a.scores.accessibility:'—'}</div></div>
     </div>
-    <p class="note" style="margin-top:-8px"><strong>SEO-ready</strong> is technical setup (meta tags, crawlability) — not your Google position. Real keyword/ranking data needs Google Search Console connected (free, one-time per site) — not wired up yet, ask when you want it.</p>
+    <p class="note" style="margin-top:-8px"><strong>SEO-ready</strong> is technical setup (meta tags, crawlability) — not your Google position. Real Google rankings are tracked below by the SEO agent.</p>
+    ${rankingsBlock(s)}
 
     ${histChart(s.history)}
 
@@ -1188,8 +1226,12 @@ function openDrawer(slug){
         <label class="toggle" style="margin:6px 0"><input type="checkbox" id="cf_automerge" ${s.agentAutoMerge?'checked':''}/> Auto‑merge the agent's changes (off = it opens a pull request for you to approve)</label>
         <label class="toggle" style="margin:6px 0 0"><input type="checkbox" id="cf_rev" ${s.revisionsAuto!==false?'checked':''}/> Handle revision‑request emails for this client (auto‑reply + calendar block + preview)</label>
         <div id="agentBox" style="margin-top:10px;border-top:1px solid var(--line);padding-top:9px">
-          <div class="btn-row"><button class="btn sm" id="agentRun" type="button" data-slug="${s.slug}">▶ Run SEO agent now</button><span id="agentStat" class="note" style="margin:0"></span></div>
-          <div id="agentLog" class="note" style="margin-top:7px;white-space:pre-wrap;font-size:11.5px"></div>
+          <button type="button" id="agentToggle" class="agent-summary"><span class="agent-dot" id="agentDot"></span><span id="agentSummary">Checking…</span><span class="agent-caret" id="agentCaret">▸</span></button>
+          <div id="agentDetail" hidden>
+            <div id="agentTasks" class="note" style="margin:8px 0"></div>
+            <div class="btn-row"><button class="btn sm" id="agentRun" type="button" data-slug="${s.slug}">▶ Run SEO agent now</button></div>
+            <div id="agentLog" class="note" style="margin-top:7px;white-space:pre-wrap;font-size:11.5px"></div>
+          </div>
         </div>
       </div>
       <div class="btn-row"><button class="btn sm" id="cfSave">Save settings</button><button class="btn danger sm" id="cfDel">Remove site</button></div>
@@ -1379,26 +1421,48 @@ function wireDrawer(s,bf){
 
   $('#cf_repofind')?.addEventListener('click',(e)=>runRepoPicker('#repoPick','#cf_repo',e.target.dataset.url||$('#cf_url').value));
 
-  async function refreshAgent(){
-    const k=key(); if(!k||!$('#agentStat')) return;
-    const j=await fetch(`/api/admin?do=agent-status&slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
-    if(!j||!j.ok){ $('#agentStat').textContent=''; return; }
-    const st=j.status;
-    $('#agentStat').innerHTML=st.eligible
-      ? `<span style="color:var(--pos)">ready</span> · $${(st.spentThisMonth||0).toFixed(2)}/$${st.cap} this month`
-      : `<span style="color:var(--warn)">paused</span> — ${esc(st.reasons[0]||'')}`;
-    const lines=[];
-    if(st.keywords&&st.keywords.length) lines.push('Targets: '+st.keywords.slice(0,6).join(', ')+(st.keywords.length>6?'…':''));
-    if(st.ranks){ try{ const rk=typeof st.ranks==='string'?JSON.parse(st.ranks):st.ranks; const won=(rk.results||[]).filter(r=>r.rank&&r.rank<=10); if(won.length) lines.push('Top 10: '+won.slice(0,4).map(r=>`#${r.rank} ${r.keyword}`).join(' · ')); }catch{} }
-    (st.lastLog||[]).slice(0,6).forEach(l=>lines.push(`${new Date(l.at).toLocaleDateString()} — ${l.action}: ${l.detail||''}${l.prUrl?' ('+l.prUrl+')':''}`));
+  let agentExpanded=false, agentPollT=null, agentLastStatus=null;
+  $('#agentToggle')?.addEventListener('click',()=>{ agentExpanded=!agentExpanded; renderAgentBox(); });
+  function renderAgentBox(){
+    const st=agentLastStatus; if(!st||!$('#agentDot')) return;
+    const dot=$('#agentDot'); dot.className='agent-dot '+(st.running?'running':st.eligible?'idle':'paused');
+    $('#agentSummary').textContent = st.running
+      ? `Running — ${st.runningTask||'working'}${st.runningSince?` (${Math.max(1,Math.round((Date.now()-st.runningSince)/1000))}s)`:''}`
+      : st.eligible
+        ? `Not currently running — next automatic pass handles this site`
+        : `Not running — ${st.reasons[0]||'paused'}`;
+    $('#agentCaret').classList.toggle('open',agentExpanded);
+    $('#agentDetail').hidden=!agentExpanded;
+    if(!agentExpanded) return;
+    const last=(st.lastLog||[])[0];
+    const rows=[
+      ['now', st.running?(st.runningTask||'working'):'idle'],
+      ['next', st.eligible?(st.nextStep||'—'):(st.reasons[0]||'—')],
+      ['last', last?`${new Date(last.at).toLocaleDateString()} — ${last.action}: ${last.detail||''}`:'nothing yet'],
+      ['budget', `$${(st.spentThisMonth||0).toFixed(2)} / $${st.cap} this month`],
+    ];
+    if(st.keywords&&st.keywords.length) rows.splice(2,0,['targets', st.keywords.slice(0,6).join(', ')+(st.keywords.length>6?'…':'')]);
+    if(st.ranks){ try{ const rk=typeof st.ranks==='string'?JSON.parse(st.ranks):st.ranks; const won=(rk.results||[]).filter(r=>r.rank&&r.rank<=10); if(won.length) rows.splice(3,0,['ranking', won.slice(0,4).map(r=>`#${r.rank} ${r.keyword}`).join(' · ')]); }catch{} }
+    $('#agentTasks').innerHTML=rows.map(([k,v])=>`<div class="at-row"><span class="at-k">${k}</span><span class="at-v">${esc(v)}</span></div>`).join('');
+    const lines=(st.lastLog||[]).slice(0,7).map(l=>`${new Date(l.at).toLocaleDateString()} — ${l.action}: ${l.detail||''}${l.prUrl?' ('+l.prUrl+')':''}`);
     $('#agentLog').textContent=lines.join('\n');
+    const btn=$('#agentRun'); if(btn){ btn.disabled=!!st.running; btn.textContent=st.running?'Working…':'▶ Run SEO agent now'; }
+  }
+  async function refreshAgent(){
+    const k=key(); if(!k||!$('#agentDot')) return;
+    clearTimeout(agentPollT);
+    const j=await fetch(`/api/admin?do=agent-status&slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+    if(!j||!j.ok) return;
+    agentLastStatus=j.status; renderAgentBox();
+    // still running -> keep polling so the summary line updates itself, but only
+    // while this drawer is actually open (stop once it's been closed/replaced)
+    if(j.status.running && document.body.contains($('#agentDot'))) agentPollT=setTimeout(refreshAgent,4000);
   }
   $('#agentRun')?.addEventListener('click',async(e)=>{
+    if(agentLastStatus&&agentLastStatus.running){ toast('Already running — '+(agentLastStatus.runningTask||'working')); return; }
     const k=needKey(); if(!k) return;
     e.target.disabled=true; e.target.textContent='Working… (up to a minute)';
-    $('#agentStat').textContent='running…';
     const j=await fetch(`/api/admin?do=agent-run&slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false,error:'network'}));
-    e.target.disabled=false; e.target.textContent='▶ Run SEO agent now';
     if(j.ok){ toast(j.action==='change'?`Agent shipped: ${j.summary||'a change'}`:j.action==='keywords'?`Agent set ${(j.keywords||[]).length} target keywords`:j.action==='no-change'?'Agent ran — nothing safe to change this cycle':'Agent ran'); }
     else toast((j.reason||j.error||'Agent could not run'),'err');
     refreshAgent();

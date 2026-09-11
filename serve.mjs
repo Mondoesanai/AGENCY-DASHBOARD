@@ -216,6 +216,8 @@ createServer(async (req, res) => {
       status: {
         eligible: false,
         reasons: ['GITHUB_TOKEN not set in Vercel (local preview)'],
+        running: false, runningSince: null, runningTask: null,
+        nextStep: 'GITHUB_TOKEN not set in Vercel (local preview)',
         spentThisMonth: 3.2, budget: 18, cap: 20,
         keywords: ['mobile detailing corinth tx', 'ceramic coating denton', 'auto detailing near me'],
         lastLog: [{ at: Date.now() - 86400000, action: 'keywords', detail: 'Set 10 target keywords' }],

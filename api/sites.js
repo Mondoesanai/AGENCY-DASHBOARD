@@ -7,6 +7,14 @@ import { getHistory } from '../lib/history.js';
 import { reportToken } from '../lib/token.js';
 import { store } from '../lib/store.js';
 
+async function readRanks(slug) {
+  const raw = await store.get(`agent:ranks:${slug}`).catch(() => null);
+  try {
+    return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null;
+  } catch {
+    return null;
+  }
+}
 async function readNotes(slug) {
   const n = await store.get(`notes:${slug}`).catch(() => null);
   return typeof n === 'string' ? n : '';
@@ -28,7 +36,7 @@ export default async function handler(req, res) {
 
   const rows = await Promise.all(
     list.map(async (site) => {
-      const [stats, audit, report, history, notes, changelog, expenses] = await Promise.all([
+      const [stats, audit, report, history, notes, changelog, expenses, ranks] = await Promise.all([
         siteStats(site.slug, site.conversionEvents || []).catch(() => null),
         runAudit(site.url, { cachedOnly: true }).catch(() => ({ ok: false, error: 'audit failed' })),
         store.get(`report:${site.slug}:latest`).catch(() => null),
@@ -36,6 +44,7 @@ export default async function handler(req, res) {
         readNotes(site.slug),
         readLog(site.slug),
         readArr(`expenses:${site.slug}`),
+        readRanks(site.slug),
       ]);
       const expensesTotal = expenses.reduce((t, e) => t + (Number(e.amount) || 0), 0);
       const onTrial = !!(site.trialEnds && site.trialEnds > Date.now());
@@ -67,6 +76,8 @@ export default async function handler(req, res) {
         repo: site.repo || '',
         seoAgent: site.seoAgent !== false,
         agentBudget: site.agentBudget || 18,
+        agentKeywords: site.agentKeywords || '',
+        agentRanks: ranks || null,
         auditPending: !!audit?.pending,
         lastSeen: site.lastSeen || 0,
         // tracker is "installed" if any beacon has landed in the last 21 days
