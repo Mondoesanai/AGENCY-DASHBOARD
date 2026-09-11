@@ -303,6 +303,7 @@
 <div class="bulkbar" id="bulkbar" hidden>
   <span id="bulkCount">0 selected</span>
   <button class="btn sm" id="bulkMerge" hidden>Merge these 2</button>
+  <button class="btn sm" id="bulkAgent">▶ Run SEO agent</button>
   <button class="btn danger sm" id="bulkRemove">Remove from dashboard</button>
   <button class="btn ghost sm" id="bulkCancel">Cancel</button>
 </div>
@@ -323,6 +324,9 @@
     <div id="m_form">
       <p class="note" style="margin-top:0">Only the URL is required — everything else is editable later in ⚙ Site settings.</p>
       <label class="field"><span>Live URL * — the exact address people actually visit</span><input id="m_url" placeholder="https://abovepar.com  (or the .vercel.app if there's no domain)" /></label>
+      <label class="field"><span>GitHub repo — leave blank and we'll try to auto-match it from the URL</span><input id="m_repo" placeholder="Mondoesanai/abovepar" /></label>
+      <div class="btn-row" style="margin:2px 0 8px"><button class="btn ghost sm" id="m_repofind" type="button">🔍 Find / pick repo</button><span class="note" id="m_repoNote" style="margin:0"></span></div>
+      <div id="m_repoPick" class="repopick" hidden></div>
       <div class="row2">
         <label class="field"><span>Business name</span><input id="m_name" placeholder="Above Par Bookkeeping" /></label>
         <label class="field"><span>Client first name</span><input id="m_client" placeholder="Debbie" /></label>
@@ -345,6 +349,7 @@
         <label class="field"><span>Event date (if from an event)</span><input id="m_leaddate" type="date" /></label>
       </div>
       <label class="toggle"><input type="checkbox" id="m_auto" /> Auto-send the monthly report email on the billing day</label>
+      <label class="toggle"><input type="checkbox" id="m_seo" checked /> Auto-start the SEO agent on this site (needs a GitHub repo above)</label>
       <div class="btn-row">
         <button class="btn" id="m_save">Add site</button>
         <button class="btn ghost" id="m_cancel">Cancel</button>
@@ -400,6 +405,30 @@ const esc=(s)=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&
 const fmt=(n)=> n>=1000 ? (n/1000).toFixed(n>=10000?0:1)+'k' : String(Math.round(n||0));
 const money=(n)=>'$'+Math.round(n||0).toLocaleString('en-US');
 const deltaHTML=(d)=>{ if(d==null) return ''; const c=d>0?'up':d<0?'down':''; const s=d>0?'▲':d<0?'▼':'·'; return `<small class="${c}">${s} ${Math.abs(d)}%</small>`; };
+async function runRepoPicker(boxSel,inputSel,url){
+  const k=needKey(); if(!k) return;
+  const box=$(boxSel); box.hidden=false; box.innerHTML='<div class="note">Searching GitHub…</div>';
+  const j=await fetch(`/api/admin?do=repos&secret=${encodeURIComponent(k)}&match=${encodeURIComponent(url||'')}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+  if(!j.ok){ box.innerHTML=`<div class="note" style="color:var(--neg)">${esc(j.error||'Could not reach GitHub — is GITHUB_TOKEN set in Vercel?')}</div>`; return; }
+  if(!j.repos.length){ box.innerHTML='<div class="note">No repos visible to this token.</div>'; return; }
+  const cur=$(inputSel).value.trim();
+  const render=(filter)=>{
+    const f=(filter||'').toLowerCase();
+    const list=j.repos.filter(r=>!f||r.full_name.toLowerCase().includes(f)).slice(0,60);
+    box.querySelector('.rp-list').innerHTML=list.map(r=>`<button type="button" class="rp-item ${r.full_name===cur?'on':''}" data-r="${esc(r.full_name)}">${esc(r.full_name)}${r.private?' <span style="color:var(--faint)">· private</span>':''}</button>`).join('')||'<div class="note">No match.</div>';
+  };
+  box.innerHTML=`${j.match?`<div class="note">Best match: <strong>${esc(j.match)}</strong> <button type="button" class="link" id="rp_use">use it</button></div>`:'<div class="note">No confident auto-match — pick from your repos:</div>'}
+    <input id="rp_search" placeholder="filter your repos…" style="width:100%" />
+    <div class="rp-list"></div>`;
+  render('');
+  $('#rp_use')?.addEventListener('click',()=>{ $(inputSel).value=j.match; box.hidden=true; toast('Repo set'); });
+  $('#rp_search').addEventListener('input',(ev)=>render(ev.target.value));
+  box.querySelector('.rp-list').addEventListener('click',(ev)=>{
+    const b=ev.target.closest('button[data-r]'); if(!b) return;
+    $(inputSel).value=b.dataset.r; box.hidden=true; toast('Repo set');
+  });
+  return j;
+}
 let _toastT=null;
 function toast(msg,kind){ let el=$('#toast'); if(!el){ el=document.createElement('div'); el.id='toast'; document.body.appendChild(el); } el.className='toast'+(kind?' '+kind:''); el.textContent=msg; el.hidden=false; requestAnimationFrame(()=>el.classList.add('show')); clearTimeout(_toastT); _toastT=setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=>{el.hidden=true;},250); },3600); }
 
@@ -1348,30 +1377,7 @@ function wireDrawer(s,bf){
     if(j.ok){ s.expenses=j.expenses; openDrawer(s.slug); const d=$('.log.block'); if(d) d.open=true; }
   });
 
-  $('#cf_repofind')?.addEventListener('click',async(e)=>{
-    const k=needKey(); if(!k) return;
-    const box=$('#repoPick'); box.hidden=false; box.innerHTML='<div class="note">Searching GitHub…</div>';
-    const url=e.target.dataset.url||$('#cf_url').value||'';
-    const j=await fetch(`/api/admin?do=repos&secret=${encodeURIComponent(k)}&match=${encodeURIComponent(url)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
-    if(!j.ok){ box.innerHTML=`<div class="note" style="color:var(--neg)">${esc(j.error||'Could not reach GitHub — is GITHUB_TOKEN set in Vercel?')}</div>`; return; }
-    if(!j.repos.length){ box.innerHTML='<div class="note">No repos visible to this token.</div>'; return; }
-    const cur=$('#cf_repo').value.trim();
-    const render=(filter)=>{
-      const f=(filter||'').toLowerCase();
-      const list=j.repos.filter(r=>!f||r.full_name.toLowerCase().includes(f)).slice(0,60);
-      box.querySelector('.rp-list').innerHTML=list.map(r=>`<button type="button" class="rp-item ${r.full_name===cur?'on':''}" data-r="${esc(r.full_name)}">${esc(r.full_name)}${r.private?' <span style="color:var(--faint)">· private</span>':''}</button>`).join('')||'<div class="note">No match.</div>';
-    };
-    box.innerHTML=`${j.match?`<div class="note">Best match: <strong>${esc(j.match)}</strong> <button type="button" class="link" id="rp_use">use it</button></div>`:'<div class="note">No confident auto-match — pick from your repos:</div>'}
-      <input id="rp_search" placeholder="filter your repos…" style="width:100%" />
-      <div class="rp-list"></div>`;
-    render('');
-    $('#rp_use')?.addEventListener('click',()=>{ $('#cf_repo').value=j.match; box.hidden=true; toast('Repo set — remember to Save settings'); });
-    $('#rp_search').addEventListener('input',(ev)=>render(ev.target.value));
-    box.querySelector('.rp-list').addEventListener('click',(ev)=>{
-      const b=ev.target.closest('button[data-r]'); if(!b) return;
-      $('#cf_repo').value=b.dataset.r; box.hidden=true; toast('Repo set — remember to Save settings');
-    });
-  });
+  $('#cf_repofind')?.addEventListener('click',(e)=>runRepoPicker('#repoPick','#cf_repo',e.target.dataset.url||$('#cf_url').value));
 
   async function refreshAgent(){
     const k=key(); if(!k||!$('#agentStat')) return;
@@ -1484,9 +1490,28 @@ function updateBulkBar(){
   bar.hidden=!selectMode;
   $('#bulkCount').textContent=`${selected.size} selected`;
   $('#bulkRemove').disabled=selected.size===0;
+  $('#bulkAgent').disabled=selected.size===0;
   $('#bulkMerge').hidden=selected.size!==2;
   $('#selectBtn').textContent=selectMode?'Done':'Select';
 }
+$('#bulkAgent')?.addEventListener('click',async(e)=>{
+  const slugs=[...selected]; if(!slugs.length) return;
+  const k=needKey(); if(!k) return;
+  if(!confirm(`Run the SEO agent now on ${slugs.length} site${slugs.length===1?'':'s'}? Sites without a linked repo or that are paused will just report why.`)) return;
+  e.target.disabled=true;
+  const results=[];
+  for(const slug of slugs){
+    e.target.textContent=`Running… (${results.length+1}/${slugs.length})`;
+    const j=await fetch(`/api/admin?do=agent-run&slug=${encodeURIComponent(slug)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false,error:'network'}));
+    results.push({slug,j});
+  }
+  e.target.disabled=false; e.target.textContent='▶ Run SEO agent';
+  const ok=results.filter(r=>r.j.ok&&r.j.action&&r.j.action!=='no-change').length;
+  const skipped=results.filter(r=>r.j.skipped||!r.j.ok).length;
+  toast(`Agent ran on ${slugs.length} site${slugs.length===1?'':'s'} — ${ok} did something, ${skipped} skipped/paused.`);
+  console.log('SEO agent bulk run:',results);
+  exitSelect(); await load();
+});
 $('#bulkMerge')?.addEventListener('click',async(e)=>{
   const slugs=[...selected]; if(slugs.length!==2) return;
   const a=STATE.sites.find(s=>s.slug===slugs[0]), b=STATE.sites.find(s=>s.slug===slugs[1]);
@@ -1530,6 +1555,15 @@ function leadSourceList(){ try{ return JSON.parse(localStorage.getItem('iw_leads
 function rememberLeadSource(v){ const l=leadSourceList().filter(x=>x.toLowerCase()!==v.toLowerCase()); l.unshift(v); try{ localStorage.setItem('iw_leadsources',JSON.stringify(l.slice(0,20))); }catch{} }
 function fillLeadSourceList(){ const dl=$('#leadSrcList'); if(dl) dl.innerHTML=leadSourceList().map(v=>`<option value="${esc(v)}">`).join(''); }
 $('#addBtn').addEventListener('click',()=>{ mTab('form'); fillLeadSourceList(); $('#modal').classList.add('open'); $('#m_url').focus(); });
+$('#m_repofind').addEventListener('click',()=>runRepoPicker('#m_repoPick','#m_repo',$('#m_url').value));
+$('#m_url').addEventListener('blur',async()=>{
+  const url=$('#m_url').value.trim();
+  if(!url||$('#m_repo').value.trim()||!key()) return; // don't fight a manual entry, don't prompt for a password just for this
+  $('#m_repoNote').textContent='checking GitHub…';
+  const j=await fetch(`/api/admin?do=repos&secret=${encodeURIComponent(key())}&match=${encodeURIComponent(url)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+  if(j.ok&&j.match){ $('#m_repo').value=j.match; $('#m_repoNote').innerHTML=`✓ auto-matched <strong>${esc(j.match)}</strong>`; }
+  else $('#m_repoNote').textContent=j.ok?'no confident match — use Find / pick repo':'';
+});
 $('#m_cancel').addEventListener('click',()=>$('#modal').classList.remove('open'));
 $('#modal').addEventListener('click',e=>{ if(e.target.id==='modal') $('#modal').classList.remove('open'); });
 function mTab(t){
@@ -1543,21 +1577,24 @@ $('#m_save').addEventListener('click',async()=>{
   if(!url){ $('#m_msg').textContent='Paste the live URL first.'; return; }
   $('#m_save').disabled=true; $('#m_msg').textContent='Adding…';
   const lead=$('#m_lead').value.trim();
+  const repo=$('#m_repo').value.trim();
   const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'save',
     url,name:$('#m_name').value,client:$('#m_client').value,email:$('#m_email').value,phone:$('#m_phone').value,
     priceMonthly:$('#m_price').value,setupFee:$('#m_setup').value,startedAt:$('#m_since').value,trialEnds:$('#m_trial').value,
-    leadSource:lead,leadSourceDate:$('#m_leaddate').value,
+    leadSource:lead,leadSourceDate:$('#m_leaddate').value,repo,seoAgent:$('#m_seo').checked,
     billingDay:$('#m_bday').value,autoSend:$('#m_auto').checked});
   $('#m_save').disabled=false;
   if(j.ok){
     if(lead) rememberLeadSource(lead);
-    ['m_url','m_name','m_client','m_email','m_phone','m_price','m_setup','m_since','m_trial','m_bday','m_lead','m_leaddate'].forEach(id=>$('#'+id).value='');
-    $('#m_auto').checked=false; $('#modal').classList.remove('open'); $('#m_msg').textContent='';
-    toast(j.repoMatch?`Added — matched GitHub repo ${j.repoMatch}`:'Site added — pulling its data now');
+    ['m_url','m_name','m_client','m_email','m_phone','m_price','m_setup','m_since','m_trial','m_bday','m_lead','m_leaddate','m_repo'].forEach(id=>$('#'+id).value='');
+    $('#m_auto').checked=false; $('#m_seo').checked=true; $('#m_repoNote').textContent=''; $('#m_repoPick').hidden=true;
+    $('#modal').classList.remove('open'); $('#m_msg').textContent='';
+    const finalRepo=repo||j.repoMatch;
+    toast(finalRepo?`Added — repo ${finalRepo}. SEO agent will pick it up automatically.`:'Site added — pulling its data now');
     await load();
     const newSlug=j.site&&j.site.slug;
     if(newSlug && STATE.sites.some(x=>x.slug===newSlug)) openDrawer(newSlug);
-    if(!j.repoMatch) setTimeout(()=>toast('No GitHub repo auto-matched — pick it in ⚙ Settings → Automation'),1200);
+    if(!finalRepo) setTimeout(()=>toast('No GitHub repo linked yet — add one in ⚙ Settings → Automation so the agent can run'),1400);
   }
   else $('#m_msg').textContent=j.error||'Failed.';
 });
