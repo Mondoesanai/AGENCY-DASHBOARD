@@ -1181,59 +1181,67 @@ function openDrawer(slug){
         <label class="field"><span>$ / month</span><input id="cf_price" value="${s.priceMonthly||''}" placeholder="150" /></label>
       </div>
       <div class="row2">
-        <label class="field"><span>Setup fee (one-time, $)</span><input id="cf_setup" value="${s.setupFee||''}" placeholder="1500" /></label>
-        <label class="field"><span>Client since (date)</span><input id="cf_since" type="date" value="${s.startedAt?new Date(s.startedAt).toISOString().slice(0,10):''}" /></label>
-      </div>
-      <label class="field"><span>Free trial until (date) — blank = no trial. They auto-charge ${s.priceMonthly?money(s.priceMonthly)+'/mo':'the monthly'} after this date; MRR &amp; revenue ignore them until then.</span><input id="cf_trial" type="date" value="${s.trialEnds?new Date(s.trialEnds).toISOString().slice(0,10):''}" /></label>
-      <div class="row2">
-        <label class="field"><span>Where this client came from</span><input id="cf_leadsrc" list="leadSrcList" value="${esc(s.leadSource||'')}" placeholder="Corinth Chamber mixer · referral…" /></label>
-        <label class="field"><span>Event date (if applicable)</span><input id="cf_leaddate" type="date" value="${s.leadSourceDate?new Date(s.leadSourceDate).toISOString().slice(0,10):''}" /></label>
-      </div>
-      <div class="row2">
         <label class="field"><span>Billing day (1–28)</span><input id="cf_bday" value="${s.billingDay||''}" /></label>
-        <label class="field"><span>Avg $ per enquiry (optional)</span><input id="cf_lead" value="${s.leadValue||''}" /></label>
-      </div>
-      <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:8px 0">
-        <div class="note" style="margin:0 0 6px"><strong>Expenses</strong> for this site — ad spend, tools, etc. (feeds net profit)</div>
-        <div id="expList">${(s.expenses||[]).slice().reverse().map((x,i)=>`<div class="logitem"><span>${esc(x.date)} — ${esc(x.label)} · ${money(x.amount)}${x.recurring?'/mo':''}</span><button data-i="${s.expenses.length-1-i}">✕</button></div>`).join('')||'<div class="note">Nothing logged.</div>'}</div>
-        <div class="btn-row" style="margin-top:6px">
-          <input id="exp_amt" style="width:90px" inputmode="decimal" placeholder="$" />
-          <input id="exp_label" style="flex:1" placeholder="e.g. Google Ads — Sept" />
-          <button class="btn sm" id="exp_add">Add</button>
-        </div>
-        <label class="toggle" style="margin:6px 0 0"><input type="checkbox" id="exp_rec" /> recurring / monthly</label>
-      </div>
-      <label class="field"><span>Google review link (optional)</span><input id="cf_review" value="${esc(s.reviewUrl||'')}" /></label>
-      <label class="field"><span>What counts as a conversion? (event names, blank = all)</span><input id="cf_conv" value="${esc((s.conversionEvents||[]).join(', '))}" placeholder="call, quote-form, booking" /></label>
-      <p class="note" style="margin-top:-4px">Events firing on this site: ${((s.stats&&s.stats.events)||[]).map(e=>esc(e.member)).join(', ')||'none yet'}</p>
-      <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:8px 0">
-        <div class="note" style="margin:0 0 6px">Not sure of the event name? Describe the action in plain English and let AI work it out:</div>
-        <div class="btn-row"><input id="cf_convdesc" style="flex:1" placeholder='e.g. "when someone clicks the RSVP button"' /><button class="btn sm" id="cf_convai">✨ Figure it out</button></div>
-        <div id="cf_convout" class="note" style="margin-top:8px"></div>
+        <label class="field"><span>Free trial until — blank = paying now</span><input id="cf_trial" type="date" value="${s.trialEnds?new Date(s.trialEnds).toISOString().slice(0,10):''}" /></label>
       </div>
       <label class="toggle"><input type="checkbox" id="cf_auto" ${s.autoSend?'checked':''}/> Auto-send the report email on the billing day</label>
-      <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:8px 0">
-        <div class="note" style="margin:0 0 8px"><strong>Automation</strong> — turns on once your API keys are connected. Set it up now; it'll start working after.</div>
+
+      <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:10px 0">
+        <div class="note" style="margin:0 0 8px"><strong>Automation</strong> — turns on once your API keys are connected.</div>
         <label class="field"><span>GitHub repo (owner/name) — where this site's code lives.</span><input id="cf_repo" value="${esc(s.repo||'')}" placeholder="Mondoesanai/apostellodetailing" /></label>
         <div class="btn-row" style="margin:2px 0 0"><button class="btn sm" id="cf_repofind" type="button" data-url="${esc(s.url||'')}">🔍 Find / pick repo</button></div>
         <div id="repoPick" class="repopick" hidden></div>
         <label class="toggle" style="margin:6px 0"><input type="checkbox" id="cf_seo" ${s.seoAgent!==false?'checked':''}/> Run the autonomous SEO agent on this site</label>
-        <div class="row2">
-          <label class="field"><span>Monthly budget ($)</span><input id="cf_budget" inputmode="decimal" value="${s.agentBudget||18}" /></label>
-          <label class="field"><span>Hard cap ($)</span><input id="cf_cap" inputmode="decimal" value="${s.agentCap||20}" /></label>
-        </div>
-        <label class="field"><span>Target keywords (blank = the agent picks them on its first run)</span><input id="cf_kw" value="${esc(s.agentKeywords||'')}" placeholder="mobile detailing corinth tx, ceramic coating denton…" /></label>
-        <label class="toggle" style="margin:6px 0"><input type="checkbox" id="cf_automerge" ${s.agentAutoMerge?'checked':''}/> Auto‑merge the agent's changes (off = it opens a pull request for you to approve)</label>
-        <label class="toggle" style="margin:6px 0 0"><input type="checkbox" id="cf_rev" ${s.revisionsAuto!==false?'checked':''}/> Handle revision‑request emails for this client (auto‑reply + calendar block + preview)</label>
-        <div id="agentBox" style="margin-top:10px;border-top:1px solid var(--line);padding-top:9px">
+        <div id="agentBox" style="margin-top:8px;border-top:1px solid var(--line);padding-top:9px">
           <button type="button" id="agentToggle" class="agent-summary"><span class="agent-dot" id="agentDot"></span><span id="agentSummary">Checking…</span><span class="agent-caret" id="agentCaret">▸</span></button>
           <div id="agentDetail" hidden>
             <div id="agentTasks" class="note" style="margin:8px 0"></div>
             <div class="btn-row"><button class="btn sm" id="agentRun" type="button" data-slug="${s.slug}">▶ Run SEO agent now</button></div>
             <div id="agentLog" class="note" style="margin-top:7px;white-space:pre-wrap;font-size:11.5px"></div>
+            <details style="margin-top:9px"><summary style="cursor:pointer;font-size:11.5px;color:var(--faint)">Agent budget &amp; targeting</summary>
+              <div class="row2" style="margin-top:8px">
+                <label class="field"><span>Monthly budget ($)</span><input id="cf_budget" inputmode="decimal" value="${s.agentBudget||18}" /></label>
+                <label class="field"><span>Hard cap ($)</span><input id="cf_cap" inputmode="decimal" value="${s.agentCap||20}" /></label>
+              </div>
+              <label class="field"><span>Target keywords (blank = the agent picks them on its first run)</span><input id="cf_kw" value="${esc(s.agentKeywords||'')}" placeholder="mobile detailing corinth tx, ceramic coating denton…" /></label>
+              <label class="toggle" style="margin:6px 0"><input type="checkbox" id="cf_automerge" ${s.agentAutoMerge?'checked':''}/> Auto‑merge the agent's changes (off = it opens a pull request for you to approve)</label>
+              <label class="toggle" style="margin:6px 0 0"><input type="checkbox" id="cf_rev" ${s.revisionsAuto!==false?'checked':''}/> Handle revision‑request emails for this client</label>
+            </details>
           </div>
         </div>
       </div>
+
+      <details style="border:1px solid var(--line);border-radius:10px;padding:10px 11px;margin:10px 0">
+        <summary style="cursor:pointer;font:600 12.5px 'Inter',sans-serif">More settings — billing history, lead source, expenses, review link, conversions</summary>
+        <div class="row2" style="margin-top:10px">
+          <label class="field"><span>Setup fee (one-time, $)</span><input id="cf_setup" value="${s.setupFee||''}" placeholder="1500" /></label>
+          <label class="field"><span>Client since (date)</span><input id="cf_since" type="date" value="${s.startedAt?new Date(s.startedAt).toISOString().slice(0,10):''}" /></label>
+        </div>
+        <div class="row2">
+          <label class="field"><span>Where this client came from</span><input id="cf_leadsrc" list="leadSrcList" value="${esc(s.leadSource||'')}" placeholder="Corinth Chamber mixer · referral…" /></label>
+          <label class="field"><span>Event date (if applicable)</span><input id="cf_leaddate" type="date" value="${s.leadSourceDate?new Date(s.leadSourceDate).toISOString().slice(0,10):''}" /></label>
+        </div>
+        <label class="field"><span>Avg $ per enquiry (optional)</span><input id="cf_lead" value="${s.leadValue||''}" /></label>
+        <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:8px 0">
+          <div class="note" style="margin:0 0 6px"><strong>Expenses</strong> for this site — ad spend, tools, etc. (feeds net profit)</div>
+          <div id="expList">${(s.expenses||[]).slice().reverse().map((x,i)=>`<div class="logitem"><span>${esc(x.date)} — ${esc(x.label)} · ${money(x.amount)}${x.recurring?'/mo':''}</span><button data-i="${s.expenses.length-1-i}">✕</button></div>`).join('')||'<div class="note">Nothing logged.</div>'}</div>
+          <div class="btn-row" style="margin-top:6px">
+            <input id="exp_amt" style="width:90px" inputmode="decimal" placeholder="$" />
+            <input id="exp_label" style="flex:1" placeholder="e.g. Google Ads — Sept" />
+            <button class="btn sm" id="exp_add">Add</button>
+          </div>
+          <label class="toggle" style="margin:6px 0 0"><input type="checkbox" id="exp_rec" /> recurring / monthly</label>
+        </div>
+        <label class="field"><span>Google review link (optional)</span><input id="cf_review" value="${esc(s.reviewUrl||'')}" /></label>
+        <label class="field"><span>What counts as a conversion? (event names, blank = all)</span><input id="cf_conv" value="${esc((s.conversionEvents||[]).join(', '))}" placeholder="call, quote-form, booking" /></label>
+        <p class="note" style="margin-top:-4px">Events firing on this site: ${((s.stats&&s.stats.events)||[]).map(e=>esc(e.member)).join(', ')||'none yet'}</p>
+        <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:8px 0">
+          <div class="note" style="margin:0 0 6px">Not sure of the event name? Describe the action in plain English and let AI work it out:</div>
+          <div class="btn-row"><input id="cf_convdesc" style="flex:1" placeholder='e.g. "when someone clicks the RSVP button"' /><button class="btn sm" id="cf_convai">✨ Figure it out</button></div>
+          <div id="cf_convout" class="note" style="margin-top:8px"></div>
+        </div>
+      </details>
+
       <div class="btn-row"><button class="btn sm" id="cfSave">Save settings</button><button class="btn danger sm" id="cfDel">Remove site</button></div>
     </details>
     </div><!-- /settings -->
