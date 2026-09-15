@@ -490,6 +490,7 @@ const trendOf=(s)=>{
 };
 
 let STATE=null, EMAIL_ENABLED=false, AI_ENABLED=false;
+let _agentPollT=null, _agentTickT=null; // only one drawer's agent-box timers run at a time
 let selectMode=false; const selected=new Set();
 let attnDismissedKey=null;   // session-level: which attention set has been dismissed
 let drawerPane='overview';   // remembered drawer tab
@@ -962,6 +963,18 @@ function bars(items){
   const max=Math.max(...items.map(i=>i.score),1);
   return items.map(i=>`<div class="bar-row"><span title="${esc(i.member)}">${esc(String(i.member).slice(0,14))}</span><span class="bar-track"><span class="bar-fill" style="width:${Math.max(4,(i.score/max)*100)}%"></span></span><span class="n">${fmt(i.score)}</span></div>`).join('');
 }
+// the daily automation cron fires at 13:00 UTC — compute ms until the next one
+function nextCronMs(){
+  const n=new Date();
+  const next=new Date(Date.UTC(n.getUTCFullYear(),n.getUTCMonth(),n.getUTCDate(),13,0,0));
+  if(next.getTime()<=Date.now()) next.setUTCDate(next.getUTCDate()+1);
+  return next.getTime()-Date.now();
+}
+function fmtCountdown(ms){
+  ms=Math.max(0,ms);
+  const h=Math.floor(ms/3600000), m=Math.floor((ms%3600000)/60000), sc=Math.floor((ms%60000)/1000);
+  return h>0?`${h}h ${String(m).padStart(2,'0')}m ${String(sc).padStart(2,'0')}s`:`${m}m ${String(sc).padStart(2,'0')}s`;
+}
 function agoStr(ts){
   if(!ts) return '';
   const s=(Date.now()-ts)/1000;
@@ -1205,7 +1218,7 @@ function openDrawer(slug){
                 <label class="field"><span>Hard cap ($)</span><input id="cf_cap" inputmode="decimal" value="${s.agentCap||20}" /></label>
               </div>
               <label class="field"><span>Target keywords (blank = the agent picks them on its first run)</span><input id="cf_kw" value="${esc(s.agentKeywords||'')}" placeholder="mobile detailing corinth tx, ceramic coating denton…" /></label>
-              <label class="toggle" style="margin:6px 0"><input type="checkbox" id="cf_automerge" ${s.agentAutoMerge?'checked':''}/> Auto‑merge the agent's changes (off = it opens a pull request for you to approve)</label>
+              <p class="note" style="margin:6px 0 0">Fixes that pass the safety check ship straight to the live site — no approval step.</p>
               <label class="toggle" style="margin:6px 0 0"><input type="checkbox" id="cf_rev" ${s.revisionsAuto!==false?'checked':''}/> Handle revision‑request emails for this client</label>
             </details>
           </div>
@@ -1430,23 +1443,30 @@ function wireDrawer(s,bf){
 
   $('#cf_repofind')?.addEventListener('click',(e)=>runRepoPicker('#repoPick','#cf_repo',e.target.dataset.url||$('#cf_url').value));
 
-  let agentExpanded=false, agentPollT=null, agentLastStatus=null;
+  let agentExpanded=false, agentLastStatus=null;
+  clearTimeout(_agentPollT); clearInterval(_agentTickT); // a previous drawer session's timers, if any
   $('#agentToggle')?.addEventListener('click',()=>{ agentExpanded=!agentExpanded; renderAgentBox(); });
   function renderAgentBox(){
     const st=agentLastStatus; if(!st||!$('#agentDot')) return;
+    clearInterval(_agentTickT);
     const dot=$('#agentDot'); dot.className='agent-dot '+(st.running?'running':st.eligible?'idle':'paused');
-    $('#agentSummary').textContent = st.running
-      ? `Running — ${st.runningTask||'working'}${st.runningSince?` (${Math.max(1,Math.round((Date.now()-st.runningSince)/1000))}s)`:''}`
-      : st.eligible
-        ? `Not currently running — next automatic pass handles this site`
-        : `Not running — ${st.reasons[0]||'paused'}`;
+    const tickSummary=()=>{ const el=$('#agentSummary'); if(el) el.textContent=`Idle — next run in T‑${fmtCountdown(nextCronMs())}`; };
+    if(st.running){
+      $('#agentSummary').textContent = `Running — ${st.runningTask||'working'}${st.runningSince?` (${Math.max(1,Math.round((Date.now()-st.runningSince)/1000))}s)`:''}`;
+    } else if(st.eligible){
+      tickSummary();
+      _agentTickT=setInterval(()=>{ if(!document.body.contains($('#agentSummary'))){ clearInterval(_agentTickT); return; } tickSummary(); },1000);
+    } else {
+      $('#agentSummary').textContent = `Not running — ${st.reasons[0]||'paused'}`;
+    }
     $('#agentCaret').classList.toggle('open',agentExpanded);
     $('#agentDetail').hidden=!agentExpanded;
     if(!agentExpanded) return;
     const last=(st.lastLog||[])[0];
     const rows=[
       ['now', st.running?(st.runningTask||'working'):'idle'],
-      ['next', st.eligible?(st.nextStep||'—'):(st.reasons[0]||'—')],
+      ['next run', st.eligible?`T‑${fmtCountdown(nextCronMs())} (daily, budget-permitting)`:'—'],
+      ['plan', st.eligible?(st.nextStep||'—'):(st.reasons[0]||'—')],
       ['last', last?`${new Date(last.at).toLocaleDateString()} — ${last.action}: ${last.detail||''}`:'nothing yet'],
       ['budget', `$${(st.spentThisMonth||0).toFixed(2)} / $${st.cap} this month`],
     ];
@@ -1459,13 +1479,13 @@ function wireDrawer(s,bf){
   }
   async function refreshAgent(){
     const k=key(); if(!k||!$('#agentDot')) return;
-    clearTimeout(agentPollT);
+    clearTimeout(_agentPollT);
     const j=await fetch(`/api/admin?do=agent-status&slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
     if(!j||!j.ok) return;
     agentLastStatus=j.status; renderAgentBox();
     // still running -> keep polling so the summary line updates itself, but only
     // while this drawer is actually open (stop once it's been closed/replaced)
-    if(j.status.running && document.body.contains($('#agentDot'))) agentPollT=setTimeout(refreshAgent,4000);
+    if(j.status.running && document.body.contains($('#agentDot'))) _agentPollT=setTimeout(refreshAgent,4000);
   }
   $('#agentRun')?.addEventListener('click',async(e)=>{
     if(agentLastStatus&&agentLastStatus.running){ toast('Already running — '+(agentLastStatus.runningTask||'working')); return; }
@@ -1514,7 +1534,7 @@ function wireDrawer(s,bf){
       trialEnds:$('#cf_trial').value,billingDay:$('#cf_bday').value,leadValue:$('#cf_lead').value,reviewUrl:$('#cf_review').value,
       leadSource:$('#cf_leadsrc').value,leadSourceDate:$('#cf_leaddate').value,
       repo:$('#cf_repo').value,seoAgent:$('#cf_seo').checked,agentBudget:$('#cf_budget').value,agentCap:$('#cf_cap').value,revisionsAuto:$('#cf_rev').checked,
-      agentKeywords:$('#cf_kw').value,agentAutoMerge:$('#cf_automerge').checked,
+      agentKeywords:$('#cf_kw').value,
       conversionEvents:$('#cf_conv').value,autoSend:$('#cf_auto').checked});
     if(j.ok){ const v=$('#cf_leadsrc').value.trim(); if(v) rememberLeadSource(v); await load(); openDrawer(j.site.slug); const d=$('.log.block'); if(d) d.open=true; } else { e.target.disabled=false; e.target.textContent='Failed'; }
   });
