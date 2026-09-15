@@ -1,7 +1,7 @@
 // Receives tracking beacons from t.js and rolls them into daily counters.
 // Cost: $0 — it's just your own function writing to your own KV store.
 import { store, dayKey } from '../lib/store.js';
-import { slugify, slugForHost, rememberHost } from '../lib/registry.js';
+import { slugify, slugForHost, rememberHost, matchExistingSite } from '../lib/registry.js';
 
 function hash(str) {
   let h = 5381;
@@ -70,7 +70,14 @@ export default async function handler(req, res) {
   }
   // one host = one slug: if this host is already known (e.g. it was "Added" in
   // the UI, or auto-registered earlier), route this beacon to that same slug.
-  const slug = (await slugForHost(host || d.s).catch(() => null)) || cleanSlug(d.s);
+  // If it's a host we've never seen, check whether it's really just an
+  // alternate hostname (custom domain vs. raw .vercel.app) of a site we
+  // already track before creating a brand new entry — this is what stops
+  // the same project from ending up registered twice.
+  const slug =
+    (await slugForHost(host || d.s).catch(() => null)) ||
+    (host && (await matchExistingSite(host).catch(() => null))) ||
+    cleanSlug(d.s);
   if (slug === 'unknown') return res.status(400).json({ ok: false, error: 'missing site id' });
 
   const type = d.e === 'ev' ? 'ev' : d.e === 'dur' ? 'dur' : 'pv';

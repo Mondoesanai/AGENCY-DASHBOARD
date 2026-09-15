@@ -3,7 +3,7 @@
 import { store } from '../lib/store.js';
 import {
   saveSiteConfig, deleteSiteConfig, getSiteConfig, slugify, listSites,
-  hostKey, slugForHost, rememberHost,
+  hostKey, slugForHost, rememberHost, matchExistingSite,
 } from '../lib/registry.js';
 
 const normEvent = (s) =>
@@ -163,6 +163,13 @@ export default async function handler(req, res) {
           const wantHost = hostKey(body.url);
           const auto = (await listSites()).find((s) => s.source === 'auto' && hostKey(s.url) === wantHost);
           if (auto) slug = auto.slug;
+          // still nothing? fall back to the loose match (custom domain vs.
+          // .vercel.app of a site already being tracked) so "Add site" can
+          // never create a second entry for one you're already on.
+          else {
+            const fuzzy = await matchExistingSite(body.url).catch(() => null);
+            if (fuzzy) slug = fuzzy;
+          }
         }
       }
       const pass = (k) => body[k] !== undefined;
@@ -226,8 +233,14 @@ export default async function handler(req, res) {
     }
 
     if (action === 'merge') {
-      const keep = slugify(body.keep || '');
-      const drop = slugify(body.drop || '');
+      // these are already real slugs from the dashboard (STATE.sites[].slug) —
+      // do NOT run them through slugify() again. slugify() is a URL->slug
+      // normalizer (strips .com/.vercel.app etc.); re-applying it to an
+      // already-computed slug mangles it into a DIFFERENT, nonexistent key
+      // (e.g. "setapartmovement.com" -> "setapartmovement"), so the merge
+      // silently operated on the wrong records instead of the real ones.
+      const keep = String(body.keep || '').trim();
+      const drop = String(body.drop || '').trim();
       if (!keep || !drop || keep === drop) return res.status(400).json({ ok: false, error: 'need keep + drop' });
       // pull config/ancillary data off the "drop" site onto "keep" (visitor
       // counters already live under whichever slug — we don't move those)

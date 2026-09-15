@@ -348,6 +348,11 @@ async function regenEmail(site, { style, req }) {
 // Fast "Send now": email the report that's already on file. No fresh audit, no
 // AI, no history snapshot — just render the card and send, so it can't hit the
 // 60s function limit the way a full rebuild can.
+// Fast "Send now": no fresh PageSpeed scan, no AI call (that's what "Regenerate
+// email" is for) — but the NUMBERS are always recomputed live from the tracker
+// right before sending. A stored report can be hours or days old; what actually
+// goes out to the client never should be. siteStats()/cached-audit are just KV
+// reads, so this stays well under the timeout that a full rebuild risks.
 async function sendLatest(site, { req }) {
   const prevRaw = await store.get(`report:${site.slug}:latest`).catch(() => null);
   const prev = prevRaw ? (typeof prevRaw === 'string' ? JSON.parse(prevRaw) : prevRaw) : null;
@@ -355,24 +360,52 @@ async function sendLatest(site, { req }) {
     // nothing generated yet — fall back to a full build (may be slow)
     return buildForSite(site, { doSend: true, req });
   }
-  const history = await getHistory(site.slug).catch(() => []);
-  const row = prev.metrics || {};
-  const grade = prev.grade || null;
+
+  const [stats, audit, changelog, history, baseline] = await Promise.all([
+    siteStats(site.slug, site.conversionEvents || []).catch(() => null),
+    runAudit(site.url).catch(() => ({ ok: false })), // cache-preferring, not forced-fresh — fast
+    readLog(site.slug),
+    getHistory(site.slug).catch(() => []),
+    getBaseline(site.slug),
+  ]);
+  const grade = overallGrade(audit, stats) || prev.grade || null;
+  const row = {
+    seo: audit?.ok ? audit.scores.seo : prev.metrics?.seo ?? null,
+    perf: audit?.ok ? audit.scores.performance : prev.metrics?.perf,
+    visitors: stats?.visitors ?? prev.metrics?.visitors ?? 0,
+    conversions: stats?.conversions ?? prev.metrics?.conversions ?? 0,
+    pageviews: stats?.pageviews ?? prev.metrics?.pageviews ?? 0,
+  };
+  const msl = monthsSince(baseline, history);
+  const improvements = prev.improvements?.length ? prev.improvements : improvementsForClient(audit, stats);
+  const actions = prev.clientActions?.length ? prev.clientActions : clientActions(audit, stats, site);
+  const reportUrl = prev.reportUrl || '';
+
+  // rebuild the email body with today's real numbers — rules-based, free, no
+  // AI call. If the last "Regenerate email" happened today, keep that AI
+  // wording (it's already current); otherwise fresh rules text beats stale
+  // AI text with yesterday's — or last week's — numbers baked into the sentences.
+  const rules = buildClientEmail({
+    biz: site.name, client: site.client || 'there', month: MK, monthsSinceLaunch: msl,
+    history, baseline, row, improvements, clientActions: actions, changelog, reportUrl,
+    signature: process.env.REPORT_SIGNATURE || 'Inspiring Websites',
+    reviewUrl: site.reviewUrl, leadValue: site.leadValue || 0,
+  });
+  const generatedToday = prev.generatedAt && new Date(prev.generatedAt).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
+  const email = generatedToday && prev.aiGenerated ? prev.email : { subject: rules.subject, body_text: rules.body_text };
+
   let cardPng = null;
   try {
     cardPng = await renderPNG(buildCardSVG({ biz: site.name, url: site.url, month: MONTH, row, history, grade }));
   } catch {
     cardPng = null;
   }
-  const emailResult = await sendEmail({
-    site,
-    subject: prev.email.subject,
-    body: prev.email.body_text,
-    cardPng,
-    reportUrl: prev.reportUrl,
-  });
+  const emailResult = await sendEmail({ site, subject: email.subject, body: email.body_text, cardPng, reportUrl });
   if (emailResult.sent) await store.set(`lastSent:${site.slug}`, MK);
-  return { ...prev, emailResult, aiUsed: !!prev.aiGenerated, aiError: prev.aiError || null };
+
+  const updated = { ...prev, grade, metrics: row, email, emailResult, aiUsed: !!(generatedToday && prev.aiGenerated), aiError: prev.aiError || null };
+  await store.set(`report:${site.slug}:latest`, JSON.stringify(updated));
+  return updated;
 }
 
 export default async function handler(req, res) {

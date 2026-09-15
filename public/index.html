@@ -1068,9 +1068,17 @@ function buildDraft(s){
   return {subject:`${s.name} — website update`, body:L.join('\n')};
 }
 
-async function post(url,body){
-  const r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  return r.json().catch(()=>({ok:false}));
+async function post(url,body,timeoutMs=25000){
+  // a hung request used to spin a button forever ("Merging…") with no way
+  // out — every POST now gives up cleanly after 25s instead of waiting on
+  // the browser's own (much longer, effectively "forever" feeling) timeout.
+  let r;
+  try{
+    r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body),signal:AbortSignal.timeout(timeoutMs)});
+  }catch(e){
+    return {ok:false,error:e.name==='TimeoutError'||e.name==='AbortError'?'timed out — try again':'network error: '+(e.message||e)};
+  }
+  return r.json().catch(()=>({ok:false,error:'bad response from server'}));
 }
 
 function openDrawer(slug){
@@ -1423,7 +1431,7 @@ function wireDrawer(s,bf){
     const k=needKey(); if(!k) return;
     const desc=$('#cf_convdesc').value.trim(); if(!desc) return;
     e.target.disabled=true; e.target.textContent='Thinking…';
-    const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'analyze-conversion',slug:s.slug,description:desc});
+    const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'analyze-conversion',slug:s.slug,description:desc},45000);
     e.target.disabled=false; e.target.textContent='✨ Figure it out';
     if(j.ok){
       $('#cf_convout').innerHTML=`<div style="color:var(--ink)"><strong>${esc(j.explanation||'')}</strong></div>
