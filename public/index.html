@@ -315,6 +315,7 @@
 
 <div class="bulkbar" id="bulkbar" hidden>
   <span id="bulkCount">0 selected</span>
+  <button class="btn ghost sm" id="bulkAll">Select all</button>
   <button class="btn sm" id="bulkMerge" hidden>Merge these 2</button>
   <button class="btn sm" id="bulkAgent">▶ Run SEO agent</button>
   <button class="btn danger sm" id="bulkRemove">Remove from dashboard</button>
@@ -1557,6 +1558,14 @@ $('#refreshBtn').addEventListener('click',load);
 
 /* ---------- bulk select + remove ---------- */
 function toggleSel(slug){ selected.has(slug)?selected.delete(slug):selected.add(slug); if(STATE) render(STATE); }
+$('#bulkAll')?.addEventListener('click',()=>{
+  if(!STATE) return;
+  const all=STATE.sites.map(s=>s.slug);
+  const allSelected=all.every(s=>selected.has(s));
+  selected.clear();
+  if(!allSelected) all.forEach(s=>selected.add(s));
+  render(STATE);
+});
 function updateBulkBar(){
   const bar=$('#bulkbar');
   bar.hidden=!selectMode;
@@ -1565,6 +1574,7 @@ function updateBulkBar(){
   $('#bulkAgent').disabled=selected.size===0;
   $('#bulkMerge').hidden=selected.size!==2;
   $('#selectBtn').textContent=selectMode?'Done':'Select';
+  if($('#bulkAll')) $('#bulkAll').textContent = (STATE&&STATE.sites.length&&STATE.sites.every(s=>selected.has(s.slug))) ? 'Deselect all' : 'Select all';
 }
 $('#bulkAgent')?.addEventListener('click',async(e)=>{
   const slugs=[...selected]; if(!slugs.length) return;
