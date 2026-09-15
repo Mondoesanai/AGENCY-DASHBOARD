@@ -106,6 +106,7 @@ async function checkHealth(url) {
 export default async function handler(req, res) {
   if (!authed(req)) return res.status(401).json({ ok: false });
 
+  const t0 = Date.now();
   const sites = await listSites();
   const today = new Date().getUTCDate();
   const isFirst = today === 1;
@@ -154,26 +155,40 @@ export default async function handler(req, res) {
     log.push({ action: 'company snapshot', error: String(e.message || e) });
   }
 
-  // SEO agent — run a couple of eligible sites per day, rotating by day-of-month
-  // so every site gets worked through the week without one cron run timing out.
+  // SEO agent — rotates through eligible sites by day-of-month, one at a time,
+  // and only starts a site's cycle if there's a safe amount of wall-clock left.
+  // Vercel hard-caps this whole function at 60s; health checks + billing sends
+  // above already spend part of that, and a single agent cycle (rank check +
+  // a technical fix + a GitHub commit) can itself take 20-40s. The previous
+  // version tried 2 sites per run unconditionally, regularly blew past 60s,
+  // and got hard-killed by the platform — silently, with nothing logged —
+  // which is why nothing was happening day to day despite being "scheduled."
+  const HARD_LIMIT_MS = 58000;
+  const PER_SITE_BUDGET_MS = 40000;
   try {
     const eligible = [];
     for (const s of sites) {
       const es = await agentStatus(s).catch(() => ({ eligible: false }));
       if (es.eligible) eligible.push(s);
     }
-    if (eligible.length) {
-      const perDay = 2;
-      const start = (today * perDay) % eligible.length;
-      const todays = [];
-      for (let i = 0; i < Math.min(perDay, eligible.length); i++) todays.push(eligible[(start + i) % eligible.length]);
-      for (const s of todays) {
+    if (!eligible.length) {
+      log.push({ action: 'seo agent', skipped: true, reason: 'no eligible sites' });
+    } else {
+      let ran = 0;
+      for (let i = 0; i < eligible.length; i++) {
+        if (Date.now() - t0 > HARD_LIMIT_MS - PER_SITE_BUDGET_MS) {
+          log.push({ action: 'seo agent', skipped: true, reason: `stopped after ${ran} site(s) — out of safe time budget this run, continues next run` });
+          break;
+        }
+        const s = eligible[(today + i) % eligible.length];
         try {
           const r = await runAgentCycle(s, { manual: false });
-          log.push({ slug: s.slug, action: 'seo agent', result: r.action || (r.skipped ? 'skipped' : r.error ? 'error' : 'ok'), pr: r.pr?.prUrl });
+          log.push({ slug: s.slug, action: 'seo agent', result: r.action || (r.skipped ? 'skipped' : r.error ? 'error' : 'ok'), pr: r.pr?.prUrl, reason: r.reason });
         } catch (e) {
           log.push({ slug: s.slug, action: 'seo agent', error: String(e.message || e) });
         }
+        ran++;
+        if (ran >= 3) break; // even with room to spare, don't run more than 3 in one invocation
       }
     }
   } catch (e) {
