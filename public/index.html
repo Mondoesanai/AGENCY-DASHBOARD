@@ -93,9 +93,18 @@
   .card .url{color:var(--muted);font-size:12.5px;word-break:break-all;}
   .card .cell-k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
   .card .cell-v{font-size:15px;font-weight:600;font-family:"Fraunces",serif;}
-  .card .next-seo-count{font-family:"Inter",sans-serif;font-size:12.5px;font-weight:600;color:var(--green-br);cursor:pointer;font-variant-numeric:tabular-nums;}
-  .card .next-seo-count:hover{text-decoration:underline;}
-  .card .next-seo-count[data-active="0"]{color:var(--faint);cursor:default;text-decoration:none;}
+  .stat.clickable{cursor:pointer;transition:background .12s ease;}
+  .stat.clickable:hover{background:var(--surface2);}
+  .stat .v.ticking{color:var(--green-br);font-variant-numeric:tabular-nums;}
+  .seo-ov-head h2{margin:0 0 2px;font-size:19px;}
+  .seo-ov-list{display:flex;flex-direction:column;gap:7px;margin-top:16px;}
+  .seo-ov-row{display:flex;align-items:center;gap:11px;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:11px;padding:12px 14px;cursor:pointer;font:inherit;color:var(--ink);transition:border-color .12s ease;}
+  .seo-ov-row:hover{border-color:var(--green);}
+  .seo-ov-name{font-weight:600;flex:0 0 180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .seo-ov-mid{flex:1;color:var(--muted);font-size:12.5px;}
+  .seo-ov-rank{flex:0 0 auto;color:var(--green-br);font-size:12.5px;font-weight:600;white-space:nowrap;}
+  .seo-ov-go{flex:none;color:var(--faint);font-size:12px;}
+  @media(max-width:700px){.seo-ov-name{flex:0 0 110px;font-size:13px;}.seo-ov-rank{display:none;}}
   .card .cell-v small{font-family:"Inter",sans-serif;font-size:11px;font-weight:500;margin-left:5px;}
   .grade{width:40px;height:40px;border-radius:11px;display:grid;place-items:center;font-family:"Fraunces",serif;font-weight:600;font-size:18px;background:var(--green-soft);color:var(--green-br);}
   .grade.c{background:#2c2a17;color:var(--warn);} .grade.d,.grade.f{background:#2e1a15;color:var(--neg);}
@@ -268,7 +277,7 @@
   <div class="unlock" id="unlock"></div>
 
   <header class="top">
-    <div class="brand">
+    <div class="brand" id="brandHome" title="Back to the dashboard" style="cursor:pointer">
       <img src="/brand/crown-white.png" alt="" />
       <div class="bt"><b>INSPIRING WEBSITES</b><span>Client portfolio &amp; monthly reports</span></div>
     </div>
@@ -283,12 +292,15 @@
     </div>
   </header>
 
+  <div id="mainView">
   <div class="attention" id="attention" hidden></div>
   <div class="overview" id="overview"></div>
 
   <div class="section-h"><h2>Sites</h2><span id="siteCount"></span></div>
   <div class="sites" id="sites"><div class="loading">Loading portfolio…</div></div>
   <p class="note" id="footNote"></p>
+  </div><!-- /mainView -->
+  <div id="seoOverview" hidden></div>
   <div id="finPanel" hidden></div>
   <div id="rcptPanel" hidden></div>
 </div>
@@ -496,7 +508,6 @@ let STATE=null, EMAIL_ENABLED=false, AI_ENABLED=false;
 let _agentPollT=null, _agentTickT=null, _todosTickT=null; // only one drawer's timers run at a time
 let _openToAgentDetail=false; // set true to land Settings->Automation expanded on next openDrawer
 function cardClick(e,slug){
-  if(e.target.closest('.next-seo-count')){ e.stopPropagation(); drawerPane='settings'; _openToAgentDetail=true; openDrawer(slug); return; }
   if(selectMode){ toggleSel(slug); } else { openDrawer(slug); }
 }
 let selectMode=false; const selected=new Set();
@@ -531,9 +542,13 @@ function render(data){
     ['Conversions · 30d',fmt(p.conversions30),'calls · forms · bookings'],
     ['Avg SEO-ready',p.avgSeo??'—','technical setup, not ranking'],
     ['MRR',money(p.mrr),p.trials?`+ ${money(p.trialMrr)}/mo in ${p.trials} trial${p.trials>1?'s':''}`:'across '+p.sites+' sites'],
-    ['Improving',`${p.improving}/${p.sites}`,'vs last month'],
+    ['__nextseo__','','tap to see what each site is doing'],
     ['Open suggestions',p.openFindings,'builder to-dos'],
-  ].map(([k,v,d])=>`<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`).join('');
+  ].map(([k,v,d])=>k==='__nextseo__'
+    ? `<div class="stat clickable" id="nextSeoTile"><div class="k">Next SEO update</div><div class="v ticking" id="nextSeoVal">T‑${fmtCountdown(nextCronMs())}</div><div class="d">${d}</div></div>`
+    : `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`
+  ).join('');
+  $('#nextSeoTile').onclick=openSeoOverview;
 
   // --- needs-attention banner (dismiss = session flag + localStorage) ---
   const att=$('#attention');
@@ -651,6 +666,53 @@ function renderPanel(){
 
 /* ---------- Receipts / tax ---------- */
 let rcptKey=null, rcptData=null, rcptTab='all', rcptFilter='';
+/* ---------- SEO overview — "what's happening on every site" back-page ---------- */
+function openSeoOverview(){
+  if(!STATE) return;
+  $('#mainView').hidden=true;
+  $('#finPanel').hidden=true; $('#rcptPanel').hidden=true;
+  renderSeoOverview();
+  $('#seoOverview').hidden=false;
+  window.scrollTo(0,0);
+}
+function closeSeoOverview(){
+  $('#seoOverview').hidden=true; $('#seoOverview').innerHTML='';
+  $('#mainView').hidden=false;
+}
+function renderSeoOverview(){
+  const rows=STATE.sites.map(s=>{
+    const linked=!!s.repo, on=s.seoAgent!==false;
+    const status = !on ? {dot:'paused',txt:'Automation off'} : !linked ? {dot:'paused',txt:'Needs a GitHub repo linked'} : {dot:'idle',txt:'Tracking · runs automatically'};
+    const kw=(s.agentKeywords||'').split(',').map(x=>x.trim()).filter(Boolean);
+    let rankTxt='Not checked yet';
+    if(s.agentRanks&&s.agentRanks.results&&s.agentRanks.results.length){
+      const top=s.agentRanks.results.filter(r=>r.rank&&r.rank<=10).sort((a,b)=>a.rank-b.rank)[0];
+      rankTxt = top ? `#${top.rank} for "${top.keyword}"` : `${s.agentRanks.results.length} keywords tracked, none top 10 yet`;
+    }
+    return `<button type="button" class="seo-ov-row" data-slug="${s.slug}">
+      <span class="agent-dot ${status.dot}"></span>
+      <span class="seo-ov-name">${esc(s.name)}</span>
+      <span class="seo-ov-mid">${linked?(kw.length?`${kw.length} keywords targeted`:'Picking keywords on next run'):status.txt}</span>
+      <span class="seo-ov-rank">${linked&&on?esc(rankTxt):''}</span>
+      <span class="seo-ov-go">Details ›</span>
+    </button>`;
+  }).join('');
+  $('#seoOverview').innerHTML=`
+    <div class="seo-ov-head">
+      <h2>SEO automation — every site</h2>
+      <p class="note" style="margin:2px 0 0">Runs once a day automatically. Next pass: <span class="seo-ov-countdown">T‑${fmtCountdown(nextCronMs())}</span> · tap any site for the full picture.</p>
+    </div>
+    <div class="seo-ov-list">${rows||'<div class="note">No sites yet.</div>'}</div>
+    <p class="note" style="margin-top:14px">Click the logo up top to go back.</p>
+  `;
+  $$('.seo-ov-row').forEach(r=>r.onclick=()=>{
+    closeSeoOverview();
+    drawerPane='settings'; _openToAgentDetail=true;
+    openDrawer(r.dataset.slug);
+  });
+}
+$('#brandHome').addEventListener('click',()=>{ if(!$('#seoOverview').hidden) closeSeoOverview(); });
+
 async function openReceipts(){
   const el=$('#rcptPanel');
   if(!el.hidden){ el.hidden=true; el.innerHTML=''; rcptKey=null; rcptData=null; return; }
@@ -959,7 +1021,6 @@ function siteCard(s){
     <div class="col-hide"><div class="cell-k">Visitors 30d</div><div class="cell-v">${st.hasData?fmt(st.visitors):'—'} ${st.hasData?deltaHTML(st.deltas?.visitors):''}</div></div>
     <div class="col-hide"><div class="cell-k">Conversions</div><div class="cell-v">${st.hasData?(st.conversions??0):'—'} ${st.hasData?deltaHTML(st.deltas?.conversions):''}</div></div>
     <div class="col-hide"><div class="cell-k">SEO</div><div class="cell-v">${seo??'—'}</div></div>
-    <div class="col-hide"><div class="cell-k">Next SEO run</div><div class="cell-v next-seo-count" data-active="${s.repo&&s.seoAgent!==false?'1':'0'}" title="Tap for exactly what it's done and what's next">${s.repo&&s.seoAgent!==false?('T‑'+fmtCountdown(nextCronMs())):(s.repo?'off':'no repo')}</div></div>
     ${sparkline(trendOf(s))}
     <span class="chip ${s.openCount?'':'zero'}">${s.openCount||0} to-do${s.openCount===1?'':'s'} ›</span>
   </button>`;
@@ -1799,13 +1860,11 @@ $('#htPrint').addEventListener('click',()=>{
   w.document.close(); setTimeout(()=>w.print(),300);
 });
 
-// one shared ticker updates every visible card's "Next SEO run" countdown —
-// cheaper than a per-card interval, and the value is identical for all of them
-// (same daily cron time), so a single computed string covers every card.
+// ticks the "Next SEO update" overview tile and (if open) the SEO overview page
 setInterval(()=>{
-  const els=$$('.next-seo-count[data-active="1"]'); if(!els.length) return;
   const val='T‑'+fmtCountdown(nextCronMs());
-  els.forEach(el=>el.textContent=val);
+  const t=$('#nextSeoVal'); if(t) t.textContent=val;
+  $$('.seo-ov-countdown').forEach(el=>el.textContent=val);
 },1000);
 
 renderUnlock();
