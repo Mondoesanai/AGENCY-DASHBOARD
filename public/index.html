@@ -287,7 +287,7 @@
       <button class="btn ghost" id="refreshBtn">Refresh</button>
       <button class="btn" id="addBtn">+ Add site</button>
       <button class="btn ghost" id="selectBtn">Select</button>
-      <button class="btn ghost" id="genBtn">Generate all</button>
+      <button class="btn ghost" id="genBtn" title="Refresh every site's report with today's real numbers (no emails sent, no AI re-spend if already run today)">Generate all</button>
       <button class="btn ghost" id="howtoBtn" title="How to use this dashboard">❔ Guide</button>
     </div>
   </header>
@@ -1767,7 +1767,11 @@ $('#genBtn').addEventListener('click',async()=>{
   const k=needKey(); if(!k) return;
   const b=$('#genBtn'); b.disabled=true; b.textContent='Generating all…';
   const j=await fetch(`/api/report?secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-  if(j.ok){ b.textContent=`Done · ${j.generated}`; await load(); } else { setKey(''); b.textContent='Failed — key?'; }
+  if(j.ok){
+    const skipped=(j.reports||[]).filter(r=>r.skipped).length;
+    b.textContent=skipped?`Done · ${j.generated-skipped} of ${j.generated} (rest catch up tonight)`:`Done · ${j.generated}`;
+    await load();
+  } else { setKey(''); b.textContent='Failed — key?'; }
   setTimeout(()=>{ b.disabled=false; b.textContent='Generate all'; },2600);
 });
 

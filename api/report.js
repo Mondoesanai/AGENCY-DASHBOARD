@@ -201,10 +201,10 @@ async function sendEmail({ site, subject, body, cardPng, reportUrl, to }) {
   }
 }
 
-async function buildForSite(site, { doSend, req, style }) {
+async function buildForSite(site, { doSend, req, style, isBatch }) {
   const [stats, audit, changelogRaw] = await Promise.all([
     siteStats(site.slug, site.conversionEvents || []).catch(() => null),
-    runAudit(site.url, { fresh: true }).catch(() => ({ ok: false, error: 'audit failed' })),
+    runAudit(site.url, { fresh: !isBatch }).catch(() => ({ ok: false, error: 'audit failed' })),
     readLog(site.slug),
   ]);
   const changelog = await withAutoShipped(site.slug, changelogRaw);
@@ -254,21 +254,37 @@ async function buildForSite(site, { doSend, req, style }) {
     leadValue: site.leadValue || 0,
   });
 
-  const aiRaw = await aiPolish({
-    site,
-    stats,
-    audit,
-    grade,
-    findings,
-    improvements,
-    actions,
-    angle,
-    wins: rules.wins,
-    style,
-    dropped: rules.dropped,
-  }).catch((e) => ({ __error: 'aiPolish threw: ' + (e.message || e) }));
-  const aiError = aiRaw && aiRaw.__error ? aiRaw.__error : null;
-  const ai = aiError ? null : aiRaw;
+  // "Generate all" pressed twice in a day shouldn't pay for AI twice — reuse
+  // today's AI wording if there is one; numbers/audit above are still fresh.
+  let prevForSkip = null;
+  if (isBatch) {
+    const prevRaw = await store.get(`report:${site.slug}:latest`).catch(() => null);
+    prevForSkip = prevRaw ? (typeof prevRaw === 'string' ? JSON.parse(prevRaw) : prevRaw) : null;
+  }
+  const skipAi = isBatch && prevForSkip?.aiGenerated && prevForSkip?.generatedAt &&
+    new Date(prevForSkip.generatedAt).toISOString().slice(0, 10) === new Date().toISOString().slice(0, 10);
+
+  let ai, aiError;
+  if (skipAi) {
+    ai = { email: prevForSkip.email, headline: prevForSkip.headline, summary: prevForSkip.summary, improvements: prevForSkip.improvements, client_actions: prevForSkip.clientActions, builder_notes: prevForSkip.builderExtra };
+    aiError = null;
+  } else {
+    const aiRaw = await aiPolish({
+      site,
+      stats,
+      audit,
+      grade,
+      findings,
+      improvements,
+      actions,
+      angle,
+      wins: rules.wins,
+      style,
+      dropped: rules.dropped,
+    }).catch((e) => ({ __error: 'aiPolish threw: ' + (e.message || e) }));
+    aiError = aiRaw && aiRaw.__error ? aiRaw.__error : null;
+    ai = aiError ? null : aiRaw;
+  }
 
   const email = ai?.email || { subject: rules.subject, body_text: rules.body_text };
 
@@ -433,19 +449,30 @@ async function sendLatest(site, { req }) {
 export default async function handler(req, res) {
   if (!authed(req)) return res.status(401).json({ ok: false, error: 'bad secret' });
 
+  const t0 = Date.now();
   const all = await listSites();
   const only = req.query.slug ? all.filter((s) => s.slug === req.query.slug) : all;
   const doSend = req.query.send === '1';
   const emailOnly = req.query.emailonly === '1';
   const rebuild = req.query.rebuild === '1'; // force a full fresh build + send
   const style = String(req.query.style || '').slice(0, 140);
+  // "Generate all" (no ?slug=, more than one site) is a batch pass — go easy
+  // on the AI/PageSpeed budget for it (no forced-fresh scan, skip the AI call
+  // if today's report already has one) unlike an explicit single-site
+  // "Regenerate", which always does a real fresh rebuild on request.
+  const isBatch = !req.query.slug && only.length > 1;
+  const HARD_LIMIT_MS = 55000;
 
   const reports = [];
   for (const site of only) {
+    if (isBatch && Date.now() - t0 > HARD_LIMIT_MS) {
+      reports.push({ slug: site.slug, skipped: true, reason: 'out of time this run — press Generate all again, or it catches up in tonight’s automatic pass' });
+      continue;
+    }
     try {
       if (emailOnly && !doSend) reports.push(await regenEmail(site, { style, req }));
       else if (doSend && !rebuild) reports.push(await sendLatest(site, { req }));
-      else reports.push(await buildForSite(site, { doSend, req, style }));
+      else reports.push(await buildForSite(site, { doSend, req, style, isBatch }));
     } catch (e) {
       const msg = String(e.message || e);
       reports.push({
