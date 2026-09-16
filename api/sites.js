@@ -6,6 +6,7 @@ import { buildFindings, clientActions, improvementsForClient, overallGrade } fro
 import { getHistory } from '../lib/history.js';
 import { reportToken } from '../lib/token.js';
 import { store } from '../lib/store.js';
+import { todosState } from '../lib/todos.js';
 
 async function readRanks(slug) {
   const raw = await store.get(`agent:ranks:${slug}`).catch(() => null);
@@ -36,7 +37,7 @@ export default async function handler(req, res) {
 
   const rows = await Promise.all(
     list.map(async (site) => {
-      const [stats, audit, report, history, notes, changelog, expenses, ranks] = await Promise.all([
+      const [stats, audit, report, history, notes, changelog, expenses, ranks, todos] = await Promise.all([
         siteStats(site.slug, site.conversionEvents || []).catch(() => null),
         runAudit(site.url, { cachedOnly: true }).catch(() => ({ ok: false, error: 'audit failed' })),
         store.get(`report:${site.slug}:latest`).catch(() => null),
@@ -45,6 +46,7 @@ export default async function handler(req, res) {
         readLog(site.slug),
         readArr(`expenses:${site.slug}`),
         readRanks(site.slug),
+        todosState(site).catch(() => null),
       ]);
       const expensesTotal = expenses.reduce((t, e) => t + (Number(e.amount) || 0), 0);
       const onTrial = !!(site.trialEnds && site.trialEnds > Date.now());
@@ -78,6 +80,10 @@ export default async function handler(req, res) {
         agentBudget: site.agentBudget || 18,
         agentKeywords: site.agentKeywords || '',
         agentRanks: ranks || null,
+        aiTodos: todos?.current?.items || null,
+        aiTodosGeneratedAt: todos?.current?.generatedAt || null,
+        aiTodosNextRefresh: todos?.nextRefresh || 0,
+        aiTodosCompleted: todos?.completed || [],
         auditPending: !!audit?.pending,
         lastSeen: site.lastSeen || 0,
         // tracker is "installed" if any beacon has landed in the last 21 days

@@ -493,7 +493,7 @@ const trendOf=(s)=>{
 };
 
 let STATE=null, EMAIL_ENABLED=false, AI_ENABLED=false;
-let _agentPollT=null, _agentTickT=null; // only one drawer's agent-box timers run at a time
+let _agentPollT=null, _agentTickT=null, _todosTickT=null; // only one drawer's timers run at a time
 let _openToAgentDetail=false; // set true to land Settings->Automation expanded on next openDrawer
 function cardClick(e,slug){
   if(e.target.closest('.next-seo-count')){ e.stopPropagation(); drawerPane='settings'; _openToAgentDetail=true; openDrawer(slug); return; }
@@ -1098,7 +1098,7 @@ function openDrawer(slug){
     <nav class="dtabs">
       <button data-pane="overview">Overview</button>
       <button data-pane="traffic">Traffic</button>
-      <button data-pane="todos">To-dos${(bf.filter(f=>f.severity!=='good').length)?` <span class="tabnum">${bf.filter(f=>f.severity!=='good').length}</span>`:''}</button>
+      <button data-pane="todos">To-dos${(()=>{const n=(s.aiTodos&&s.aiTodos.length)?s.aiTodos.length:bf.filter(f=>f.severity!=='good').length; return n?` <span class="tabnum">${n}</span>`:'';})()}</button>
       <button data-pane="report">Report &amp; email</button>
       <button data-pane="settings">Settings</button>
     </nav>
@@ -1130,9 +1130,13 @@ function openDrawer(slug){
 
     <div class="tabpane" data-pane="todos" hidden>
     <div class="block">
-      <h3>Builder suggestions <span class="ang">you only</span></h3>
-      <div id="bfList">${bf.slice(0,4).map(fRow).join('')||'<div class="note">Nothing outstanding.</div>'}</div>
-      ${bf.length>4?`<button class="more" id="bfMore">View all ${bf.length}</button>`:''}
+      <h3>Builder suggestions <span class="ang">you only · AI-curated</span></h3>
+      <button type="button" id="todosToggle" class="agent-summary" style="margin-bottom:9px"><span class="agent-dot" id="todosDot"></span><span id="todosSummary">Checking…</span><span class="agent-caret" id="todosCaret">▸</span></button>
+      <div id="todosDetail" hidden>
+        <div id="todosList">${bf.slice(0,4).map(fRow).join('')||'<div class="note">Nothing outstanding.</div>'}</div>
+        <div id="todosCompleted"></div>
+        <div class="btn-row" style="margin-top:8px"><button class="btn sm" id="todosRefresh" type="button">↻ Refresh to-dos now</button></div>
+      </div>
     </div>
 
     <div class="block">
@@ -1460,7 +1464,7 @@ function wireDrawer(s,bf){
 
   let agentExpanded=_openToAgentDetail, agentLastStatus=null;
   _openToAgentDetail=false;
-  clearTimeout(_agentPollT); clearInterval(_agentTickT); // a previous drawer session's timers, if any
+  clearTimeout(_agentPollT); clearInterval(_agentTickT); clearInterval(_todosTickT); // a previous drawer session's timers, if any
   $('#agentToggle')?.addEventListener('click',()=>{ agentExpanded=!agentExpanded; renderAgentBox(); });
   function renderAgentBox(){
     const st=agentLastStatus; if(!st||!$('#agentDot')) return;
@@ -1513,6 +1517,44 @@ function wireDrawer(s,bf){
     refreshAgent();
   });
   refreshAgent();
+
+  let todosExpanded=false;
+  function renderTodos(){
+    if(!$('#todosDot')) return;
+    clearInterval(_todosTickT);
+    const items=s.aiTodos&&s.aiTodos.length ? s.aiTodos : null;
+    const genAt=s.aiTodosGeneratedAt, nextAt=s.aiTodosNextRefresh;
+    const dot=$('#todosDot');
+    const tick=()=>{
+      const el=$('#todosSummary'); if(!el) return;
+      if(!items){ el.textContent='Not generated yet — tap to run the first check'; dot.className='agent-dot paused'; return; }
+      const left=nextAt-Date.now();
+      dot.className='agent-dot '+(left<=0?'paused':'idle');
+      el.textContent = left<=0 ? `${items.length} to-dos — refresh due` : `${items.length} to-dos — resets in ${fmtCountdown(left)}`;
+    };
+    tick();
+    if(items&&nextAt>Date.now()) _todosTickT=setInterval(()=>{ if(!document.body.contains($('#todosSummary'))){ clearInterval(_todosTickT); return; } tick(); },1000);
+    $('#todosCaret').classList.toggle('open',todosExpanded);
+    $('#todosDetail').hidden=!todosExpanded;
+    if(!todosExpanded) return;
+    $('#todosList').innerHTML = items
+      ? items.map(it=>`<div class="finding"><span class="sev ${it.severity}">${it.severity==='med'?'MED':it.severity.toUpperCase()}</span><div><div class="ft">${esc(it.title)} <span class="pillmini" style="margin-left:4px">${esc(it.category)}</span></div><div class="fd">${esc(it.detail)}</div></div></div>`).join('')
+      : (bf.slice(0,4).map(fRow).join('')||'<div class="note">Nothing outstanding.</div>');
+    const done=s.aiTodosCompleted||[];
+    $('#todosCompleted').innerHTML = done.length
+      ? `<details style="margin-top:8px"><summary style="cursor:pointer;font-size:11.5px;color:var(--faint)">Recently addressed (${done.length})</summary>${done.slice(0,8).map(x=>`<div class="note" style="margin-top:6px">✓ ${esc(x.title)} <span style="color:var(--faint)">— ${new Date(x.addressedAt).toLocaleDateString()}</span></div>`).join('')}</details>`
+      : '';
+  }
+  $('#todosToggle')?.addEventListener('click',()=>{ todosExpanded=!todosExpanded; renderTodos(); });
+  $('#todosRefresh')?.addEventListener('click',async(e)=>{
+    const k=needKey(); if(!k) return;
+    e.target.disabled=true; e.target.textContent='Checking the site…';
+    const j=await fetch(`/api/admin?do=todos-refresh&slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false,error:'network'}));
+    e.target.disabled=false; e.target.textContent='↻ Refresh to-dos now';
+    if(j.ok){ toast(`${(j.items||[]).length} to-dos ready${j.addressed&&j.addressed.length?` · ${j.addressed.length} addressed since last check`:''}`); await load(); openDrawer(s.slug); switchPane('todos'); }
+    else toast(j.error||'Could not refresh','err');
+  });
+  renderTodos();
 
   async function loadUpsell(){
     const box=$('#upsellBox'); const k=key(); if(!box||!k) return;

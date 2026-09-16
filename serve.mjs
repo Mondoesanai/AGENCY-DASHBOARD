@@ -209,6 +209,18 @@ createServer(async (req, res) => {
       summary: { year: 2026, grossIncome: 1350, byCategory: { 'Dues & memberships': 540, 'Software & subscriptions': 150 }, totalExpenses: 690, netProfit: 660, estTaxOnProfit: 178, reservedIfTwentyPctRevenue: 270, cushion: 92, quarterlyDue: ['2026-04-15', '2026-06-16', '2026-09-15', '2027-01-15'] },
     }));
   }
+  if (path === '/api/todos-refresh') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      ok: true,
+      items: [
+        { id: 'add-click-to-call', title: 'Add a sticky click-to-call button on mobile', detail: '71% of your traffic is mobile and the phone number is only in the footer — most visitors never scroll that far.', category: 'Conversion', severity: 'high' },
+        { id: 'meta-description', title: 'Write a real meta description for the homepage', detail: 'Currently blank, so Google is showing a random snippet of body text in search results instead of your pitch.', category: 'SEO', severity: 'high' },
+      ],
+      addressed: [{ title: 'Added LocalBusiness JSON-LD', category: 'SEO', addressedAt: Date.now() - 6 * 864e5 }],
+      cost: 0.02,
+    }));
+  }
   if (path === '/api/agent-status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({

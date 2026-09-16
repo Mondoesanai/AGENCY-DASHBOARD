@@ -42,6 +42,25 @@ async function readLog(slug) {
   }
 }
 
+// Merge the manual "what we did this month" log with to-dos the AI has
+// auto-shipped since the last check — so "This month we also worked on..."
+// in the client email reflects real automated work, not just what Mondo
+// typed by hand. Only the last ~35 days' worth (one billing cycle + buffer).
+async function withAutoShipped(slug, changelog) {
+  const raw = await store.get(`todos:completed:${slug}`).catch(() => null);
+  let done = [];
+  try {
+    done = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [];
+  } catch {
+    done = [];
+  }
+  const cutoff = Date.now() - 35 * 864e5;
+  const auto = done
+    .filter((x) => x.addressedAt && x.addressedAt >= cutoff)
+    .map((x) => ({ date: new Date(x.addressedAt).toISOString().slice(0, 10), text: x.title }));
+  return [...changelog, ...auto];
+}
+
 function monthsSince(baseline, history) {
   if (baseline?.month) {
     const [by, bm] = baseline.month.split('-').map(Number);
@@ -183,11 +202,12 @@ async function sendEmail({ site, subject, body, cardPng, reportUrl, to }) {
 }
 
 async function buildForSite(site, { doSend, req, style }) {
-  const [stats, audit, changelog] = await Promise.all([
+  const [stats, audit, changelogRaw] = await Promise.all([
     siteStats(site.slug, site.conversionEvents || []).catch(() => null),
     runAudit(site.url, { fresh: true }).catch(() => ({ ok: false, error: 'audit failed' })),
     readLog(site.slug),
   ]);
+  const changelog = await withAutoShipped(site.slug, changelogRaw);
   const grade = overallGrade(audit, stats);
   const findings = buildFindings(audit, stats);
   const improvements = improvementsForClient(audit, stats);
@@ -297,11 +317,12 @@ async function buildForSite(site, { doSend, req, style }) {
 async function regenEmail(site, { style, req }) {
   const prevRaw = await store.get(`report:${site.slug}:latest`).catch(() => null);
   const prev = prevRaw ? (typeof prevRaw === 'string' ? JSON.parse(prevRaw) : prevRaw) : null;
-  const [stats, audit, changelog] = await Promise.all([
+  const [stats, audit, changelogRaw] = await Promise.all([
     siteStats(site.slug, site.conversionEvents || []).catch(() => null),
     runAudit(site.url).catch(() => ({ ok: false })),
     readLog(site.slug),
   ]);
+  const changelog = await withAutoShipped(site.slug, changelogRaw);
   const grade = overallGrade(audit, stats) || prev?.grade || null;
   const findings = buildFindings(audit, stats);
   const improvements = prev?.improvements?.length ? prev.improvements : improvementsForClient(audit, stats);
@@ -361,13 +382,14 @@ async function sendLatest(site, { req }) {
     return buildForSite(site, { doSend: true, req });
   }
 
-  const [stats, audit, changelog, history, baseline] = await Promise.all([
+  const [stats, audit, changelogRaw, history, baseline] = await Promise.all([
     siteStats(site.slug, site.conversionEvents || []).catch(() => null),
     runAudit(site.url).catch(() => ({ ok: false })), // cache-preferring, not forced-fresh — fast
     readLog(site.slug),
     getHistory(site.slug).catch(() => []),
     getBaseline(site.slug),
   ]);
+  const changelog = await withAutoShipped(site.slug, changelogRaw);
   const grade = overallGrade(audit, stats) || prev.grade || null;
   const row = {
     seo: audit?.ok ? audit.scores.seo : prev.metrics?.seo ?? null,

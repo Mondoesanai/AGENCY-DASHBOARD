@@ -9,6 +9,7 @@ import { reposHandler } from '../lib/repos.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
+import { todosState, refreshTodos } from '../lib/todos.js';
 
 function authed(req) {
   const s = process.env.CRON_SECRET;
@@ -39,6 +40,12 @@ export default async function handler(req, res) {
       const site = await siteBySlug(req.query.slug);
       if (!site) return res.status(404).json({ ok: false, error: 'unknown site' });
       const out = await runAgentCycle(site, { manual: true });
+      return res.status(200).json(out);
+    }
+    case 'todos-refresh': {
+      const site = await siteBySlug(req.query.slug);
+      if (!site) return res.status(404).json({ ok: false, error: 'unknown site' });
+      const out = await refreshTodos(site);
       return res.status(200).json(out);
     }
     case 'upsell': {

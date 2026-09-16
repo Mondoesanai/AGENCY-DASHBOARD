@@ -11,6 +11,7 @@ import { monthKey } from '../lib/history.js';
 import { buildForSite } from './report.js';
 import { runAgentCycle, agentStatus } from '../lib/agent.js';
 import { upsellState, sendUpsell } from '../lib/upsell.js';
+import { todosState, refreshTodos } from '../lib/todos.js';
 
 const MK = monthKey();
 const monthsBetween = (from) => (from ? Math.max(1, Math.round((Date.now() - from) / (30 * 864e5))) : 1);
@@ -193,6 +194,29 @@ export default async function handler(req, res) {
     }
   } catch (e) {
     log.push({ action: 'seo agent', error: String(e.message || e) });
+  }
+
+  // AI-curated to-dos — every site (doesn't need GitHub, just the Anthropic
+  // key), refreshed every 14 days. One stale site per run, same time-budget
+  // guard as the SEO agent above so this can never be what pushes a run past
+  // the 60s ceiling.
+  try {
+    if (Date.now() - t0 < HARD_LIMIT_MS - 15000) {
+      const due = [];
+      for (const s of sites) {
+        const ts = await todosState(s).catch(() => ({ stale: false }));
+        if (ts.stale) due.push(s);
+      }
+      const s = due[today % Math.max(1, due.length)];
+      if (s) {
+        const r = await refreshTodos(s);
+        log.push({ slug: s.slug, action: 'todos', result: r.ok ? `${r.items.length} to-dos, ${r.addressed?.length || 0} addressed` : r.error });
+      }
+    } else {
+      log.push({ action: 'todos', skipped: true, reason: 'out of time budget this run' });
+    }
+  } catch (e) {
+    log.push({ action: 'todos', error: String(e.message || e) });
   }
 
   // 6-month upsell: flag every eligible client; auto-send only if UPSELL_AUTO=1
