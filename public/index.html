@@ -639,6 +639,7 @@ async function openFinances(tab){
 }
 function closeFinPanel(tab){
   openPanels=openPanels.filter(t=>t!==tab);
+  if(tab==='revisions'){ revView='open'; revHistorySlug=''; revHistoryQ=''; }
   if(!openPanels.length){
     const el=$('#finPanel'); el.hidden=true; el.innerHTML='';
     finKey=null; finData=null; rcptData=null; revData=null;
@@ -703,6 +704,7 @@ function wireMoneyTab(){
 
 /* ---------- Receipts / tax (now a tab inside the shared #finPanel) ---------- */
 let rcptTab='all', rcptFilter='';
+let revView='open', revHistorySlug='', revHistoryQ='';
 /* ---------- SEO overview — "what's happening on every site" back-page ---------- */
 function openSeoOverview(){
   if(!STATE) return;
@@ -796,15 +798,19 @@ function nextRevisionCheckMs(){
   const n=Date.now();
   return Math.max(0,Math.ceil(n/600000)*600000-n); // next 10-min boundary — matches the GitHub Actions cron
 }
-function revisionsHTML(st){
-  if(!st) return '<div class="note">Loading…</div>';
-  const tickets=st.tickets||[];
-  const checkStale=st.configured&&st.lastCheck&&(Date.now()/1000-st.lastCheck)>1200; // >20 min — the ~10 min auto-check is likely running late
+function ticketCardHTML(t){
+  const overdue=t.status==='scheduled'&&t.targetAt&&t.targetAt<Date.now();
+  let completionLine='';
+  if(t.status==='done'){
+    completionLine=`Completed: ${t.doneAt?new Date(t.doneAt).toLocaleString():''}`;
+  } else if(t.targetAt){
+    completionLine=overdue
+      ? `Projected completion: was expected ${new Date(t.targetAt).toLocaleString()} — still working through the queue, catches up automatically`
+      : `Projected completion: ${new Date(t.targetAt).toLocaleString()}`;
+  } else if(t.dueBy){
+    completionLine=`Projected completion: by ${new Date(t.dueBy).toLocaleDateString()}`;
+  }
   return `
-    <p class="note" style="margin:0 0 4px">${st.configured?`Watching Info@ · last checked ${st.lastCheck?agoStr(st.lastCheck*1000):'never yet'} · checks automatically, next check in <b class="rev-next-ct">T‑${fmtCountdown(nextRevisionCheckMs())}</b>`:'<span style="color:var(--warn)">Google not connected — add GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN in Vercel.</span>'}</p>
-    ${checkStale?`<p class="note" style="margin:0 0 10px;color:var(--warn)">Running later than usual — tap "Check inbox now" below and it'll catch up instantly.</p>`:''}
-    <div class="btn-row" style="margin-bottom:12px"><button class="btn sm" id="revCheck" type="button" ${st.configured?'':'disabled'}>↻ Check inbox now</button></div>
-    ${tickets.length?tickets.map(t=>`
       <div class="block" style="margin-bottom:9px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <strong>${esc(t.siteName)}</strong>
@@ -815,7 +821,7 @@ function revisionsHTML(st){
         <div class="note" style="margin-top:4px">
           Asked: ${new Date(t.receivedAt).toLocaleString()}<br>
           Responded: ${t.repliedAt?new Date(t.repliedAt).toLocaleString():'<span style="color:var(--warn)">reply failed — check it yourself</span>'}<br>
-          ${t.status==='done'?`Completed: ${t.doneAt?new Date(t.doneAt).toLocaleString():''}`:t.dueBy?`Projected completion: by ${new Date(t.dueBy).toLocaleDateString()}`:''}
+          ${completionLine}
         </div>
         ${t.repo||t.commitUrl||t.siteUrl?`<div class="note" style="margin-top:3px">${t.shipSummary?`Shipped: ${esc(t.shipSummary)}<br>`:''}${t.repo?`Repo: ${esc(t.repo)}`:''}${t.commitUrl?` · <a href="${esc(t.commitUrl)}" target="_blank" rel="noopener">view commit ↗</a>`:''}${t.status==='done'&&t.siteUrl?` · <a href="${esc(t.siteUrl)}" target="_blank" rel="noopener">view live site ↗</a>`:''}</div>`:''}
         ${!t.slug&&t.status!=='done'?`<div class="btn-row" style="margin-top:7px">
@@ -825,10 +831,41 @@ function revisionsHTML(st){
           </div>` : ''}
         ${t.status==='done'?`<div class="note" style="margin-top:3px">${t.completionEmail?.sent?`✓ client notified`:t.completionEmail?`<span style="color:var(--warn)">completion email didn't send — ${esc(t.completionEmail.reason||'')}</span>`:'✓ done'}</div>`
         :t.slug?`<div class="btn-row" style="margin-top:7px"><button class="btn sm ghost" data-done="${esc(t.id)}">Mark done</button></div>`:''}
-      </div>`).join('') : '<p class="note">No revision requests yet.</p>'}
+      </div>`;
+}
+function revisionsHTML(st){
+  if(!st) return '<div class="note">Loading…</div>';
+  const tickets=st.tickets||[];
+  const checkStale=st.configured&&st.lastCheck&&(Date.now()/1000-st.lastCheck)>1200; // >20 min — the ~10 min auto-check is likely running late
+  if(revView==='history'){
+    const done=tickets.filter(t=>t.status==='done');
+    const sitesInHistory=[...new Map(done.map(t=>[t.slug||t.siteName,t.siteName])).entries()];
+    const q=revHistoryQ.toLowerCase();
+    const rows=done.filter(t=>(!revHistorySlug||t.slug===revHistorySlug)&&(!q||`${t.siteName} ${t.summary} ${t.from}`.toLowerCase().includes(q)));
+    return `
+      <div class="btn-row" style="margin-bottom:10px"><button class="link" id="revBack">‹ Back to open revisions</button></div>
+      <div class="btn-row" style="margin-bottom:12px">
+        <select id="revHistSite" style="flex:1"><option value="">All customers</option>${sitesInHistory.map(([slug,name])=>`<option value="${esc(slug)}" ${revHistorySlug===slug?'selected':''}>${esc(name)}</option>`).join('')}</select>
+        <input id="revHistSearch" style="flex:1" placeholder="search…" value="${esc(revHistoryQ)}" />
+      </div>
+      ${rows.length?rows.map(ticketCardHTML).join(''):'<p class="note">No past revisions match.</p>'}
+    `;
+  }
+  const open=tickets.filter(t=>t.status!=='done');
+  const doneCount=tickets.length-open.length;
+  return `
+    <p class="note" style="margin:0 0 4px">${st.configured?`Watching Info@ · last checked ${st.lastCheck?agoStr(st.lastCheck*1000):'never yet'} · checks automatically, next check in <b class="rev-next-ct">T‑${fmtCountdown(nextRevisionCheckMs())}</b>`:'<span style="color:var(--warn)">Google not connected — add GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN in Vercel.</span>'}</p>
+    ${checkStale?`<p class="note" style="margin:0 0 10px;color:var(--warn)">Running later than usual — tap "Check inbox now" below and it'll catch up instantly.</p>`:''}
+    <div class="btn-row" style="margin-bottom:12px"><button class="btn sm" id="revCheck" type="button" ${st.configured?'':'disabled'}>↻ Check inbox now</button></div>
+    ${open.length?open.map(ticketCardHTML).join('') : '<p class="note">Nothing waiting — you\'re all caught up.</p>'}
+    ${doneCount?`<div class="btn-row" style="margin-top:6px"><button class="link" id="revHistory">View past revisions (${doneCount}) ›</button></div>`:''}
   `;
 }
 function wireRevisionsTab(){
+  $('#revHistory')?.addEventListener('click',()=>{ revView='history'; renderFinPanel(); });
+  $('#revBack')?.addEventListener('click',()=>{ revView='open'; renderFinPanel(); });
+  $('#revHistSite')?.addEventListener('change',(e)=>{ revHistorySlug=e.target.value; renderFinPanel(); });
+  const rhs=$('#revHistSearch'); if(rhs) rhs.oninput=(e)=>{ revHistoryQ=e.target.value; const p=e.target.selectionStart; renderFinPanel(); const n=$('#revHistSearch'); if(n){ n.focus(); n.setSelectionRange(p,p); } };
   $('#revCheck')?.addEventListener('click',async(e)=>{
     const k=needKey(); if(!k) return;
     e.target.disabled=true; e.target.textContent='Checking…';
