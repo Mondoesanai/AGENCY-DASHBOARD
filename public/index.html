@@ -748,8 +748,9 @@ function renderRevisions(){
           <span style="margin-left:auto;font-size:11px;color:var(--faint)">${new Date(t.receivedAt).toLocaleString()}</span>
         </div>
         <div class="fd" style="margin-top:5px">${esc(t.summary||t.subject)}</div>
-        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.repliedAt?' · replied':' · <span style="color:var(--warn)">reply failed — check it yourself</span>'}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}</div>
-        ${t.status!=='done'?`<div class="btn-row" style="margin-top:7px"><button class="btn sm ghost" data-done="${esc(t.id)}">Mark done</button></div>`:''}
+        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.repliedAt?' · replied':' · <span style="color:var(--warn)">reply failed — check it yourself</span>'}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug?' · <span style="color:var(--warn)">unmatched — route it by hand</span>':t.status==='scheduled'?' · queued for the agent':''}</div>
+        ${t.status==='done'?`<div class="note" style="margin-top:3px">${t.completionEmail?.sent?`✓ client notified · ${esc(t.doneAt?new Date(t.doneAt).toLocaleDateString():'')}`:t.completionEmail?`<span style="color:var(--warn)">completion email didn't send — ${esc(t.completionEmail.reason||'')}</span>`:'✓ done'}</div>`
+        :`<div class="btn-row" style="margin-top:7px"><button class="btn sm ghost" data-done="${esc(t.id)}">Mark done</button></div>`}
       </div>`).join('') : '<p class="note">No revision requests yet.</p>'}
   `;
   $$('#revPanel .dtabs button').forEach(b=>b.onclick=()=>{ el.hidden=true; el.innerHTML=''; revKey=null; revData=null; });
