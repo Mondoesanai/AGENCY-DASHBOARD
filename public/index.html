@@ -296,11 +296,11 @@
   <div class="attention" id="attention" hidden></div>
   <div class="overview" id="overview"></div>
 
-  <div id="revWidget"></div>
-
   <div class="section-h"><h2>Sites</h2><span id="siteCount"></span></div>
   <div class="sites" id="sites"><div class="loading">Loading portfolio…</div></div>
   <p class="note" id="footNote"></p>
+
+  <div id="revWidget"></div>
   </div><!-- /mainView -->
   <div id="seoOverview" hidden></div>
   <div id="finPanel" hidden></div>
@@ -793,19 +793,29 @@ function nextRevisionCheckMs(){
   return Math.max(0,Math.ceil(n/600000)*600000-n); // next 10-min boundary — matches the GitHub Actions cron
 }
 function isClosedTicket(t){ return t.status==='done'||t.status==='cancelled'; }
-function ticketCardHTML(t){
-  const overdue=t.status==='scheduled'&&t.targetAt&&t.targetAt<Date.now();
+// Honest, queue-aware ETA: the next check is nextRevisionCheckMs() away, but
+// only ONE pending revision gets worked per check, oldest first — so a
+// ticket sitting behind others has to wait through that many more checks.
+// If the queue is deep enough that this would blow past the 3-business-day
+// promise, say so instead of showing a date further out than the guarantee.
+function projectedCompletionLine(t, allTickets){
+  const pending=(allTickets||[]).filter(x=>x.status==='scheduled').sort((a,b)=>a.receivedAt-b.receivedAt);
+  const pos=Math.max(0,pending.findIndex(x=>x.id===t.id));
+  const checkIntervalMs=10*60000;
+  const eta=Date.now()+nextRevisionCheckMs()+pos*checkIntervalMs;
+  if(t.dueBy && eta>t.dueBy){
+    return `Projected completion: queue's deep right now (${pos} ahead of this one) — falls back to the 3-business-day guarantee below`;
+  }
+  return `Projected completion: ${new Date(eta).toLocaleString()}${pos>0?` — ${pos} request${pos===1?'':'s'} ahead of this one`:' — next in line'}`;
+}
+function ticketCardHTML(t, allTickets){
   let completionLine='';
   if(t.status==='done'){
     completionLine=`Completed: ${t.doneAt?new Date(t.doneAt).toLocaleString():''}`;
   } else if(t.status==='cancelled'){
     completionLine=`Cancelled: ${t.doneAt?new Date(t.doneAt).toLocaleString():''}`;
   } else {
-    if(t.targetAt){
-      completionLine=overdue
-        ? `Projected completion: was expected ${new Date(t.targetAt).toLocaleString()} — still working through the queue, catches up automatically`
-        : `Projected completion: ${new Date(t.targetAt).toLocaleString()}`;
-    }
+    if(t.status==='scheduled') completionLine=projectedCompletionLine(t, allTickets);
     if(t.dueBy){
       completionLine+=`${completionLine?'<br>':''}Deadline to complete by: ${new Date(t.dueBy).toLocaleDateString()}`;
     }
@@ -848,7 +858,7 @@ function revisionsHTML(st){
         <select id="revHistSite" style="flex:1"><option value="">All customers</option>${sitesInHistory.map(([slug,name])=>`<option value="${esc(slug)}" ${revHistorySlug===slug?'selected':''}>${esc(name)}</option>`).join('')}</select>
         <input id="revHistSearch" style="flex:1" placeholder="search…" value="${esc(revHistoryQ)}" />
       </div>
-      ${rows.length?rows.map(ticketCardHTML).join(''):'<p class="note">No past revisions match.</p>'}
+      ${rows.length?rows.map(t=>ticketCardHTML(t,tickets)).join(''):'<p class="note">No past revisions match.</p>'}
     `;
   }
   const open=tickets.filter(t=>!isClosedTicket(t));
@@ -857,15 +867,14 @@ function revisionsHTML(st){
     <p class="note" style="margin:0 0 4px">${st.configured?`Watching Info@ · last checked ${st.lastCheck?agoStr(st.lastCheck*1000):'never yet'} · checks automatically, next check in <b class="rev-next-ct">T‑${fmtCountdown(nextRevisionCheckMs())}</b>`:'<span style="color:var(--warn)">Google not connected — add GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN in Vercel.</span>'}</p>
     ${checkStale?`<p class="note" style="margin:0 0 10px;color:var(--warn)">Running later than usual — tap "Check inbox now" below and it'll catch up instantly.</p>`:''}
     <div class="btn-row" style="margin-bottom:12px"><button class="btn sm" id="revCheck" type="button" ${st.configured?'':'disabled'}>↻ Check inbox now</button></div>
-    ${open.length?open.map(ticketCardHTML).join('') : '<p class="note">Nothing waiting — you\'re all caught up.</p>'}
+    ${open.length?open.map(t=>ticketCardHTML(t,tickets)).join('') : '<p class="note">Nothing waiting — you\'re all caught up.</p>'}
     ${doneCount?`<div class="btn-row" style="margin-top:6px"><button class="link" id="revHistory">View past revisions (${doneCount}) ›</button></div>`:''}
   `;
 }
 
 /* ---------- Revisions widget — always on, no password, collapsible (not a stackable panel) ---------- */
 let revData=null;
-let revWidgetOpen=true;
-try{ revWidgetOpen = localStorage.getItem('iw_rev_collapsed')!=='1'; }catch{}
+let revWidgetOpen=false; // always starts collapsed on a fresh page load — press Open to expand
 async function loadRevWidget(){
   const j=await fetch(`/api/admin?do=revisions-status`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
   if(j&&j.ok) revData=j.status;
@@ -881,7 +890,7 @@ function renderRevWidget(){
       <span class="pillmini ${pendingCount?'bad':'good'}">${pendingCount?`${pendingCount} pending`:'all caught up'}</span>
       <button class="btn sm ghost" id="revOpenBtn" style="margin-left:auto">Open</button>
     </div>`;
-    $('#revOpenBtn').onclick=()=>{ revWidgetOpen=true; try{localStorage.setItem('iw_rev_collapsed','0');}catch{} renderRevWidget(); };
+    $('#revOpenBtn').onclick=()=>{ revWidgetOpen=true; renderRevWidget(); };
     return;
   }
   el.innerHTML=`<div class="fin-card" data-panel="revisions">
@@ -891,11 +900,11 @@ function renderRevWidget(){
     </div>
     ${revisionsHTML(revData)}
   </div>`;
-  $('#revCloseBtn').onclick=()=>{ revWidgetOpen=false; try{localStorage.setItem('iw_rev_collapsed','1');}catch{} renderRevWidget(); };
+  $('#revCloseBtn').onclick=()=>{ revWidgetOpen=false; renderRevWidget(); };
   wireRevWidget();
 }
 function revealRevWidget(){
-  if(!revWidgetOpen){ revWidgetOpen=true; try{localStorage.setItem('iw_rev_collapsed','0');}catch{} renderRevWidget(); }
+  if(!revWidgetOpen){ revWidgetOpen=true; renderRevWidget(); }
   $('#revWidget')?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function wireRevWidget(){
@@ -952,7 +961,7 @@ function startRevPoll(){
     const k=key();
     if(k) await fetch(`/api/admin?do=revisions-check&secret=${encodeURIComponent(k)}`,{method:'POST'}).catch(()=>{});
     await loadRevWidget();
-  },60000);
+  },180000); // 3 min — frequent enough to feel live, not so frequent it stacks up against the server-side lock
 }
 
 /* ---------- Receipts / tax (now a tab inside #finPanel) ---------- */
@@ -2108,9 +2117,11 @@ setInterval(()=>{
 
 renderUnlock();
 fillLeadSourceList();
-load();
-loadRevWidget();
-startRevPoll();
+(async()=>{
+  await load(); // let the main dashboard paint first — revisions renders after, not ahead of everything else
+  await loadRevWidget();
+  startRevPoll();
+})();
 </script>
 </body>
 </html>
