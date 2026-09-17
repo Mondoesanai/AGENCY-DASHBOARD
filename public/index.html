@@ -799,10 +799,9 @@ function nextRevisionCheckMs(){
 function revisionsHTML(st){
   if(!st) return '<div class="note">Loading…</div>';
   const tickets=st.tickets||[];
-  const pendingCount=tickets.filter(t=>t.status==='scheduled').length;
   const checkStale=st.configured&&st.lastCheck&&(Date.now()/1000-st.lastCheck)>1200; // >20 min — the ~10 min auto-check is likely running late
   return `
-    <p class="note" style="margin:0 0 4px">${st.configured?`Watching Info@ · last checked ${st.lastCheck?agoStr(st.lastCheck*1000)+' ago':'never yet'} · checks automatically every ~10 min`:'<span style="color:var(--warn)">Google not connected — add GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN in Vercel.</span>'}</p>
+    <p class="note" style="margin:0 0 4px">${st.configured?`Watching Info@ · last checked ${st.lastCheck?agoStr(st.lastCheck*1000):'never yet'} · checks automatically, next check in <b class="rev-next-ct">T‑${fmtCountdown(nextRevisionCheckMs())}</b>`:'<span style="color:var(--warn)">Google not connected — add GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN in Vercel.</span>'}</p>
     ${checkStale?`<p class="note" style="margin:0 0 10px;color:var(--warn)">Running later than usual — tap "Check inbox now" below and it'll catch up instantly.</p>`:''}
     <div class="btn-row" style="margin-bottom:12px"><button class="btn sm" id="revCheck" type="button" ${st.configured?'':'disabled'}>↻ Check inbox now</button></div>
     ${tickets.length?tickets.map(t=>`
@@ -810,17 +809,21 @@ function revisionsHTML(st){
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
           <strong>${esc(t.siteName)}</strong>
           <span class="pillmini ${t.status==='done'?'good':t.status==='needs attention'?'bad':''}">${esc(t.status)}</span>
-          <span style="margin-left:auto;font-size:11px;color:var(--faint)">${new Date(t.receivedAt).toLocaleString()}</span>
         </div>
         <div class="fd" style="margin-top:5px">${esc(t.summary||t.subject)}</div>
-        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.repliedAt?' · replied':' · <span style="color:var(--warn)">reply failed — check it yourself</span>'}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug?' · <span style="color:var(--warn)">unmatched — pick the site below (one time — it’ll remember this sender after)</span>':''}${t.corrected?' · <span class="pillmini good">corrected via reply</span>':''}${t.dueBy?` · promised by ${new Date(t.dueBy).toLocaleDateString()}`:''}</div>
-        ${t.status==='scheduled'?`<div class="note" style="margin-top:4px">Next automatic check: <b class="rev-next-ct">T‑${fmtCountdown(nextRevisionCheckMs())}</b>${pendingCount>1?` · ${pendingCount} requests waiting — the agent works one per check, so this may take a couple of cycles`:' · next in line'}</div>`:''}
-        ${t.repo||t.commitUrl?`<div class="note" style="margin-top:3px">${t.shipSummary?`Shipped: ${esc(t.shipSummary)}<br>`:''}${t.repo?`Repo: ${esc(t.repo)}`:''}${t.commitUrl?` · <a href="${esc(t.commitUrl)}" target="_blank" rel="noopener">view commit ↗</a>`:''}</div>`:''}
+        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug?' · <span style="color:var(--warn)">unmatched — pick the site below (one time — it’ll remember this sender after)</span>':''}${t.corrected?' · <span class="pillmini good">corrected via reply</span>':''}</div>
+        <div class="note" style="margin-top:4px">
+          Asked: ${new Date(t.receivedAt).toLocaleString()}<br>
+          Responded: ${t.repliedAt?new Date(t.repliedAt).toLocaleString():'<span style="color:var(--warn)">reply failed — check it yourself</span>'}<br>
+          ${t.status==='done'?`Completed: ${t.doneAt?new Date(t.doneAt).toLocaleString():''}`:t.dueBy?`Projected completion: by ${new Date(t.dueBy).toLocaleDateString()}`:''}
+        </div>
+        ${t.repo||t.commitUrl||t.siteUrl?`<div class="note" style="margin-top:3px">${t.shipSummary?`Shipped: ${esc(t.shipSummary)}<br>`:''}${t.repo?`Repo: ${esc(t.repo)}`:''}${t.commitUrl?` · <a href="${esc(t.commitUrl)}" target="_blank" rel="noopener">view commit ↗</a>`:''}${t.status==='done'&&t.siteUrl?` · <a href="${esc(t.siteUrl)}" target="_blank" rel="noopener">view live site ↗</a>`:''}</div>`:''}
         ${!t.slug&&t.status!=='done'?`<div class="btn-row" style="margin-top:7px">
             <select data-assign-pick="${esc(t.id)}" style="flex:1"><option value="">Which site is this?</option>${(STATE&&STATE.sites||[]).map(s=>`<option value="${esc(s.slug)}">${esc(s.name)}</option>`).join('')}</select>
             <button class="btn sm" data-assign="${esc(t.id)}">Assign</button>
+            <button class="btn sm ghost" data-done="${esc(t.id)}" title="Not a real request, or a duplicate — closes it without emailing anyone">Dismiss</button>
           </div>` : ''}
-        ${t.status==='done'?`<div class="note" style="margin-top:3px">${t.completionEmail?.sent?`✓ client notified · ${esc(t.doneAt?new Date(t.doneAt).toLocaleDateString():'')}`:t.completionEmail?`<span style="color:var(--warn)">completion email didn't send — ${esc(t.completionEmail.reason||'')}</span>`:'✓ done'}</div>`
+        ${t.status==='done'?`<div class="note" style="margin-top:3px">${t.completionEmail?.sent?`✓ client notified`:t.completionEmail?`<span style="color:var(--warn)">completion email didn't send — ${esc(t.completionEmail.reason||'')}</span>`:'✓ done'}</div>`
         :t.slug?`<div class="btn-row" style="margin-top:7px"><button class="btn sm ghost" data-done="${esc(t.id)}">Mark done</button></div>`:''}
       </div>`).join('') : '<p class="note">No revision requests yet.</p>'}
   `;
