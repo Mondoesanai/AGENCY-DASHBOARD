@@ -221,6 +221,27 @@ createServer(async (req, res) => {
       cost: 0.02,
     }));
   }
+  if (path === '/api/revisions-status') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      ok: true,
+      status: {
+        configured: false,
+        lastCheck: Date.now() / 1000 - 3600,
+        tickets: [
+          { id: '1', slug: 'relax-tax', siteName: 'Relax Tax', from: 'Angelete May <angelete@example.com>', subject: 'Website update', summary: 'Remove the "cash & check only" line from the homepage', receivedAt: Date.now() - 3 * 3600000, repliedAt: Date.now() - 3 * 3600000 + 120000, calendarLink: 'https://calendar.google.com/', status: 'scheduled' },
+        ],
+      },
+    }));
+  }
+  if (path === '/api/revisions-check') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: false, error: 'Google not connected (local preview stub)' }));
+  }
+  if (path === '/api/revisions-done') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true }));
+  }
   if (path === '/api/agent-status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({

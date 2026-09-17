@@ -1,0 +1,20 @@
+name: Check revisions inbox
+
+# Vercel's Hobby plan only runs scheduled cron jobs once a day, which is too
+# slow for "reply within a few minutes." GitHub Actions' scheduler has no such
+# limit, so it's the trigger for this one — it just pings the dashboard, which
+# does all the real work (Gmail + Calendar + Claude + the ticket).
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch: {} # lets you run it manually from the Actions tab too
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping the revisions checker
+        run: |
+          curl -sS -X POST "https://agency-dashboard-omega-red.vercel.app/api/admin?do=revisions-check&secret=${{ secrets.CRON_SECRET }}" \
+            -o response.json -w "\nHTTP %{http_code}\n"
+          cat response.json

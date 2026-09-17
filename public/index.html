@@ -303,6 +303,7 @@
   <div id="seoOverview" hidden></div>
   <div id="finPanel" hidden></div>
   <div id="rcptPanel" hidden></div>
+  <div id="revPanel" hidden></div>
 </div>
 
 <div id="coachPanel" hidden></div>
@@ -570,10 +571,11 @@ function render(data){
   $('#siteCount').textContent=`${data.sites.length} tracked`;
   const upd=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
   $('#footNote').innerHTML=(p.auditQuota?`${upd} <strong>SEO scans rate-limited</strong> — set a free <code>PAGESPEED_API_KEY</code> in Vercel.`:upd)+
-    ` <button type="button" class="link" id="finBtn">🔒 Lifetime sales</button> · <button type="button" class="link" id="coBtn">🔒 Company stats</button> · <button type="button" class="link" id="rcptBtn">🔒 Receipts</button>`;
+    ` <button type="button" class="link" id="finBtn">🔒 Lifetime sales</button> · <button type="button" class="link" id="coBtn">🔒 Company stats</button> · <button type="button" class="link" id="rcptBtn">🔒 Receipts</button> · <button type="button" class="link" id="revBtn">📨 Revisions</button>`;
   $('#finBtn').addEventListener('click',()=>openFinances('money'));
   $('#coBtn').addEventListener('click',()=>openFinances('company'));
   $('#rcptBtn').addEventListener('click',openReceipts);
+  $('#revBtn').addEventListener('click',openRevisions);
 
   $('#sites').innerHTML=data.sites.map(siteCard).join('');
   $('#sites').classList.toggle('picking',selectMode);
@@ -712,6 +714,58 @@ function renderSeoOverview(){
   });
 }
 $('#brandHome').addEventListener('click',()=>{ if(!$('#seoOverview').hidden) closeSeoOverview(); });
+
+/* ---------- Revisions — inbox -> auto-reply -> calendar -> ticket ---------- */
+let revKey=null, revData=null;
+async function openRevisions(){
+  const el=$('#revPanel');
+  if(!el.hidden){ el.hidden=true; el.innerHTML=''; revKey=null; revData=null; return; }
+  const k=needKey(); if(!k) return; revKey=k;
+  el.hidden=false; el.innerHTML='<div class="note">Loading…</div>';
+  $('#finPanel').hidden=true; $('#rcptPanel').hidden=true;
+  await loadRevisions();
+}
+async function loadRevisions(){
+  const j=await fetch(`/api/admin?do=revisions-status&secret=${encodeURIComponent(revKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+  if(!j.ok){ $('#revPanel').innerHTML='<div class="note" style="color:var(--neg)">Could not load.</div>'; return; }
+  revData=j.status; renderRevisions();
+}
+function renderRevisions(){
+  const el=$('#revPanel'), st=revData; if(!st) return;
+  const tickets=st.tickets||[];
+  el.innerHTML=`
+    <div class="dtabs" style="margin:0 0 12px;top:auto;position:static;border:0;padding:0">
+      <span style="font:600 14px 'Fraunces',serif;padding:7px 4px">Revisions</span>
+      <button data-t="_close" class="link" style="margin-left:auto;align-self:center">✕ close</button>
+    </div>
+    <p class="note" style="margin:0 0 10px">${st.configured?`Watching Info@ · last checked ${st.lastCheck?agoStr(st.lastCheck*1000)+' ago':'never yet'}`:'<span style="color:var(--warn)">Google not connected — add GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN in Vercel.</span>'}</p>
+    <div class="btn-row" style="margin-bottom:12px"><button class="btn sm" id="revCheck" type="button" ${st.configured?'':'disabled'}>↻ Check inbox now</button></div>
+    ${tickets.length?tickets.map(t=>`
+      <div class="block" style="margin-bottom:9px">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+          <strong>${esc(t.siteName)}</strong>
+          <span class="pillmini ${t.status==='done'?'good':t.status==='needs attention'?'bad':''}">${esc(t.status)}</span>
+          <span style="margin-left:auto;font-size:11px;color:var(--faint)">${new Date(t.receivedAt).toLocaleString()}</span>
+        </div>
+        <div class="fd" style="margin-top:5px">${esc(t.summary||t.subject)}</div>
+        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.repliedAt?' · replied':' · <span style="color:var(--warn)">reply failed — check it yourself</span>'}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}</div>
+        ${t.status!=='done'?`<div class="btn-row" style="margin-top:7px"><button class="btn sm ghost" data-done="${esc(t.id)}">Mark done</button></div>`:''}
+      </div>`).join('') : '<p class="note">No revision requests yet.</p>'}
+  `;
+  $$('#revPanel .dtabs button').forEach(b=>b.onclick=()=>{ el.hidden=true; el.innerHTML=''; revKey=null; revData=null; });
+  $('#revCheck')?.addEventListener('click',async(e)=>{
+    e.target.disabled=true; e.target.textContent='Checking…';
+    const j=await fetch(`/api/admin?do=revisions-check&secret=${encodeURIComponent(revKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false,error:'network'}));
+    e.target.disabled=false; e.target.textContent='↻ Check inbox now';
+    if(j.ok) toast(`Checked ${j.checked} email${j.checked===1?'':'s'} — ${j.tickets} new revision${j.tickets===1?'':'s'}`);
+    else toast(j.error||'Could not check inbox','err');
+    await loadRevisions();
+  });
+  $$('#revPanel [data-done]').forEach(b=>b.onclick=async()=>{
+    const j=await fetch(`/api/admin?do=revisions-done&id=${encodeURIComponent(b.dataset.done)}&secret=${encodeURIComponent(revKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    if(j.ok) await loadRevisions(); else toast('Could not update','err');
+  });
+}
 
 async function openReceipts(){
   const el=$('#rcptPanel');
