@@ -24,6 +24,11 @@ async function siteBySlug(slug) {
 }
 
 export default async function handler(req, res) {
+  // ticket status is client-request/scheduling info, not financial — same
+  // trust level as the public /api/sites feed, so it's never password-gated.
+  if (req.query.do === 'revisions-status') {
+    return res.status(200).json({ ok: true, status: await revisionsStatus() });
+  }
   if (!authed(req)) return res.status(401).json({ ok: false, error: 'bad password' });
   switch (req.query.do) {
     case 'coach':
@@ -59,8 +64,6 @@ export default async function handler(req, res) {
       }
       return res.status(200).json({ ok: true, state, draft: draftUpsell(site, state) });
     }
-    case 'revisions-status':
-      return res.status(200).json({ ok: true, status: await revisionsStatus() });
     case 'revisions-check': {
       const out = await checkRevisionInbox();
       return res.status(200).json(out);

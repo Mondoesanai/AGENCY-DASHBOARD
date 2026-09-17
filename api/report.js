@@ -57,7 +57,7 @@ async function withAutoShipped(slug, changelog) {
   const cutoff = Date.now() - 35 * 864e5;
   const auto = done
     .filter((x) => x.addressedAt && x.addressedAt >= cutoff)
-    .map((x) => ({ date: new Date(x.addressedAt).toISOString().slice(0, 10), text: x.title }));
+    .map((x) => ({ date: new Date(x.addressedAt).toISOString().slice(0, 10), text: x.title, source: x.source }));
   return [...changelog, ...auto];
 }
 

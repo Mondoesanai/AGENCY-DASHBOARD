@@ -285,7 +285,7 @@
     <div class="top-actions">
       <span class="pill" id="statusPill"><span class="dot"></span><span id="statusTxt">loading</span></span>
       <span class="pill" id="monthPill">—</span>
-      <button class="btn ghost" id="refreshBtn" title="Reloads instantly, then refreshes every site's report with today's real numbers">Refresh</button>
+      <button class="btn ghost" id="refreshBtn" title="Reloads instantly, then refreshes every site's report and checks the revisions inbox right now">Refresh</button>
       <button class="btn" id="addBtn">+ Add site</button>
       <button class="btn ghost" id="selectBtn">Select</button>
       <button class="btn ghost" id="howtoBtn" title="How to use this dashboard">❔ Guide</button>
@@ -541,7 +541,7 @@ function render(data){
     ['conversions','Conversions · 30d',fmt(p.conversions30),'tap for every site'],
     ['seo','Avg SEO-ready',p.avgSeo??'—','tap for every site'],
     ['revisions','Pending revisions',fmt(p.pendingRevisions||0),'tap to review'],
-    ['__nextseo__','Next SEO update','','tap to see what each site is doing'],
+    ['__nextseo__','Next agent push','','tap to see what each site is doing'],
     ['todos','Open suggestions',p.openFindings,'tap for every site'],
   ].map(([kind,k,v,d])=>kind==='__nextseo__'
     ? `<div class="stat clickable" id="nextSeoTile"><div class="k">${k}</div><div class="v ticking" id="nextSeoVal">T‑${fmtCountdown(nextCronMs())}</div><div class="d">${d}</div></div>`
@@ -626,7 +626,7 @@ let openPanels=[]; // e.g. ['revisions','money'] — 'revisions' opened first, s
 const FIN_LABEL={money:'Lifetime sales',company:'Company stats',roster:'Client roster',receipts:'Receipts',revisions:'Revisions'};
 async function openFinances(tab){
   if(openPanels.includes(tab)){ closeFinPanel(tab); return; }
-  if(!finKey){
+  if(tab!=='revisions'&&!finKey){ // revisions is request/ticket info, not financial — never password-gated
     const k=prompt('What’s your password?');
     if(!k) return;
     finKey=k;
@@ -635,6 +635,7 @@ async function openFinances(tab){
   openPanels.push(tab);
   renderFinPanel();
   await loadFinTab(tab);
+  $(`.fin-card[data-panel="${tab}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function closeFinPanel(tab){
   openPanels=openPanels.filter(t=>t!==tab);
@@ -654,8 +655,8 @@ async function loadFinTab(tab){
     }
   } else if(tab==='revisions'){
     if(!revData){
-      const j=await fetch(`/api/admin?do=revisions-status&secret=${encodeURIComponent(finKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
-      if(!j.ok){ finKey=null; openPanels=[]; $('#finPanel').hidden=true; $('#finPanel').innerHTML=''; toast(j.error==='bad password'?'Wrong password.':'Could not load.','err'); return; }
+      const j=await fetch(`/api/admin?do=revisions-status`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+      if(!j.ok){ openPanels=openPanels.filter(t=>t!=='revisions'); toast('Could not load revisions.','err'); renderFinPanel(); return; }
       revData=j.status;
     }
   } else if(!finData){
@@ -736,8 +737,8 @@ function renderSeoOverview(){
   }).join('');
   $('#seoOverview').innerHTML=`
     <div class="seo-ov-head">
-      <h2>SEO automation — every site</h2>
-      <p class="note" style="margin:2px 0 0">Runs once a day automatically. Next pass: <span class="seo-ov-countdown">T‑${fmtCountdown(nextCronMs())}</span> · tap any site for the full picture.</p>
+      <h2>Agent automation — every site</h2>
+      <p class="note" style="margin:2px 0 0">General SEO work rotates through sites once a day. Next pass: <span class="seo-ov-countdown">T‑${fmtCountdown(nextCronMs())}</span> · client-requested revisions run on their own faster ~10-min check and never wait on this — tap any site for the full picture.</p>
     </div>
     <div class="seo-ov-list">${rows||'<div class="note">No sites yet.</div>'}</div>
     <p class="note" style="margin-top:14px">Click the logo up top to go back.</p>
@@ -790,12 +791,19 @@ function renderDrill(kind){
 }
 $('#brandHome').addEventListener('click',()=>{ if(!$('#seoOverview').hidden) closeSeoOverview(); });
 
-/* ---------- Revisions — inbox -> auto-reply -> calendar -> ticket (now a tab inside #finPanel) ---------- */
+/* ---------- Revisions — inbox -> auto-reply -> calendar -> ticket (now a tab inside #finPanel, no password) ---------- */
+function nextRevisionCheckMs(){
+  const n=Date.now();
+  return Math.max(0,Math.ceil(n/600000)*600000-n); // next 10-min boundary — matches the GitHub Actions cron
+}
 function revisionsHTML(st){
   if(!st) return '<div class="note">Loading…</div>';
   const tickets=st.tickets||[];
+  const pendingCount=tickets.filter(t=>t.status==='scheduled').length;
+  const checkStale=st.configured&&st.lastCheck&&(Date.now()/1000-st.lastCheck)>1200; // >20 min — the ~10 min auto-check is likely running late
   return `
-    <p class="note" style="margin:0 0 10px">${st.configured?`Watching Info@ · last checked ${st.lastCheck?agoStr(st.lastCheck*1000)+' ago':'never yet'}`:'<span style="color:var(--warn)">Google not connected — add GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN in Vercel.</span>'}</p>
+    <p class="note" style="margin:0 0 4px">${st.configured?`Watching Info@ · last checked ${st.lastCheck?agoStr(st.lastCheck*1000)+' ago':'never yet'} · checks automatically every ~10 min`:'<span style="color:var(--warn)">Google not connected — add GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN in Vercel.</span>'}</p>
+    ${checkStale?`<p class="note" style="margin:0 0 10px;color:var(--warn)">Running later than usual — tap "Check inbox now" below and it'll catch up instantly.</p>`:''}
     <div class="btn-row" style="margin-bottom:12px"><button class="btn sm" id="revCheck" type="button" ${st.configured?'':'disabled'}>↻ Check inbox now</button></div>
     ${tickets.length?tickets.map(t=>`
       <div class="block" style="margin-bottom:9px">
@@ -805,8 +813,9 @@ function revisionsHTML(st){
           <span style="margin-left:auto;font-size:11px;color:var(--faint)">${new Date(t.receivedAt).toLocaleString()}</span>
         </div>
         <div class="fd" style="margin-top:5px">${esc(t.summary||t.subject)}</div>
-        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.repliedAt?' · replied':' · <span style="color:var(--warn)">reply failed — check it yourself</span>'}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug?' · <span style="color:var(--warn)">unmatched — pick the site below (one time — it’ll remember this sender after)</span>':t.status==='scheduled'?' · queued for the agent':''}${t.corrected?' · <span class="pillmini good">corrected via reply</span>':''}${t.dueBy?` · due by ${new Date(t.dueBy).toLocaleDateString()}`:''}</div>
-        ${t.repo||t.commitUrl?`<div class="note" style="margin-top:3px">${t.repo?`Repo: ${esc(t.repo)}`:''}${t.commitUrl?` · <a href="${esc(t.commitUrl)}" target="_blank" rel="noopener">view commit ↗</a>`:''}</div>`:''}
+        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.repliedAt?' · replied':' · <span style="color:var(--warn)">reply failed — check it yourself</span>'}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug?' · <span style="color:var(--warn)">unmatched — pick the site below (one time — it’ll remember this sender after)</span>':''}${t.corrected?' · <span class="pillmini good">corrected via reply</span>':''}${t.dueBy?` · promised by ${new Date(t.dueBy).toLocaleDateString()}`:''}</div>
+        ${t.status==='scheduled'?`<div class="note" style="margin-top:4px">Next automatic check: <b class="rev-next-ct">T‑${fmtCountdown(nextRevisionCheckMs())}</b>${pendingCount>1?` · ${pendingCount} requests waiting — the agent works one per check, so this may take a couple of cycles`:' · next in line'}</div>`:''}
+        ${t.repo||t.commitUrl?`<div class="note" style="margin-top:3px">${t.shipSummary?`Shipped: ${esc(t.shipSummary)}<br>`:''}${t.repo?`Repo: ${esc(t.repo)}`:''}${t.commitUrl?` · <a href="${esc(t.commitUrl)}" target="_blank" rel="noopener">view commit ↗</a>`:''}</div>`:''}
         ${!t.slug&&t.status!=='done'?`<div class="btn-row" style="margin-top:7px">
             <select data-assign-pick="${esc(t.id)}" style="flex:1"><option value="">Which site is this?</option>${(STATE&&STATE.sites||[]).map(s=>`<option value="${esc(s.slug)}">${esc(s.name)}</option>`).join('')}</select>
             <button class="btn sm" data-assign="${esc(t.id)}">Assign</button>
@@ -818,22 +827,25 @@ function revisionsHTML(st){
 }
 function wireRevisionsTab(){
   $('#revCheck')?.addEventListener('click',async(e)=>{
+    const k=needKey(); if(!k) return;
     e.target.disabled=true; e.target.textContent='Checking…';
-    const j=await fetch(`/api/admin?do=revisions-check&secret=${encodeURIComponent(finKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false,error:'network'}));
+    const j=await fetch(`/api/admin?do=revisions-check&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false,error:'network'}));
     e.target.disabled=false; e.target.textContent='↻ Check inbox now';
     if(j.ok) toast(`Checked ${j.checked} email${j.checked===1?'':'s'} — ${j.tickets} new revision${j.tickets===1?'':'s'}`);
     else toast(j.error||'Could not check inbox','err');
     revData=null; await loadFinTab('revisions');
   });
   $$('#finPanel [data-done]').forEach(b=>b.onclick=async()=>{
-    const j=await fetch(`/api/admin?do=revisions-done&id=${encodeURIComponent(b.dataset.done)}&secret=${encodeURIComponent(finKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    const k=needKey(); if(!k) return;
+    const j=await fetch(`/api/admin?do=revisions-done&id=${encodeURIComponent(b.dataset.done)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
     if(j.ok){ revData=null; await loadFinTab('revisions'); } else toast('Could not update','err');
   });
   $$('#finPanel [data-assign]').forEach(b=>b.onclick=async()=>{
     const sel=document.querySelector(`[data-assign-pick="${b.dataset.assign}"]`);
     const slug=sel&&sel.value; if(!slug){ toast('Pick a site first','err'); return; }
+    const k=needKey(); if(!k) return;
     b.disabled=true;
-    const j=await fetch(`/api/admin?do=revisions-assign&id=${encodeURIComponent(b.dataset.assign)}&slug=${encodeURIComponent(slug)}&secret=${encodeURIComponent(finKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    const j=await fetch(`/api/admin?do=revisions-assign&id=${encodeURIComponent(b.dataset.assign)}&slug=${encodeURIComponent(slug)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
     if(j.ok){ toast('Assigned — queued for the agent, and it’ll remember this sender next time'); revData=null; await loadFinTab('revisions'); }
     else { b.disabled=false; toast(j.error||'Could not assign','err'); }
   });
@@ -1814,12 +1826,20 @@ $('#refreshBtn').addEventListener('click',async()=>{
   await load();
   const k=needKey(); if(!k) return; // fast reload already happened either way
   b.disabled=true; b.textContent='Refreshing…';
-  const j=await fetch(`/api/report?secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+  // also checks the revisions inbox right now — a manual backstop for GitHub
+  // Actions' ~10-min cron, which can run late (or, for a brand-new workflow,
+  // take a while to start firing at all).
+  const [j,rev]=await Promise.all([
+    fetch(`/api/report?secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false})),
+    fetch(`/api/admin?do=revisions-check&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false})),
+  ]);
   b.disabled=false; b.textContent='Refresh';
   if(j.ok){
     const skipped=(j.reports||[]).filter(r=>r.skipped).length;
-    toast(skipped?`Refreshed ${j.generated-skipped} of ${j.generated} sites — the rest catch up automatically`:`Refreshed all ${j.generated} sites with today's numbers`);
+    const revNote=rev&&rev.ok&&rev.tickets?` — ${rev.tickets} new revision${rev.tickets===1?'':'s'} found`:'';
+    toast((skipped?`Refreshed ${j.generated-skipped} of ${j.generated} sites — the rest catch up automatically`:`Refreshed all ${j.generated} sites with today's numbers`)+revNote);
     await load();
+    if(openPanels.includes('revisions')){ revData=null; await loadFinTab('revisions'); }
   } else toast(j.error||'Could not refresh reports','err');
 });
 
@@ -1985,6 +2005,8 @@ setInterval(()=>{
   const val='T‑'+fmtCountdown(nextCronMs());
   const t=$('#nextSeoVal'); if(t) t.textContent=val;
   $$('.seo-ov-countdown').forEach(el=>el.textContent=val);
+  const revVal='T‑'+fmtCountdown(nextRevisionCheckMs());
+  $$('.rev-next-ct').forEach(el=>el.textContent=revVal);
 },1000);
 
 renderUnlock();
