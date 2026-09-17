@@ -801,8 +801,11 @@ function isClosedTicket(t){ return t.status==='done'||t.status==='cancelled'; }
 function projectedCompletionLine(t, allTickets){
   const pending=(allTickets||[]).filter(x=>x.status==='scheduled').sort((a,b)=>a.receivedAt-b.receivedAt);
   const pos=Math.max(0,pending.findIndex(x=>x.id===t.id));
-  const checkIntervalMs=10*60000;
-  const eta=Date.now()+nextRevisionCheckMs()+pos*checkIntervalMs;
+  // targetAt is computed server-side (lib/revisions.js) and kept in sync with
+  // the actual calendar hold every check — using it here means the dashboard
+  // and the calendar can never show two different times. Fall back to a
+  // client-side estimate only for a ticket that predates this field.
+  const eta=t.targetAt||(Date.now()+nextRevisionCheckMs()+pos*10*60000);
   if(t.dueBy && eta>t.dueBy){
     return `Projected completion: queue's deep right now (${pos} ahead of this one) — falls back to the 3-business-day guarantee below`;
   }
