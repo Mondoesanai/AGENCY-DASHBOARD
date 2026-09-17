@@ -233,6 +233,7 @@ createServer(async (req, res) => {
           { id: '2', threadId: 't2', slug: null, siteName: 'Unmatched site', from: 'Random Person <someone@gmail.com>', subject: 'quick ask', summary: 'Update the about page photo', receivedAt: Date.now() - 1800000, repliedAt: Date.now() - 1770000, calendarLink: 'https://calendar.google.com/', todoId: null, status: 'needs attention' },
           { id: '3', threadId: 't3', slug: 'apostello-detailing', siteName: 'Apostello Detailing', from: 'Shiloh <shiloh@example.com>', subject: 'Change join button color', summary: 'Change the "Join the community" button to green', receivedAt: Date.now() - 2 * 86400000, repliedAt: Date.now() - 2 * 86400000 + 90000, calendarLink: 'https://calendar.google.com/', todoId: null, status: 'done', doneAt: Date.now() - 86400000, completionEmail: { sent: true }, repo: 'Mondoesanai/apostellodetailing', commitUrl: 'https://github.com/Mondoesanai/apostellodetailing/pull/12', branch: 'seo-agent-1234', shipSummary: 'Changed CTA button color to brand green', siteUrl: 'https://apostellodetailing.vercel.app' },
           { id: '4', threadId: 't4', slug: 'relax-tax', siteName: 'Relax Tax', from: 'Angelete May <angelete@example.com>', subject: 'Footer phone number', summary: 'Update the footer phone number to the new line', receivedAt: Date.now() - 6 * 86400000, repliedAt: Date.now() - 6 * 86400000 + 90000, calendarLink: 'https://calendar.google.com/', todoId: null, status: 'done', doneAt: Date.now() - 5 * 86400000, completionEmail: { sent: true }, repo: 'Mondoesanai/Relaxtax', commitUrl: 'https://github.com/Mondoesanai/Relaxtax/pull/8', shipSummary: 'Updated footer phone number', siteUrl: 'https://relaxtax.vercel.app' },
+          { id: '5', threadId: 't5', slug: 'one-more-thing', siteName: 'One More Thing Services', from: 'Angie <angie@example.com>', subject: 'Update hours', summary: 'Change business hours on the contact page to close at 6pm', receivedAt: Date.now() - 40 * 60000, repliedAt: Date.now() - 39 * 60000, calendarLink: 'https://calendar.google.com/', todoId: null, status: 'needs attention', repo: 'Mondoesanai/onemorething', commitUrl: 'https://github.com/Mondoesanai/onemorething/pull/5', shipSummary: 'Updated contact page copy', siteUrl: 'https://one-more-thing-gold.vercel.app', verify: { verified: false, note: 'Contact page still shows 8pm closing time', checkedAt: Date.now() - 60000 } },
         ],
       },
     }));
@@ -241,7 +242,7 @@ createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: false, error: 'Google not connected (local preview stub)' }));
   }
-  if (path === '/api/revisions-done' || path === '/api/revisions-assign') {
+  if (path === '/api/revisions-done' || path === '/api/revisions-assign' || path === '/api/revisions-cancel') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: true }));
   }

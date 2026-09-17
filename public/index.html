@@ -624,6 +624,20 @@ async function warmAudits(){
 let finKey=null, finData=null, rcptData=null, revData=null;
 let openPanels=[]; // e.g. ['revisions','money'] — 'revisions' opened first, stacked on top
 const FIN_LABEL={money:'Lifetime sales',company:'Company stats',roster:'Client roster',receipts:'Receipts',revisions:'Revisions'};
+// While the revisions card is open, poll the (free, read-only) status
+// endpoint every 30s so new tickets / status changes from the background
+// automation show up on their own — no manual reload needed.
+let _revPollT=null;
+function startRevPoll(){
+  if(_revPollT) return;
+  _revPollT=setInterval(async()=>{
+    if(!openPanels.includes('revisions')){ stopRevPoll(); return; }
+    const j=await fetch(`/api/admin?do=revisions-status`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+    if(j&&j.ok){ revData=j.status; if(openPanels.includes('revisions')&&revView==='open') renderFinPanel(); }
+  },30000);
+}
+function stopRevPoll(){ if(_revPollT){ clearInterval(_revPollT); _revPollT=null; } }
+
 async function openFinances(tab){
   if(openPanels.includes(tab)){ closeFinPanel(tab); return; }
   if(tab!=='revisions'&&!finKey){ // revisions is request/ticket info, not financial — never password-gated
@@ -633,13 +647,14 @@ async function openFinances(tab){
   }
   if(typeof coachOpen!=='undefined'&&coachOpen) closeCoach();
   openPanels.push(tab);
+  if(tab==='revisions') startRevPoll();
   renderFinPanel();
   await loadFinTab(tab);
   $(`.fin-card[data-panel="${tab}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function closeFinPanel(tab){
   openPanels=openPanels.filter(t=>t!==tab);
-  if(tab==='revisions'){ revView='open'; revHistorySlug=''; revHistoryQ=''; }
+  if(tab==='revisions'){ revView='open'; revHistorySlug=''; revHistoryQ=''; stopRevPoll(); }
   if(!openPanels.length){
     const el=$('#finPanel'); el.hidden=true; el.innerHTML='';
     finKey=null; finData=null; rcptData=null; revData=null;
@@ -798,39 +813,45 @@ function nextRevisionCheckMs(){
   const n=Date.now();
   return Math.max(0,Math.ceil(n/600000)*600000-n); // next 10-min boundary — matches the GitHub Actions cron
 }
+function isClosedTicket(t){ return t.status==='done'||t.status==='cancelled'; }
 function ticketCardHTML(t){
   const overdue=t.status==='scheduled'&&t.targetAt&&t.targetAt<Date.now();
   let completionLine='';
   if(t.status==='done'){
     completionLine=`Completed: ${t.doneAt?new Date(t.doneAt).toLocaleString():''}`;
-  } else if(t.targetAt){
-    completionLine=overdue
-      ? `Projected completion: was expected ${new Date(t.targetAt).toLocaleString()} — still working through the queue, catches up automatically`
-      : `Projected completion: ${new Date(t.targetAt).toLocaleString()}`;
-  } else if(t.dueBy){
-    completionLine=`Projected completion: by ${new Date(t.dueBy).toLocaleDateString()}`;
+  } else if(t.status==='cancelled'){
+    completionLine=`Cancelled: ${t.doneAt?new Date(t.doneAt).toLocaleString():''}`;
+  } else {
+    if(t.targetAt){
+      completionLine=overdue
+        ? `Projected completion: was expected ${new Date(t.targetAt).toLocaleString()} — still working through the queue, catches up automatically`
+        : `Projected completion: ${new Date(t.targetAt).toLocaleString()}`;
+    }
+    if(t.dueBy){
+      completionLine+=`${completionLine?'<br>':''}Deadline to complete by: ${new Date(t.dueBy).toLocaleDateString()}`;
+    }
   }
   return `
       <div class="block" style="margin-bottom:9px">
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-          <strong>${esc(t.siteName)}</strong>
+          ${t.slug?`<button type="button" class="link" data-goto-slug="${esc(t.slug)}" style="font-weight:600;font-size:inherit">${esc(t.siteName)}</button>`:`<strong>${esc(t.siteName)}</strong>`}
           <span class="pillmini ${t.status==='done'?'good':t.status==='needs attention'?'bad':''}">${esc(t.status)}</span>
         </div>
         <div class="fd" style="margin-top:5px">${esc(t.summary||t.subject)}</div>
-        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug?' · <span style="color:var(--warn)">unmatched — pick the site below (one time — it’ll remember this sender after)</span>':''}${t.corrected?' · <span class="pillmini good">corrected via reply</span>':''}</div>
+        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.calendarLink&&t.status!=='cancelled'?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug&&t.status!=='cancelled'?' · <span style="color:var(--warn)">unmatched — pick the site below (one time — it’ll remember this sender after)</span>':''}${t.corrected?' · <span class="pillmini good">corrected via reply</span>':''}${t.verify&&t.verify.verified===false?` · <span style="color:var(--warn)">auto-check couldn't confirm this on the live site${t.verify.note?` — ${esc(t.verify.note)}`:''} — please review</span>`:''}</div>
         <div class="note" style="margin-top:4px">
           Asked: ${new Date(t.receivedAt).toLocaleString()}<br>
           Responded: ${t.repliedAt?new Date(t.repliedAt).toLocaleString():'<span style="color:var(--warn)">reply failed — check it yourself</span>'}<br>
           ${completionLine}
         </div>
-        ${t.repo||t.commitUrl||t.siteUrl?`<div class="note" style="margin-top:3px">${t.shipSummary?`Shipped: ${esc(t.shipSummary)}<br>`:''}${t.repo?`Repo: ${esc(t.repo)}`:''}${t.commitUrl?` · <a href="${esc(t.commitUrl)}" target="_blank" rel="noopener">view commit ↗</a>`:''}${t.status==='done'&&t.siteUrl?` · <a href="${esc(t.siteUrl)}" target="_blank" rel="noopener">view live site ↗</a>`:''}</div>`:''}
-        ${!t.slug&&t.status!=='done'?`<div class="btn-row" style="margin-top:7px">
+        ${t.repo||t.commitUrl||t.siteUrl?`<div class="note" style="margin-top:3px">${t.shipSummary?`Shipped: ${esc(t.shipSummary)}<br>`:''}${t.repo?`Repo: ${esc(t.repo)}`:''}${t.commitUrl?` · <a href="${esc(t.commitUrl)}" target="_blank" rel="noopener">view commit ↗</a>`:''}${t.siteUrl?` · <a href="${esc(t.siteUrl)}" target="_blank" rel="noopener">view live site ↗</a>`:''}</div>`:''}
+        ${!t.slug&&!isClosedTicket(t)?`<div class="btn-row" style="margin-top:7px">
             <select data-assign-pick="${esc(t.id)}" style="flex:1"><option value="">Which site is this?</option>${(STATE&&STATE.sites||[]).map(s=>`<option value="${esc(s.slug)}">${esc(s.name)}</option>`).join('')}</select>
             <button class="btn sm" data-assign="${esc(t.id)}">Assign</button>
-            <button class="btn sm ghost" data-done="${esc(t.id)}" title="Not a real request, or a duplicate — closes it without emailing anyone">Dismiss</button>
+            <button class="btn sm ghost" data-cancel="${esc(t.id)}" title="Not a real request, or a duplicate — closes it without emailing anyone">Cancel</button>
           </div>` : ''}
         ${t.status==='done'?`<div class="note" style="margin-top:3px">${t.completionEmail?.sent?`✓ client notified`:t.completionEmail?`<span style="color:var(--warn)">completion email didn't send — ${esc(t.completionEmail.reason||'')}</span>`:'✓ done'}</div>`
-        :t.slug?`<div class="btn-row" style="margin-top:7px"><button class="btn sm ghost" data-done="${esc(t.id)}">Mark done</button></div>`:''}
+        :t.status==='cancelled'?'':t.slug?`<div class="btn-row" style="margin-top:7px"><button class="btn sm" data-done="${esc(t.id)}" title="Fixed and live — emails the client it's done">Done</button><button class="btn sm ghost" data-cancel="${esc(t.id)}" title="Duplicate or not needed — pulls it from the to-do list and cancels the calendar hold, no email sent">Cancel</button></div>`:''}
       </div>`;
 }
 function revisionsHTML(st){
@@ -838,7 +859,7 @@ function revisionsHTML(st){
   const tickets=st.tickets||[];
   const checkStale=st.configured&&st.lastCheck&&(Date.now()/1000-st.lastCheck)>1200; // >20 min — the ~10 min auto-check is likely running late
   if(revView==='history'){
-    const done=tickets.filter(t=>t.status==='done');
+    const done=tickets.filter(isClosedTicket);
     const sitesInHistory=[...new Map(done.map(t=>[t.slug||t.siteName,t.siteName])).entries()];
     const q=revHistoryQ.toLowerCase();
     const rows=done.filter(t=>(!revHistorySlug||t.slug===revHistorySlug)&&(!q||`${t.siteName} ${t.summary} ${t.from}`.toLowerCase().includes(q)));
@@ -851,7 +872,7 @@ function revisionsHTML(st){
       ${rows.length?rows.map(ticketCardHTML).join(''):'<p class="note">No past revisions match.</p>'}
     `;
   }
-  const open=tickets.filter(t=>t.status!=='done');
+  const open=tickets.filter(t=>!isClosedTicket(t));
   const doneCount=tickets.length-open.length;
   return `
     <p class="note" style="margin:0 0 4px">${st.configured?`Watching Info@ · last checked ${st.lastCheck?agoStr(st.lastCheck*1000):'never yet'} · checks automatically, next check in <b class="rev-next-ct">T‑${fmtCountdown(nextRevisionCheckMs())}</b>`:'<span style="color:var(--warn)">Google not connected — add GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN in Vercel.</span>'}</p>
@@ -877,8 +898,20 @@ function wireRevisionsTab(){
   });
   $$('#finPanel [data-done]').forEach(b=>b.onclick=async()=>{
     const k=needKey(); if(!k) return;
+    b.disabled=true;
     const j=await fetch(`/api/admin?do=revisions-done&id=${encodeURIComponent(b.dataset.done)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-    if(j.ok){ revData=null; await loadFinTab('revisions'); } else toast('Could not update','err');
+    if(j.ok){ revData=null; await loadFinTab('revisions'); } else { b.disabled=false; toast('Could not update','err'); }
+  });
+  $$('#finPanel [data-cancel]').forEach(b=>b.onclick=async()=>{
+    const k=needKey(); if(!k) return;
+    b.disabled=true;
+    const j=await fetch(`/api/admin?do=revisions-cancel&id=${encodeURIComponent(b.dataset.cancel)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    if(j.ok){ toast('Cancelled — pulled from the to-do list and the calendar hold is cancelled'); revData=null; await loadFinTab('revisions'); }
+    else { b.disabled=false; toast('Could not cancel','err'); }
+  });
+  $$('#finPanel [data-goto-slug]').forEach(b=>b.onclick=()=>{
+    drawerPane='todos';
+    openDrawer(b.dataset.gotoSlug);
   });
   $$('#finPanel [data-assign]').forEach(b=>b.onclick=async()=>{
     const sel=document.querySelector(`[data-assign-pick="${b.dataset.assign}"]`);
