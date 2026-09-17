@@ -296,6 +296,8 @@
   <div class="attention" id="attention" hidden></div>
   <div class="overview" id="overview"></div>
 
+  <div id="revWidget"></div>
+
   <div class="section-h"><h2>Sites</h2><span id="siteCount"></span></div>
   <div class="sites" id="sites"><div class="loading">Loading portfolio…</div></div>
   <p class="note" id="footNote"></p>
@@ -548,7 +550,7 @@ function render(data){
     : `<div class="stat clickable" data-drill="${kind}"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`
   ).join('');
   $('#nextSeoTile').onclick=openSeoOverview;
-  $$('#overview [data-drill]').forEach(el=>el.onclick=()=>el.dataset.drill==='revisions'?openFinances('revisions'):openDrill(el.dataset.drill));
+  $$('#overview [data-drill]').forEach(el=>el.onclick=()=>el.dataset.drill==='revisions'?revealRevWidget():openDrill(el.dataset.drill));
 
   // --- needs-attention banner (dismiss = session flag + localStorage) ---
   const att=$('#attention');
@@ -570,12 +572,10 @@ function render(data){
   $('#siteCount').textContent=`${data.sites.length} tracked`;
   const upd=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
   $('#footNote').innerHTML=(p.auditQuota?`${upd} <strong>SEO scans rate-limited</strong> — set a free <code>PAGESPEED_API_KEY</code> in Vercel.`:upd)+
-    ` <button type="button" class="link" id="finBtn">🔒 Lifetime sales</button> · <button type="button" class="link" id="coBtn">🔒 Company stats</button> · <button type="button" class="link" id="rosterBtn">🔒 Client roster</button> · <button type="button" class="link" id="rcptBtn">🔒 Receipts</button> · <button type="button" class="link" id="revBtn">📨 Revisions</button>`;
+    ` <button type="button" class="link" id="finBtn">🔒 Sales &amp; company stats</button> · <button type="button" class="link" id="rosterBtn">🔒 Client roster</button> · <button type="button" class="link" id="rcptBtn">🔒 Receipts</button>`;
   $('#finBtn').addEventListener('click',()=>openFinances('money'));
-  $('#coBtn').addEventListener('click',()=>openFinances('company'));
   $('#rosterBtn').addEventListener('click',()=>openFinances('roster'));
   $('#rcptBtn').addEventListener('click',()=>openFinances('receipts'));
-  $('#revBtn').addEventListener('click',()=>openFinances('revisions'));
 
   $('#sites').innerHTML=data.sites.map(siteCard).join('');
   $('#sites').classList.toggle('picking',selectMode);
@@ -617,47 +617,33 @@ async function warmAudits(){
 // Admin-only company / finance dashboard. Prompts for the key each time it's
 // opened (even when the dashboard is unlocked). Data comes from /api/finances,
 // never the public /api/sites payload.
-// One password unlocks Money / Company stats / Client roster / Receipts /
-// Revisions. Each is its own stackable card — open several at once, stacked
-// in the order you opened them, each with its own close. Close the last one
-// open and the password locks again.
-let finKey=null, finData=null, rcptData=null, revData=null;
-let openPanels=[]; // e.g. ['revisions','money'] — 'revisions' opened first, stacked on top
-const FIN_LABEL={money:'Lifetime sales',company:'Company stats',roster:'Client roster',receipts:'Receipts',revisions:'Revisions'};
-// While the revisions card is open, poll the (free, read-only) status
-// endpoint every 30s so new tickets / status changes from the background
-// automation show up on their own — no manual reload needed.
-let _revPollT=null;
-function startRevPoll(){
-  if(_revPollT) return;
-  _revPollT=setInterval(async()=>{
-    if(!openPanels.includes('revisions')){ stopRevPoll(); return; }
-    const j=await fetch(`/api/admin?do=revisions-status`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
-    if(j&&j.ok){ revData=j.status; if(openPanels.includes('revisions')&&revView==='open') renderFinPanel(); }
-  },30000);
-}
-function stopRevPoll(){ if(_revPollT){ clearInterval(_revPollT); _revPollT=null; } }
+// One password unlocks Money / Client roster / Receipts. Each is its own
+// stackable card — open several at once, stacked in the order you opened
+// them, each with its own close. Close the last one open and the password
+// locks again. Revisions is NOT part of this — see the always-on #revWidget
+// below, which needs no password at all.
+let finKey=null, finData=null, rcptData=null;
+let openPanels=[]; // e.g. ['receipts','money'] — 'receipts' opened first, stacked on top
+const FIN_LABEL={money:'Sales & company stats',roster:'Client roster',receipts:'Receipts'};
 
 async function openFinances(tab){
   if(openPanels.includes(tab)){ closeFinPanel(tab); return; }
-  if(tab!=='revisions'&&!finKey){ // revisions is request/ticket info, not financial — never password-gated
+  if(!finKey){
     const k=prompt('What’s your password?');
     if(!k) return;
     finKey=k;
   }
   if(typeof coachOpen!=='undefined'&&coachOpen) closeCoach();
   openPanels.push(tab);
-  if(tab==='revisions') startRevPoll();
   renderFinPanel();
   await loadFinTab(tab);
   $(`.fin-card[data-panel="${tab}"]`)?.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function closeFinPanel(tab){
   openPanels=openPanels.filter(t=>t!==tab);
-  if(tab==='revisions'){ revView='open'; revHistorySlug=''; revHistoryQ=''; stopRevPoll(); }
   if(!openPanels.length){
     const el=$('#finPanel'); el.hidden=true; el.innerHTML='';
-    finKey=null; finData=null; rcptData=null; revData=null;
+    finKey=null; finData=null; rcptData=null;
   } else {
     renderFinPanel();
   }
@@ -668,12 +654,6 @@ async function loadFinTab(tab){
       const j=await fetch(`/api/admin?do=receipts&secret=${encodeURIComponent(finKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
       if(!j.ok){ finKey=null; openPanels=[]; $('#finPanel').hidden=true; $('#finPanel').innerHTML=''; toast(j.error==='bad password'?'Wrong password.':'Could not load receipts.','err'); return; }
       rcptData=j;
-    }
-  } else if(tab==='revisions'){
-    if(!revData){
-      const j=await fetch(`/api/admin?do=revisions-status`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
-      if(!j.ok){ openPanels=openPanels.filter(t=>t!=='revisions'); toast('Could not load revisions.','err'); renderFinPanel(); return; }
-      revData=j.status;
     }
   } else if(!finData){
     const j=await fetch(`/api/finances?secret=${encodeURIComponent(finKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
@@ -688,8 +668,8 @@ function renderFinPanel(){
   if(!openPanels.length){ el.hidden=true; el.innerHTML=''; return; }
   el.hidden=false;
   el.innerHTML=openPanels.map(tab=>{
-    const body = tab==='company' ? companyHTML(finData||{}) : tab==='roster' ? rosterHTML(finData||{})
-      : tab==='receipts' ? receiptsHTML(rcptData) : tab==='revisions' ? revisionsHTML(revData)
+    const body = tab==='roster' ? rosterHTML(finData||{})
+      : tab==='receipts' ? receiptsHTML(rcptData)
       : moneyHTML(finData||{});
     return `<div class="fin-card" data-panel="${tab}">
       <div class="dtabs" style="margin:0 0 12px;top:auto;position:static;border:0;padding:0">
@@ -702,7 +682,6 @@ function renderFinPanel(){
   $$('#finPanel [data-close]').forEach(b=>b.onclick=()=>closeFinPanel(b.dataset.close));
   if(openPanels.includes('money')) wireMoneyTab();
   if(openPanels.includes('receipts')) wireReceiptsTab();
-  if(openPanels.includes('revisions')) wireRevisionsTab();
 }
 function wireMoneyTab(){
   $('#ov_add')?.addEventListener('click',async()=>{
@@ -882,11 +861,48 @@ function revisionsHTML(st){
     ${doneCount?`<div class="btn-row" style="margin-top:6px"><button class="link" id="revHistory">View past revisions (${doneCount}) ›</button></div>`:''}
   `;
 }
-function wireRevisionsTab(){
-  $('#revHistory')?.addEventListener('click',()=>{ revView='history'; renderFinPanel(); });
-  $('#revBack')?.addEventListener('click',()=>{ revView='open'; renderFinPanel(); });
-  $('#revHistSite')?.addEventListener('change',(e)=>{ revHistorySlug=e.target.value; renderFinPanel(); });
-  const rhs=$('#revHistSearch'); if(rhs) rhs.oninput=(e)=>{ revHistoryQ=e.target.value; const p=e.target.selectionStart; renderFinPanel(); const n=$('#revHistSearch'); if(n){ n.focus(); n.setSelectionRange(p,p); } };
+
+/* ---------- Revisions widget — always on, no password, collapsible (not a stackable panel) ---------- */
+let revData=null;
+let revWidgetOpen=true;
+try{ revWidgetOpen = localStorage.getItem('iw_rev_collapsed')!=='1'; }catch{}
+async function loadRevWidget(){
+  const j=await fetch(`/api/admin?do=revisions-status`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+  if(j&&j.ok) revData=j.status;
+  renderRevWidget();
+}
+function renderRevWidget(){
+  const el=$('#revWidget'); if(!el) return;
+  const tickets=(revData&&revData.tickets)||[];
+  const pendingCount=tickets.filter(t=>!isClosedTicket(t)).length;
+  if(!revWidgetOpen){
+    el.innerHTML=`<div class="fin-card" style="display:flex;align-items:center;gap:10px;padding:12px 16px">
+      <strong style="font:600 14px 'Fraunces',serif">📨 Revisions</strong>
+      <span class="pillmini ${pendingCount?'bad':'good'}">${pendingCount?`${pendingCount} pending`:'all caught up'}</span>
+      <button class="btn sm ghost" id="revOpenBtn" style="margin-left:auto">Open</button>
+    </div>`;
+    $('#revOpenBtn').onclick=()=>{ revWidgetOpen=true; try{localStorage.setItem('iw_rev_collapsed','0');}catch{} renderRevWidget(); };
+    return;
+  }
+  el.innerHTML=`<div class="fin-card" data-panel="revisions">
+    <div class="dtabs" style="margin:0 0 12px;top:auto;position:static;border:0;padding:0">
+      <span style="font:600 14px 'Fraunces',serif;padding:7px 4px">📨 Revisions</span>
+      <button id="revCloseBtn" class="link" style="margin-left:auto;align-self:center">— collapse</button>
+    </div>
+    ${revisionsHTML(revData)}
+  </div>`;
+  $('#revCloseBtn').onclick=()=>{ revWidgetOpen=false; try{localStorage.setItem('iw_rev_collapsed','1');}catch{} renderRevWidget(); };
+  wireRevWidget();
+}
+function revealRevWidget(){
+  if(!revWidgetOpen){ revWidgetOpen=true; try{localStorage.setItem('iw_rev_collapsed','0');}catch{} renderRevWidget(); }
+  $('#revWidget')?.scrollIntoView({behavior:'smooth',block:'start'});
+}
+function wireRevWidget(){
+  $('#revHistory')?.addEventListener('click',()=>{ revView='history'; renderRevWidget(); });
+  $('#revBack')?.addEventListener('click',()=>{ revView='open'; renderRevWidget(); });
+  $('#revHistSite')?.addEventListener('change',(e)=>{ revHistorySlug=e.target.value; renderRevWidget(); });
+  const rhs=$('#revHistSearch'); if(rhs) rhs.oninput=(e)=>{ revHistoryQ=e.target.value; const p=e.target.selectionStart; renderRevWidget(); const n=$('#revHistSearch'); if(n){ n.focus(); n.setSelectionRange(p,p); } };
   $('#revCheck')?.addEventListener('click',async(e)=>{
     const k=needKey(); if(!k) return;
     e.target.disabled=true; e.target.textContent='Checking…';
@@ -894,34 +910,49 @@ function wireRevisionsTab(){
     e.target.disabled=false; e.target.textContent='↻ Check inbox now';
     if(j.ok) toast(`Checked ${j.checked} email${j.checked===1?'':'s'} — ${j.tickets} new revision${j.tickets===1?'':'s'}`);
     else toast(j.error||'Could not check inbox','err');
-    revData=null; await loadFinTab('revisions');
+    await loadRevWidget();
   });
-  $$('#finPanel [data-done]').forEach(b=>b.onclick=async()=>{
+  $$('#revWidget [data-done]').forEach(b=>b.onclick=async()=>{
     const k=needKey(); if(!k) return;
     b.disabled=true;
     const j=await fetch(`/api/admin?do=revisions-done&id=${encodeURIComponent(b.dataset.done)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-    if(j.ok){ revData=null; await loadFinTab('revisions'); } else { b.disabled=false; toast('Could not update','err'); }
+    if(j.ok){ await loadRevWidget(); } else { b.disabled=false; toast('Could not update','err'); }
   });
-  $$('#finPanel [data-cancel]').forEach(b=>b.onclick=async()=>{
+  $$('#revWidget [data-cancel]').forEach(b=>b.onclick=async()=>{
     const k=needKey(); if(!k) return;
     b.disabled=true;
     const j=await fetch(`/api/admin?do=revisions-cancel&id=${encodeURIComponent(b.dataset.cancel)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-    if(j.ok){ toast('Cancelled — pulled from the to-do list and the calendar hold is cancelled'); revData=null; await loadFinTab('revisions'); }
+    if(j.ok){ toast('Cancelled — pulled from the to-do list and the calendar hold is cancelled'); await loadRevWidget(); }
     else { b.disabled=false; toast('Could not cancel','err'); }
   });
-  $$('#finPanel [data-goto-slug]').forEach(b=>b.onclick=()=>{
+  $$('#revWidget [data-goto-slug]').forEach(b=>b.onclick=()=>{
     drawerPane='todos';
     openDrawer(b.dataset.gotoSlug);
   });
-  $$('#finPanel [data-assign]').forEach(b=>b.onclick=async()=>{
+  $$('#revWidget [data-assign]').forEach(b=>b.onclick=async()=>{
     const sel=document.querySelector(`[data-assign-pick="${b.dataset.assign}"]`);
     const slug=sel&&sel.value; if(!slug){ toast('Pick a site first','err'); return; }
     const k=needKey(); if(!k) return;
     b.disabled=true;
     const j=await fetch(`/api/admin?do=revisions-assign&id=${encodeURIComponent(b.dataset.assign)}&slug=${encodeURIComponent(slug)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-    if(j.ok){ toast('Assigned — queued for the agent, and it’ll remember this sender next time'); revData=null; await loadFinTab('revisions'); }
+    if(j.ok){ toast('Assigned — queued for the agent, and it’ll remember this sender next time'); await loadRevWidget(); }
     else { b.disabled=false; toast(j.error||'Could not assign','err'); }
   });
+}
+// Actively re-checks the inbox (not just re-reading status) every 60s while
+// the dashboard is open — so it's genuinely live, not dependent on GitHub
+// Actions' schedule or a manual reload. Uses whatever device key is already
+// saved (never prompts); if the device isn't unlocked yet it still refreshes
+// the read-only status so tickets stay current, it just won't trigger new
+// Gmail checks until something else unlocks the device first.
+let _revPollT=null;
+function startRevPoll(){
+  if(_revPollT) return;
+  _revPollT=setInterval(async()=>{
+    const k=key();
+    if(k) await fetch(`/api/admin?do=revisions-check&secret=${encodeURIComponent(k)}`,{method:'POST'}).catch(()=>{});
+    await loadRevWidget();
+  },60000);
 }
 
 /* ---------- Receipts / tax (now a tab inside #finPanel) ---------- */
@@ -1033,24 +1064,58 @@ async function sendCoach(text){
 
 function moneyHTML(p){
   const f=p.finances||{};
+  const c=p.company||{};
+  const n=(v,d=1)=>v==null?'—':(+v).toFixed(d).replace(/\.0$/,'');
+  const tile=(k,v,d,cls)=>`<div class="b ${cls||''}"><div class="k">${k}</div><div class="v">${v}</div>${d?`<div class="d" style="font-size:11px;color:var(--faint);margin-top:3px">${d}</div>`:''}</div>`;
   return `
-    <div class="fin-grid">
-      <div class="b"><div class="k">Lifetime sales</div><div class="v">${money(f.lifetimeRevenue)}</div></div>
-      <div class="b"><div class="k">Setup fees (total)</div><div class="v">${money(f.setupTotal)}</div></div>
-      <div class="b"><div class="k">Recurring to date</div><div class="v">${money(f.recurringToDate)}</div></div>
-      <div class="b"><div class="k">MRR · run rate</div><div class="v">${money(f.mrr)}<span style="font-family:'Inter';font-size:12px;color:var(--faint)"> · ${money(f.annualRunRate)}/yr</span></div></div>
-      <div class="b neg"><div class="k">Expenses (site + overhead)</div><div class="v">${money(f.expensesTotal)}</div></div>
-      <div class="b ${(f.netProfit||0)>=0?'pos':'neg'}"><div class="k">Net profit</div><div class="v">${money(f.netProfit)}</div></div>
-      ${p.trials&&p.trials.length?`<div class="b"><div class="k">Free trials</div><div class="v">${p.trials.length}<span style="font-family:'Inter';font-size:12px;color:var(--faint)"> · ${money(p.trialMrr)}/mo pipeline</span></div></div>`:''}
-      ${p.churnedCount?`<div class="b neg"><div class="k">Former clients</div><div class="v">${p.churnedCount}<span style="font-family:'Inter';font-size:12px;color:var(--faint)"> · -${money(p.mrrLost)}/mo</span></div></div>`:''}
+    <div class="fin-row h" style="border:0"><span>Overview</span></div>
+    <div class="fin-grid" style="margin-top:6px">
+      ${tile('Lifetime sales', money(f.lifetimeRevenue), `${money(f.setupTotal)} setup + ${money(f.recurringToDate)} recurring`)}
+      ${tile('MRR · run rate', money(c.mrr??f.mrr)+delTag(c.mrrDeltaPct), money(c.arr??f.annualRunRate)+'/yr'+(c.trialPipelineMrr?` · +${money(c.trialPipelineMrr)} in trials`:''))}
+      ${tile('Net profit', money(c.netProfit??f.netProfit), n(c.profitMarginPct,0)+'% margin', (c.netProfit??f.netProfit??0)>=0?'pos':'neg')}
+      ${tile('Active clients', (c.activeClients??'—')+delTag(c.clientsDeltaPct), `${c.trialClients??0} trial · ${c.formerClients??0} former · ${c.totalEver??'—'} ever`)}
+      ${tile('This month', `+${c.newThisMonth??0} / −${c.churnedThisMonth??0}`, 'new / churned')}
+      ${p.trials&&p.trials.length?tile('Free trials', p.trials.length, `${money(p.trialMrr)}/mo pipeline`):''}
     </div>
-    <div class="fin-row h"><span>Site</span><span class="r">Setup</span><span class="r">To date</span><span class="r">Net</span></div>
+    ${(c.trend&&c.trend.length>1)?`<div class="b" style="margin:10px 0 4px"><div class="k">MRR — last ${c.trend.length} months</div>${miniTrend(c.trend,'mrr')}<div class="d" style="font-size:11px;color:var(--faint)">${c.trend.map(t=>money(t.mrr)).join('  →  ')}</div></div>`:''}
+
+    <div class="fin-row h" style="border:0;margin-top:14px"><span>Recurring revenue</span></div>
+    <div class="fin-grid" style="margin-top:6px">
+      ${tile('Avg per client', money(c.arpu)+'/mo', `ARPU · setup avg ${money(c.avgSetupFee)}`)}
+      ${tile('Est. client LTV', money(c.ltv), 'rev/mo × avg lifetime + setup')}
+      ${tile('Setup covers', n(c.setupToMonthly)+' mo', 'of the monthly fee, up front')}
+      ${tile('Biggest client', n(c.revenueConcentrationPct,0)+'% of MRR', c.revenueConcentrationPct>35?'⚠ concentration risk':'healthy spread', c.revenueConcentrationPct>45?'neg':'')}
+    </div>
+
+    <div class="fin-row h" style="border:0;margin-top:14px"><span>Retention</span></div>
+    <div class="fin-grid" style="margin-top:6px">
+      ${tile('Retention', n(c.retentionPct,0)+'%', `logo churn ${n(c.churnRatePct,0)}%`, c.retentionPct>=80?'pos':'neg')}
+      ${tile('Avg client lifetime', n(c.avgClientLifetimeMonths)+' mo', c.avgMonthsBeforeChurn?`churned lasted ${n(c.avgMonthsBeforeChurn)} mo`:'')}
+      ${tile('MRR at risk', money(c.trialPipelineMrr), 'still on free trial')}
+      ${tile('MRR lost to churn', money(c.mrrLost), `${c.formerClients??0} former client${c.formerClients===1?'':'s'}`)}
+    </div>
+    <div class="b" style="margin:10px 0 4px"><div class="k">Customer retention — MRR by client over time</div>${retentionChart(c.retentionSeries)}</div>
+
+    <div class="fin-row h" style="border:0;margin-top:14px"><span>Clients</span><span class="r">Setup</span><span class="r">To date</span><span class="r">Net</span></div>
     ${(f.perSite||[]).map(r=>`<div class="fin-row"><span>${esc(r.name)}${r.onTrial?' <span class="pillmini">trial</span>':''}</span><span class="r">${money(r.setupFee)}</span><span class="r">${money(r.lifetimeRevenue)}</span><span class="r" style="color:${(r.netProfit||0)>=0?'var(--pos)':'var(--neg)'}">${money(r.netProfit)}</span></div>`).join('')}
     ${(p.trials&&p.trials.length)?`<div class="fin-row h" style="margin-top:14px"><span>Free trial</span><span class="r">Auto-charges</span><span class="r">Days left</span><span class="r">Then $/mo</span></div>
       ${p.trials.map(t=>`<div class="fin-row"><span>${esc(t.name)}</span><span class="r">${esc(t.autoChargeDate)}</span><span class="r" style="color:${t.daysLeft<=3?'var(--warn)':'inherit'}">${t.daysLeft}d</span><span class="r">${money(t.priceMonthly)}</span></div>`).join('')}`:''}
     ${(p.formerClients&&p.formerClients.length)?`<div class="fin-row h" style="margin-top:14px"><span>Former client</span><span class="r">Left</span><span class="r">Months</span><span class="r">Lifetime</span></div>
-      ${p.formerClients.map(c=>`<div class="fin-row"><span title="${esc(c.reason)}${c.note?' — '+esc(c.note):''}">${esc(c.name)}</span><span class="r">${esc(c.leftDate)}</span><span class="r">${c.monthsActive}</span><span class="r">${money(c.lifetimeRevenue)}</span></div>`).join('')}`:''}
-    <div style="border:1px solid var(--line);border-radius:11px;padding:12px;margin-top:16px">
+      ${p.formerClients.map(cl=>`<div class="fin-row"><span title="${esc(cl.reason)}${cl.note?' — '+esc(cl.note):''}">${esc(cl.name)}</span><span class="r">${esc(cl.leftDate)}</span><span class="r">${cl.monthsActive}</span><span class="r">${money(cl.lifetimeRevenue)}</span></div>`).join('')}`:''}
+    ${(c.leadSources&&c.leadSources.length&&!(c.leadSources.length===1&&c.leadSources[0].source==='Unknown'))?`
+    <div class="fin-row h" style="border:0;margin-top:14px"><span>Where clients come from</span><span class="r">clients</span><span class="r">MRR</span><span class="r">lifetime $</span></div>
+    ${c.leadSources.map(l=>`<div class="fin-row"><span>${esc(l.source)}${l.active<l.clients?` <span style="color:var(--faint)">(${l.active} still active)</span>`:''}</span><span class="r">${l.clients}</span><span class="r">${money(l.mrr)}</span><span class="r">${money(l.lifetime)}</span></div>`).join('')}
+    <p class="note" style="margin-top:6px">Set on each site — "Where did this client come from?" in Add a site or ⚙ Settings.</p>`:''}
+
+    <div class="fin-row h" style="border:0;margin-top:14px"><span>Profit &amp; costs</span></div>
+    <div class="fin-grid" style="margin-top:6px">
+      ${tile('Expenses (site + overhead)', money(f.expensesTotal), c.overheadRatioPct!=null?`overhead = ${n(c.overheadRatioPct,0)}% of revenue`:'')}
+      ${tile('Recurring costs', money(c.recurringMonthlyCost)+'/mo', 'software, memberships…')}
+      ${tile('Cost per client', money(c.costPerClient), '')}
+      ${c.aiCost?tile('AI & automation', money(c.aiCost.thisMonth)+'/mo', `${money(c.aiCost.total)} all-time · Compass + SEO agent`):''}
+    </div>
+    ${(c.aiCost&&c.aiCost.months&&c.aiCost.months.length>1)?`<div class="fin-row h" style="border:0;margin-top:6px"><span>AI spend by month</span><span class="r">Compass</span><span class="r">SEO agent</span><span class="r">total</span></div>${c.aiCost.months.map(m=>`<div class="fin-row"><span>${m.month}</span><span class="r">${money(m.coach)}</span><span class="r">${money(m.agent)}</span><span class="r">${money(m.total)}</span></div>`).join('')}`:''}
+    <div style="border:1px solid var(--line);border-radius:11px;padding:12px;margin-top:12px">
       <div class="fin-row h" style="border:0;padding:0 0 4px"><span>Business overhead — not tied to a client (${money(f.overheadTotal)})</span></div>
       <div id="ovList">${(p.overhead||[]).slice().reverse().map((x,i)=>`<div class="fin-row"><span>${esc(x.date)} — ${esc(x.label)}${x.auto?' <span class="pillmini" title="pulled from tracked usage">auto</span>':''}</span><span></span><span class="r">${money(x.amount)}${x.recurring?'/mo':''}</span><span class="r">${x.auto?'<span style="color:var(--faint);font-size:11px">tracked</span>':`<button class="link" data-i="${p.overhead.length-1-i}" style="color:var(--neg)">remove</button>`}</span></div>`).join('')||'<div class="note" style="padding:4px 0">Nothing logged — chamber of commerce, software, accountant, etc.</div>'}</div>
       <div class="btn-row" style="margin-top:8px">
@@ -1060,7 +1125,19 @@ function moneyHTML(p){
         <button class="btn sm" id="ov_add">Add</button>
       </div>
     </div>
-    <p class="note" style="margin-top:12px">Per-client setup fee / monthly / client-since / <strong>free trial until</strong> are set in each ⚙ Site settings, along with that client's own ad-spend &amp; costs.</p>`;
+
+    <div class="fin-row h" style="border:0;margin-top:14px"><span>Value delivered to clients (last 30 days)</span></div>
+    <div class="fin-grid" style="margin-top:6px">
+      ${tile('Visitors driven', fmt(c.visitorsDriven30), `${fmt(c.pageviews30)} pageviews · ${c.sitesTracked} tracked`)}
+      ${tile('Leads driven', fmt(c.leadsDriven30), 'calls · forms · bookings')}
+      ${tile('Avg time on site', c.avgTimeOnSite!=null?dur(c.avgTimeOnSite):'—', 'engagement')}
+      ${tile('Momentum', `${c.sitesImproving} ↑ / ${c.sitesDeclining} ↓`, 'sites vs last month')}
+      ${tile('Avg SEO-ready', c.avgSeoReady??'—', 'technical setup score')}
+      ${tile('Avg speed', c.avgSpeed??'—', 'Google performance')}
+      ${tile('Uptime', c.uptimePct!=null?c.uptimePct+'%':'—', `${c.sitesTotal} sites monitored`)}
+      ${tile('Need attention', c.sitesNeedAttention, 'down / SSL / low score', c.sitesNeedAttention?'neg':'')}
+    </div>
+    <p class="note" style="margin-top:12px">Per-client setup fee / monthly / client-since / <strong>free trial until</strong> are set in each ⚙ Site settings. Client counts, retention and this-month new/churned build up as you add sites and record why past clients left (the removal prompt). Month-over-month deltas need at least one <strong>company snapshot</strong> — the daily cron writes one on the 1st (and any day it's missing).</p>`;
 }
 
 function delTag(v){ if(v==null) return ''; const s=v>=0?'▲':'▼'; return ` <span style="font-size:10.5px;color:${v>=0?'var(--pos)':'var(--neg)'}">${s}${Math.abs(Math.round(v))}%</span>`; }
@@ -1137,59 +1214,6 @@ function retentionChart(series){
    <div class="rtbars">${barRows}</div>
    ${cohRows?`<div class="fin-row h" style="border:0;margin-top:10px"><span>Cohort</span><span class="r">signed</span><span class="r">still active</span><span class="r">kept</span></div>${cohRows}`:''}
   `;
-}
-function companyHTML(p){
-  const c=p.company||{};
-  const n=(v,d=1)=>v==null?'—':(+v).toFixed(d).replace(/\.0$/,'');
-  const tile=(k,v,d,cls)=>`<div class="b ${cls||''}"><div class="k">${k}</div><div class="v">${v}</div>${d?`<div class="d" style="font-size:11px;color:var(--faint);margin-top:3px">${d}</div>`:''}</div>`;
-  return `
-    <div class="fin-row h" style="border:0"><span>Recurring revenue</span></div>
-    <div class="fin-grid" style="margin-top:6px">
-      ${tile('MRR', money(c.mrr)+delTag(c.mrrDeltaPct), money(c.arr)+'/yr'+(c.trialPipelineMrr?` · +${money(c.trialPipelineMrr)} in trials`:''))}
-      ${tile('Active clients', c.activeClients+delTag(c.clientsDeltaPct), `${c.trialClients} trial · ${c.formerClients} former · ${c.totalEver} ever`)}
-      ${tile('This month', `+${c.newThisMonth} / −${c.churnedThisMonth}`, 'new / churned')}
-      ${tile('Avg per client', money(c.arpu)+'/mo', `ARPU · setup avg ${money(c.avgSetupFee)}`)}
-      ${tile('Est. client LTV', money(c.ltv), 'rev/mo × avg lifetime + setup')}
-      ${tile('Setup covers', n(c.setupToMonthly)+' mo', 'of the monthly fee, up front')}
-      ${tile('Biggest client', n(c.revenueConcentrationPct,0)+'% of MRR', c.revenueConcentrationPct>35?'⚠ concentration risk':'healthy spread', c.revenueConcentrationPct>45?'neg':'')}
-    </div>
-    ${(c.trend&&c.trend.length>1)?`<div class="b" style="margin:8px 0 4px"><div class="k">MRR — last ${c.trend.length} months</div>${miniTrend(c.trend,'mrr')}<div class="d" style="font-size:11px;color:var(--faint)">${c.trend.map(t=>money(t.mrr)).join('  →  ')}</div></div>`:''}
-
-    <div class="fin-row h" style="border:0;margin-top:12px"><span>Retention</span></div>
-    <div class="fin-grid" style="margin-top:6px">
-      ${tile('Retention', n(c.retentionPct,0)+'%', `logo churn ${n(c.churnRatePct,0)}%`, c.retentionPct>=80?'pos':'neg')}
-      ${tile('Avg client lifetime', n(c.avgClientLifetimeMonths)+' mo', c.avgMonthsBeforeChurn?`churned lasted ${n(c.avgMonthsBeforeChurn)} mo`:'')}
-      ${tile('MRR at risk', money(c.trialPipelineMrr), 'still on free trial')}
-      ${tile('MRR lost to churn', money(c.mrrLost), `${c.formerClients} former client${c.formerClients===1?'':'s'}`)}
-    </div>
-    <div class="b" style="margin:8px 0 4px"><div class="k">Customer retention — MRR by client over time</div>${retentionChart(c.retentionSeries)}</div>
-    ${(c.leadSources&&c.leadSources.length&&!(c.leadSources.length===1&&c.leadSources[0].source==='Unknown'))?`
-    <div class="fin-row h" style="border:0;margin-top:12px"><span>Where clients come from</span><span class="r">clients</span><span class="r">MRR</span><span class="r">lifetime $</span></div>
-    ${c.leadSources.map(l=>`<div class="fin-row"><span>${esc(l.source)}${l.active<l.clients?` <span style="color:var(--faint)">(${l.active} still active)</span>`:''}</span><span class="r">${l.clients}</span><span class="r">${money(l.mrr)}</span><span class="r">${money(l.lifetime)}</span></div>`).join('')}
-    <p class="note" style="margin-top:6px">Set on each site — "Where did this client come from?" in Add a site or ⚙ Settings. Once event costs are tracked this becomes true cost-per-client by source.</p>`:''}
-
-    <div class="fin-row h" style="border:0;margin-top:12px"><span>Profit &amp; costs</span></div>
-    <div class="fin-grid" style="margin-top:6px">
-      ${tile('Net profit', money(c.netProfit), n(c.profitMarginPct,0)+'% margin', c.netProfit>=0?'pos':'neg')}
-      ${tile('Total revenue ever', money(c.lifetimeRevenue), `− ${money(c.expensesTotal)} costs`)}
-      ${tile('Recurring costs', money(c.recurringMonthlyCost)+'/mo', 'software, memberships…')}
-      ${tile('Cost per client', money(c.costPerClient), `overhead = ${n(c.overheadRatioPct,0)}% of revenue`)}
-      ${c.aiCost?tile('AI & automation', money(c.aiCost.thisMonth)+'/mo', `${money(c.aiCost.total)} all-time · Compass + SEO agent`):''}
-    </div>
-    ${(c.aiCost&&c.aiCost.months&&c.aiCost.months.length>1)?`<div class="fin-row h" style="border:0;margin-top:6px"><span>AI spend by month</span><span class="r">Compass</span><span class="r">SEO agent</span><span class="r">total</span></div>${c.aiCost.months.map(m=>`<div class="fin-row"><span>${m.month}</span><span class="r">${money(m.coach)}</span><span class="r">${money(m.agent)}</span><span class="r">${money(m.total)}</span></div>`).join('')}`:''}
-
-    <div class="fin-row h" style="border:0;margin-top:12px"><span>Value delivered to clients (last 30 days)</span></div>
-    <div class="fin-grid" style="margin-top:6px">
-      ${tile('Visitors driven', fmt(c.visitorsDriven30), `${fmt(c.pageviews30)} pageviews · ${c.sitesTracked} tracked`)}
-      ${tile('Leads driven', fmt(c.leadsDriven30), 'calls · forms · bookings')}
-      ${tile('Avg time on site', c.avgTimeOnSite!=null?dur(c.avgTimeOnSite):'—', 'engagement')}
-      ${tile('Momentum', `${c.sitesImproving} ↑ / ${c.sitesDeclining} ↓`, 'sites vs last month')}
-      ${tile('Avg SEO-ready', c.avgSeoReady??'—', 'technical setup score')}
-      ${tile('Avg speed', c.avgSpeed??'—', 'Google performance')}
-      ${tile('Uptime', c.uptimePct!=null?c.uptimePct+'%':'—', `${c.sitesTotal} sites monitored`)}
-      ${tile('Need attention', c.sitesNeedAttention, 'down / SSL / low score', c.sitesNeedAttention?'neg':'')}
-    </div>
-    <p class="note" style="margin-top:12px">Client counts, retention and this-month new/churned build up as you add sites and record why past clients left (the removal prompt). Month-over-month deltas need at least one <strong>company snapshot</strong> — the daily cron writes one on the 1st (and any day it's missing). Everything under "value delivered" pulls straight from the tracking snippets.</p>`;
 }
 
 function rosterHTML(p){
@@ -1912,7 +1936,7 @@ $('#refreshBtn').addEventListener('click',async()=>{
     const revNote=rev&&rev.ok&&rev.tickets?` — ${rev.tickets} new revision${rev.tickets===1?'':'s'} found`:'';
     toast((skipped?`Refreshed ${j.generated-skipped} of ${j.generated} sites — the rest catch up automatically`:`Refreshed all ${j.generated} sites with today's numbers`)+revNote);
     await load();
-    if(openPanels.includes('revisions')){ revData=null; await loadFinTab('revisions'); }
+    await loadRevWidget();
   } else toast(j.error||'Could not refresh reports','err');
 });
 
@@ -2085,6 +2109,8 @@ setInterval(()=>{
 renderUnlock();
 fillLeadSourceList();
 load();
+loadRevWidget();
+startRevPoll();
 </script>
 </body>
 </html>
