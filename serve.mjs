@@ -85,7 +85,7 @@ const _former = [{ slug: 'old-client', name: 'Corner Cafe', client: 'Dana', reas
 const _overhead = [{ date: '2026-09-02', label: 'Chamber of Commerce membership', amount: 540, recurring: false }, { date: '2026-09-01', label: 'Figma + hosting', amount: 45, recurring: true }, { date: '2026-09-10', label: 'AI & automation — Compass + SEO agent', amount: 41.2, recurring: true, auto: true }];
 const _trials = [{ slug: 'one-more-thing', name: 'One More Thing Services', priceMonthly: 100, autoChargeDate: new Date(Date.now() + 12 * 864e5).toISOString().slice(0, 10), daysLeft: 12 }];
 const DEMO = {
-  portfolio: { sites: 3, visitors30: 1284, conversions30: 47, mrr: 350, trials: 1, trialMrr: 100, avgSeo: 88, improving: 2, openFindings: 15, attention: ['apostello-detailing'], noTracker: [], auditQuota: false, emailEnabled: true, aiEnabled: true, backend: 'demo',
+  portfolio: { sites: 3, pendingRevisions: 2, visitors30: 1284, conversions30: 47, mrr: 350, trials: 1, trialMrr: 100, avgSeo: 88, improving: 2, openFindings: 15, attention: ['apostello-detailing'], noTracker: [], auditQuota: false, emailEnabled: true, aiEnabled: true, backend: 'demo',
     _fin: { mrr: 350, annualRunRate: 4200, setupTotal: 3600, recurringToDate: 2700, lifetimeRevenue: 7710, activeRevenue: 6300, churnRevenue: 1410, siteExpenses: 360, overheadTotal: 585, expensesTotal: 945, netProfit: 6765,
       perSite: [{ slug: 'relax-tax', name: 'Relax Tax', setupFee: 1200, priceMonthly: 150, monthsActive: 6, lifetimeRevenue: 2100, expensesTotal: 120, netProfit: 1980, onTrial: false }] } },
   sites: [
@@ -229,8 +229,9 @@ createServer(async (req, res) => {
         configured: false,
         lastCheck: Date.now() / 1000 - 3600,
         tickets: [
-          { id: '1', slug: 'relax-tax', siteName: 'Relax Tax', from: 'Angelete May <angelete@example.com>', subject: 'Website update', summary: 'Remove the "cash & check only" line from the homepage', receivedAt: Date.now() - 3 * 3600000, repliedAt: Date.now() - 3 * 3600000 + 120000, calendarLink: 'https://calendar.google.com/', todoId: 'rev-1', status: 'scheduled' },
+          { id: '1', slug: 'relax-tax', siteName: 'Relax Tax', from: 'Angelete May <angelete@example.com>', subject: 'Website update', summary: 'Remove the "cash & check only" line from the homepage', receivedAt: Date.now() - 3 * 3600000, repliedAt: Date.now() - 3 * 3600000 + 120000, calendarLink: 'https://calendar.google.com/', todoId: 'rev-1', status: 'scheduled', dueBy: Date.now() + 2 * 86400000 },
           { id: '2', slug: null, siteName: 'Unmatched site', from: 'Random Person <someone@gmail.com>', subject: 'quick ask', summary: 'Update the about page photo', receivedAt: Date.now() - 1800000, repliedAt: Date.now() - 1770000, calendarLink: 'https://calendar.google.com/', todoId: null, status: 'needs attention' },
+          { id: '3', slug: 'apostello-detailing', siteName: 'Apostello Detailing', from: 'Shiloh <shiloh@example.com>', subject: 'Change join button color', summary: 'Change the "Join the community" button to green', receivedAt: Date.now() - 2 * 86400000, repliedAt: Date.now() - 2 * 86400000 + 90000, calendarLink: 'https://calendar.google.com/', todoId: null, status: 'done', doneAt: Date.now() - 86400000, completionEmail: { sent: true }, repo: 'Mondoesanai/apostellodetailing', commitUrl: 'https://github.com/Mondoesanai/apostellodetailing/pull/12', branch: 'seo-agent-1234', shipSummary: 'Changed CTA button color to brand green' },
         ],
       },
     }));

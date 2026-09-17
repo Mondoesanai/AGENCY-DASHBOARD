@@ -63,8 +63,9 @@
   .attention .link:hover{background:rgba(234,181,74,.15);}
   button.link{background:none;border:none;color:var(--green-br);text-decoration:underline;cursor:pointer;font-size:inherit;padding:0;}
 
-  #finPanel{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin-top:10px;}
+  #finPanel{display:flex;flex-direction:column;gap:10px;margin-top:10px;}
   #finPanel[hidden]{display:none;}
+  .fin-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;}
   .fin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px;}
   .fin-grid .b{background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:12px 13px;}
   .fin-grid .b .k{font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;}
@@ -301,8 +302,6 @@
   </div><!-- /mainView -->
   <div id="seoOverview" hidden></div>
   <div id="finPanel" hidden></div>
-  <div id="rcptPanel" hidden></div>
-  <div id="revPanel" hidden></div>
 </div>
 
 <div id="coachPanel" hidden></div>
@@ -571,11 +570,12 @@ function render(data){
   $('#siteCount').textContent=`${data.sites.length} tracked`;
   const upd=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
   $('#footNote').innerHTML=(p.auditQuota?`${upd} <strong>SEO scans rate-limited</strong> — set a free <code>PAGESPEED_API_KEY</code> in Vercel.`:upd)+
-    ` <button type="button" class="link" id="finBtn">🔒 Lifetime sales</button> · <button type="button" class="link" id="coBtn">🔒 Company stats</button> · <button type="button" class="link" id="rcptBtn">🔒 Receipts</button> · <button type="button" class="link" id="revBtn">📨 Revisions</button>`;
+    ` <button type="button" class="link" id="finBtn">🔒 Lifetime sales</button> · <button type="button" class="link" id="coBtn">🔒 Company stats</button> · <button type="button" class="link" id="rosterBtn">🔒 Client roster</button> · <button type="button" class="link" id="rcptBtn">🔒 Receipts</button> · <button type="button" class="link" id="revBtn">📨 Revisions</button>`;
   $('#finBtn').addEventListener('click',()=>openFinances('money'));
   $('#coBtn').addEventListener('click',()=>openFinances('company'));
-  $('#rcptBtn').addEventListener('click',openReceipts);
-  $('#revBtn').addEventListener('click',openRevisions);
+  $('#rosterBtn').addEventListener('click',()=>openFinances('roster'));
+  $('#rcptBtn').addEventListener('click',()=>openFinances('receipts'));
+  $('#revBtn').addEventListener('click',()=>openFinances('revisions'));
 
   $('#sites').innerHTML=data.sites.map(siteCard).join('');
   $('#sites').classList.toggle('picking',selectMode);
@@ -617,62 +617,96 @@ async function warmAudits(){
 // Admin-only company / finance dashboard. Prompts for the key each time it's
 // opened (even when the dashboard is unlocked). Data comes from /api/finances,
 // never the public /api/sites payload.
-let finKey=null, finData=null, finTab='money';
+// One password unlocks Money / Company stats / Client roster / Receipts /
+// Revisions. Each is its own stackable card — open several at once, stacked
+// in the order you opened them, each with its own close. Close the last one
+// open and the password locks again.
+let finKey=null, finData=null, rcptData=null, revData=null;
+let openPanels=[]; // e.g. ['revisions','money'] — 'revisions' opened first, stacked on top
+const FIN_LABEL={money:'Lifetime sales',company:'Company stats',roster:'Client roster',receipts:'Receipts',revisions:'Revisions'};
 async function openFinances(tab){
-  const el=$('#finPanel');
-  if(!el.hidden && (!tab || tab===finTab)){ el.hidden=true; el.innerHTML=''; finKey=null; finData=null; return; }
-  finTab=tab||'money';
+  if(openPanels.includes(tab)){ closeFinPanel(tab); return; }
   if(!finKey){
     const k=prompt('What’s your password?');
     if(!k) return;
     finKey=k;
   }
-  el.hidden=false; el.innerHTML='<div class="note">Loading…</div>';
-  await loadFinances();
+  if(typeof coachOpen!=='undefined'&&coachOpen) closeCoach();
+  openPanels.push(tab);
+  renderFinPanel();
+  await loadFinTab(tab);
 }
-async function loadFinances(){
-  const el=$('#finPanel');
-  const j=await fetch(`/api/finances?secret=${encodeURIComponent(finKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
-  if(!j.ok){ el.innerHTML=`<div class="note" style="color:var(--neg)">${j.error==='bad secret'?'Wrong key — this is admin-only.':'Could not load.'}</div>`; finKey=null; return; }
-  finData=j;
-  renderPanel();
-}
-function renderPanel(){
-  const el=$('#finPanel'), j=finData; if(!j) return;
-  const body = finTab==='company' ? companyHTML(j) : finTab==='roster' ? rosterHTML(j) : moneyHTML(j);
-  el.hidden=false;
-  el.innerHTML=`
-    <div class="dtabs" style="margin:0 0 12px;top:auto;position:static;border:0;padding:0">
-      ${[['money','Money'],['company','Company stats'],['roster','Client roster']].map(([id,lab])=>`<button data-t="${id}" class="${finTab===id?'on':''}">${lab}</button>`).join('')}
-      <button data-t="_close" class="link" style="margin-left:auto;align-self:center">✕ close</button>
-    </div>
-    ${body}
-  `;
-  $$('#finPanel .dtabs button').forEach(b=>b.onclick=()=>{
-    if(b.dataset.t==='_close'){ el.hidden=true; el.innerHTML=''; finKey=null; finData=null; return; }
-    finTab=b.dataset.t; renderPanel();
-  });
-  if(finTab==='money'){
-    $('#ov_add')?.addEventListener('click',async()=>{
-      const amt=$('#ov_amt').value.trim(); if(!amt||!finKey) return;
-      const r=await post(`/api/site?secret=${encodeURIComponent(finKey)}`,{action:'expense-add',slug:'_business',amount:amt,label:$('#ov_label').value.trim()||'overhead',recurring:$('#ov_rec').checked});
-      if(r.ok) await loadFinances();
-    });
-    $('#ovList')?.addEventListener('click',async(e)=>{
-      const b=e.target.closest('button[data-i]'); if(!b||!finKey) return;
-      const r=await post(`/api/site?secret=${encodeURIComponent(finKey)}`,{action:'expense-del',slug:'_business',index:+b.dataset.i});
-      if(r.ok) await loadFinances();
-    });
+function closeFinPanel(tab){
+  openPanels=openPanels.filter(t=>t!==tab);
+  if(!openPanels.length){
+    const el=$('#finPanel'); el.hidden=true; el.innerHTML='';
+    finKey=null; finData=null; rcptData=null; revData=null;
+  } else {
+    renderFinPanel();
   }
 }
+async function loadFinTab(tab){
+  if(tab==='receipts'){
+    if(!rcptData){
+      const j=await fetch(`/api/admin?do=receipts&secret=${encodeURIComponent(finKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+      if(!j.ok){ finKey=null; openPanels=[]; $('#finPanel').hidden=true; $('#finPanel').innerHTML=''; toast(j.error==='bad password'?'Wrong password.':'Could not load receipts.','err'); return; }
+      rcptData=j;
+    }
+  } else if(tab==='revisions'){
+    if(!revData){
+      const j=await fetch(`/api/admin?do=revisions-status&secret=${encodeURIComponent(finKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+      if(!j.ok){ finKey=null; openPanels=[]; $('#finPanel').hidden=true; $('#finPanel').innerHTML=''; toast(j.error==='bad password'?'Wrong password.':'Could not load.','err'); return; }
+      revData=j.status;
+    }
+  } else if(!finData){
+    const j=await fetch(`/api/finances?secret=${encodeURIComponent(finKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
+    if(!j.ok){ finKey=null; openPanels=[]; $('#finPanel').hidden=true; $('#finPanel').innerHTML=''; toast(j.error==='bad secret'?'Wrong password.':'Could not load.','err'); return; }
+    finData=j;
+  }
+  renderFinPanel();
+}
+async function loadFinances(){ finData=null; await loadFinTab('money'); } // kept for the expense add/remove refresh calls below
+function renderFinPanel(){
+  const el=$('#finPanel');
+  if(!openPanels.length){ el.hidden=true; el.innerHTML=''; return; }
+  el.hidden=false;
+  el.innerHTML=openPanels.map(tab=>{
+    const body = tab==='company' ? companyHTML(finData||{}) : tab==='roster' ? rosterHTML(finData||{})
+      : tab==='receipts' ? receiptsHTML(rcptData) : tab==='revisions' ? revisionsHTML(revData)
+      : moneyHTML(finData||{});
+    return `<div class="fin-card" data-panel="${tab}">
+      <div class="dtabs" style="margin:0 0 12px;top:auto;position:static;border:0;padding:0">
+        <span style="font:600 14px 'Fraunces',serif;padding:7px 4px">${esc(FIN_LABEL[tab])}</span>
+        <button data-close="${tab}" class="link" style="margin-left:auto;align-self:center">✕ close</button>
+      </div>
+      ${body}
+    </div>`;
+  }).join('');
+  $$('#finPanel [data-close]').forEach(b=>b.onclick=()=>closeFinPanel(b.dataset.close));
+  if(openPanels.includes('money')) wireMoneyTab();
+  if(openPanels.includes('receipts')) wireReceiptsTab();
+  if(openPanels.includes('revisions')) wireRevisionsTab();
+}
+function wireMoneyTab(){
+  $('#ov_add')?.addEventListener('click',async()=>{
+    const amt=$('#ov_amt').value.trim(); if(!amt||!finKey) return;
+    const r=await post(`/api/site?secret=${encodeURIComponent(finKey)}`,{action:'expense-add',slug:'_business',amount:amt,label:$('#ov_label').value.trim()||'overhead',recurring:$('#ov_rec').checked});
+    if(r.ok) await loadFinances();
+  });
+  $('#ovList')?.addEventListener('click',async(e)=>{
+    const b=e.target.closest('button[data-i]'); if(!b||!finKey) return;
+    const r=await post(`/api/site?secret=${encodeURIComponent(finKey)}`,{action:'expense-del',slug:'_business',index:+b.dataset.i});
+    if(r.ok) await loadFinances();
+  });
+}
 
-/* ---------- Receipts / tax ---------- */
-let rcptKey=null, rcptData=null, rcptTab='all', rcptFilter='';
+/* ---------- Receipts / tax (now a tab inside the shared #finPanel) ---------- */
+let rcptTab='all', rcptFilter='';
 /* ---------- SEO overview — "what's happening on every site" back-page ---------- */
 function openSeoOverview(){
   if(!STATE) return;
   $('#mainView').hidden=true;
-  $('#finPanel').hidden=true; $('#rcptPanel').hidden=true;
+  $('#finPanel').hidden=true;
   renderSeoOverview();
   $('#seoOverview').hidden=false;
   window.scrollTo(0,0);
@@ -680,6 +714,7 @@ function openSeoOverview(){
 function closeSeoOverview(){
   $('#seoOverview').hidden=true; $('#seoOverview').innerHTML='';
   $('#mainView').hidden=false;
+  if(openPanels.length) renderFinPanel(); // re-show whatever was still open
 }
 function renderSeoOverview(){
   const rows=STATE.sites.map(s=>{
@@ -723,7 +758,7 @@ const DRILL={
 function openDrill(kind){
   if(!STATE||!DRILL[kind]) return;
   $('#mainView').hidden=true;
-  $('#finPanel').hidden=true; $('#rcptPanel').hidden=true; $('#revPanel')?.remove?.();
+  $('#finPanel').hidden=true;
   renderDrill(kind);
   $('#seoOverview').hidden=false;
   window.scrollTo(0,0);
@@ -755,29 +790,11 @@ function renderDrill(kind){
 }
 $('#brandHome').addEventListener('click',()=>{ if(!$('#seoOverview').hidden) closeSeoOverview(); });
 
-/* ---------- Revisions — inbox -> auto-reply -> calendar -> ticket ---------- */
-let revKey=null, revData=null;
-async function openRevisions(){
-  const el=$('#revPanel');
-  if(!el.hidden){ el.hidden=true; el.innerHTML=''; revKey=null; revData=null; return; }
-  const k=needKey(); if(!k) return; revKey=k;
-  el.hidden=false; el.innerHTML='<div class="note">Loading…</div>';
-  $('#finPanel').hidden=true; $('#rcptPanel').hidden=true;
-  await loadRevisions();
-}
-async function loadRevisions(){
-  const j=await fetch(`/api/admin?do=revisions-status&secret=${encodeURIComponent(revKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
-  if(!j.ok){ $('#revPanel').innerHTML='<div class="note" style="color:var(--neg)">Could not load.</div>'; return; }
-  revData=j.status; renderRevisions();
-}
-function renderRevisions(){
-  const el=$('#revPanel'), st=revData; if(!st) return;
+/* ---------- Revisions — inbox -> auto-reply -> calendar -> ticket (now a tab inside #finPanel) ---------- */
+function revisionsHTML(st){
+  if(!st) return '<div class="note">Loading…</div>';
   const tickets=st.tickets||[];
-  el.innerHTML=`
-    <div class="dtabs" style="margin:0 0 12px;top:auto;position:static;border:0;padding:0">
-      <span style="font:600 14px 'Fraunces',serif;padding:7px 4px">Revisions</span>
-      <button data-t="_close" class="link" style="margin-left:auto;align-self:center">✕ close</button>
-    </div>
+  return `
     <p class="note" style="margin:0 0 10px">${st.configured?`Watching Info@ · last checked ${st.lastCheck?agoStr(st.lastCheck*1000)+' ago':'never yet'}`:'<span style="color:var(--warn)">Google not connected — add GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN in Vercel.</span>'}</p>
     <div class="btn-row" style="margin-bottom:12px"><button class="btn sm" id="revCheck" type="button" ${st.configured?'':'disabled'}>↻ Check inbox now</button></div>
     ${tickets.length?tickets.map(t=>`
@@ -788,7 +805,8 @@ function renderRevisions(){
           <span style="margin-left:auto;font-size:11px;color:var(--faint)">${new Date(t.receivedAt).toLocaleString()}</span>
         </div>
         <div class="fd" style="margin-top:5px">${esc(t.summary||t.subject)}</div>
-        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.repliedAt?' · replied':' · <span style="color:var(--warn)">reply failed — check it yourself</span>'}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug?' · <span style="color:var(--warn)">unmatched — pick the site below (one time — it’ll remember this sender after)</span>':t.status==='scheduled'?' · queued for the agent':''}${t.corrected?' · <span class="pillmini good">corrected via reply</span>':''}</div>
+        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.repliedAt?' · replied':' · <span style="color:var(--warn)">reply failed — check it yourself</span>'}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug?' · <span style="color:var(--warn)">unmatched — pick the site below (one time — it’ll remember this sender after)</span>':t.status==='scheduled'?' · queued for the agent':''}${t.corrected?' · <span class="pillmini good">corrected via reply</span>':''}${t.dueBy?` · due by ${new Date(t.dueBy).toLocaleDateString()}`:''}</div>
+        ${t.repo||t.commitUrl?`<div class="note" style="margin-top:3px">${t.repo?`Repo: ${esc(t.repo)}`:''}${t.commitUrl?` · <a href="${esc(t.commitUrl)}" target="_blank" rel="noopener">view commit ↗</a>`:''}</div>`:''}
         ${!t.slug&&t.status!=='done'?`<div class="btn-row" style="margin-top:7px">
             <select data-assign-pick="${esc(t.id)}" style="flex:1"><option value="">Which site is this?</option>${(STATE&&STATE.sites||[]).map(s=>`<option value="${esc(s.slug)}">${esc(s.name)}</option>`).join('')}</select>
             <button class="btn sm" data-assign="${esc(t.id)}">Assign</button>
@@ -797,42 +815,34 @@ function renderRevisions(){
         :t.slug?`<div class="btn-row" style="margin-top:7px"><button class="btn sm ghost" data-done="${esc(t.id)}">Mark done</button></div>`:''}
       </div>`).join('') : '<p class="note">No revision requests yet.</p>'}
   `;
-  $$('#revPanel .dtabs button').forEach(b=>b.onclick=()=>{ el.hidden=true; el.innerHTML=''; revKey=null; revData=null; });
+}
+function wireRevisionsTab(){
   $('#revCheck')?.addEventListener('click',async(e)=>{
     e.target.disabled=true; e.target.textContent='Checking…';
-    const j=await fetch(`/api/admin?do=revisions-check&secret=${encodeURIComponent(revKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false,error:'network'}));
+    const j=await fetch(`/api/admin?do=revisions-check&secret=${encodeURIComponent(finKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false,error:'network'}));
     e.target.disabled=false; e.target.textContent='↻ Check inbox now';
     if(j.ok) toast(`Checked ${j.checked} email${j.checked===1?'':'s'} — ${j.tickets} new revision${j.tickets===1?'':'s'}`);
     else toast(j.error||'Could not check inbox','err');
-    await loadRevisions();
+    revData=null; await loadFinTab('revisions');
   });
-  $$('#revPanel [data-done]').forEach(b=>b.onclick=async()=>{
-    const j=await fetch(`/api/admin?do=revisions-done&id=${encodeURIComponent(b.dataset.done)}&secret=${encodeURIComponent(revKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-    if(j.ok) await loadRevisions(); else toast('Could not update','err');
+  $$('#finPanel [data-done]').forEach(b=>b.onclick=async()=>{
+    const j=await fetch(`/api/admin?do=revisions-done&id=${encodeURIComponent(b.dataset.done)}&secret=${encodeURIComponent(finKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    if(j.ok){ revData=null; await loadFinTab('revisions'); } else toast('Could not update','err');
   });
-  $$('#revPanel [data-assign]').forEach(b=>b.onclick=async()=>{
+  $$('#finPanel [data-assign]').forEach(b=>b.onclick=async()=>{
     const sel=document.querySelector(`[data-assign-pick="${b.dataset.assign}"]`);
     const slug=sel&&sel.value; if(!slug){ toast('Pick a site first','err'); return; }
     b.disabled=true;
-    const j=await fetch(`/api/admin?do=revisions-assign&id=${encodeURIComponent(b.dataset.assign)}&slug=${encodeURIComponent(slug)}&secret=${encodeURIComponent(revKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-    if(j.ok){ toast('Assigned — queued for the agent, and it’ll remember this sender next time'); await loadRevisions(); }
+    const j=await fetch(`/api/admin?do=revisions-assign&id=${encodeURIComponent(b.dataset.assign)}&slug=${encodeURIComponent(slug)}&secret=${encodeURIComponent(finKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    if(j.ok){ toast('Assigned — queued for the agent, and it’ll remember this sender next time'); revData=null; await loadFinTab('revisions'); }
     else { b.disabled=false; toast(j.error||'Could not assign','err'); }
   });
 }
 
-async function openReceipts(){
-  const el=$('#rcptPanel');
-  if(!el.hidden){ el.hidden=true; el.innerHTML=''; rcptKey=null; rcptData=null; return; }
-  const k=prompt('What’s your password?'); if(!k) return; rcptKey=k;
-  el.hidden=false; el.innerHTML='<div class="note">Building the ledger…</div>';
-  $('#finPanel').hidden=true; if(typeof coachOpen!=='undefined'&&coachOpen) closeCoach();
-  const j=await fetch(`/api/admin?do=receipts&secret=${encodeURIComponent(rcptKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
-  if(!j.ok){ el.innerHTML=`<div class="note" style="color:var(--neg)">${j.error==='bad password'?'Wrong password.':'Could not load receipts.'}</div>`; rcptKey=null; return; }
-  rcptData=j; renderReceipts();
-}
-function renderReceipts(){
-  const el=$('#rcptPanel'), j=rcptData; if(!j) return;
-  const secret=encodeURIComponent(rcptKey);
+/* ---------- Receipts / tax (now a tab inside #finPanel) ---------- */
+function receiptsHTML(j){
+  if(!j) return '<div class="note">Building the ledger…</div>';
+  const secret=encodeURIComponent(finKey);
   const all=[...j.income,...j.expenses].sort((a,b)=>b.date.localeCompare(a.date));
   const f=rcptFilter.toLowerCase();
   const rows=all.filter(r=>!f||`${r.id} ${r.counterparty} ${r.description} ${r.category}`.toLowerCase().includes(f));
@@ -859,16 +869,14 @@ function renderReceipts(){
     <div class="fin-row h"><span>#</span><span>Date</span><span>Who / what</span><span class="r">Amount</span></div>
     ${rows.slice(0,400).map(r=>`<div class="fin-row"><span><a class="link" href="/api/admin?do=receipts&one=${encodeURIComponent(r.id)}&secret=${secret}" target="_blank" title="open printable receipt">${esc(r.id)}</a></span><span>${r.date}</span><span title="${esc(r.description)}">${esc(r.counterparty)}${r.type==='expense'?' <span class="pillmini" style="color:var(--neg)">out</span>':''}</span><span class="r" style="color:${r.type==='income'?'var(--pos)':'var(--neg)'}">${r.type==='income'?'+':'−'}${money(r.amount)}</span></div>`).join('')||'<div class="note">Nothing matches.</div>'}
     ${rows.length>400?`<p class="note">Showing first 400 of ${rows.length}. Narrow with the filter or use the CSV.</p>`:`<p class="note">${rows.length} receipt${rows.length===1?'':'s'}. Click a number to open a printable copy (browser Print → Save as PDF).</p>`}`;
-  el.innerHTML=`
+  return `
     <div class="dtabs" style="margin:0 0 12px;top:auto;position:static;border:0;padding:0">
-      ${[['all','All receipts'],['tax','Taxes']].map(([id,lab])=>`<button data-t="${id}" class="${rcptTab===id?'on':''}">${lab}</button>`).join('')}
-      <button data-t="_close" class="link" style="margin-left:auto;align-self:center">✕ close</button>
+      ${[['all','All receipts'],['tax','Taxes']].map(([id,lab])=>`<button data-rt="${id}" class="${rcptTab===id?'on':''}">${lab}</button>`).join('')}
     </div>${body}`;
-  $$('#rcptPanel .dtabs button').forEach(b=>b.onclick=()=>{
-    if(b.dataset.t==='_close'){ el.hidden=true; el.innerHTML=''; rcptKey=null; rcptData=null; return; }
-    rcptTab=b.dataset.t; renderReceipts();
-  });
-  const si=$('#rcptSearch'); if(si) si.oninput=(e)=>{ rcptFilter=e.target.value; const p=e.target.selectionStart; renderReceipts(); const n=$('#rcptSearch'); if(n){ n.focus(); n.setSelectionRange(p,p); } };
+}
+function wireReceiptsTab(){
+  $$('#finPanel [data-rt]').forEach(b=>b.onclick=()=>{ rcptTab=b.dataset.rt; renderFinPanel(); });
+  const si=$('#rcptSearch'); if(si) si.oninput=(e)=>{ rcptFilter=e.target.value; const p=e.target.selectionStart; renderFinPanel(); const n=$('#rcptSearch'); if(n){ n.focus(); n.setSelectionRange(p,p); } };
 }
 
 /* ---------- Compass — floating chat bubble, in-dashboard business coach ---------- */
@@ -882,7 +890,7 @@ function openCoach(){
   $('#coachBubble').classList.add('on');
   $('#coachBubble').innerHTML='<span style="font-size:20px;line-height:1;color:#fff">✕</span>';
   const el=$('#coachPanel'); el.hidden=false;
-  $('#finPanel').hidden=true; $('#rcptPanel').hidden=true;
+  $('#finPanel').hidden=true;
   renderCoach();
 }
 function closeCoach(){
@@ -890,6 +898,7 @@ function closeCoach(){
   $('#coachBubble').classList.remove('on');
   $('#coachBubble').innerHTML='<img src="/brand/crown-white.png" alt=""/><span class="pulse"></span>';
   const el=$('#coachPanel'); el.hidden=true; el.innerHTML='';
+  if(openPanels.length) renderFinPanel();
 }
 $('#coachBubble').innerHTML='<img src="/brand/crown-white.png" alt=""/><span class="pulse"></span>';
 $('#coachBubble').addEventListener('click',toggleCoach);
