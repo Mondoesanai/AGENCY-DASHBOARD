@@ -12,6 +12,7 @@ import { buildForSite } from './report.js';
 import { runAgentCycle, agentStatus } from '../lib/agent.js';
 import { upsellState, sendUpsell } from '../lib/upsell.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
+import { checkRevisionInbox } from '../lib/revisions.js';
 
 const MK = monthKey();
 const monthsBetween = (from) => (from ? Math.max(1, Math.round((Date.now() - from) / (30 * 864e5))) : 1);
@@ -234,6 +235,26 @@ export default async function handler(req, res) {
     }
   } catch (e) {
     log.push({ action: 'upsell', error: String(e.message || e) });
+  }
+
+  // revisions inbox — the real-time path is GitHub Actions polling every
+  // ~10 min (see .github/workflows/check-revisions.yml), but that depends on
+  // an external scheduler. This is the guaranteed floor: worst case, a
+  // client-requested revision is never more than a day from being picked up,
+  // even if GitHub's cron never fires at all. Hands over only the time
+  // actually left in this invocation (checkRevisionInbox has its own 50s
+  // default budget, which would blow past Vercel's 60s ceiling stacked on
+  // top of everything already done above).
+  try {
+    const remaining = HARD_LIMIT_MS - (Date.now() - t0) - 4000; // 4s safety margin for the final res.json
+    if (remaining > 15000) {
+      const r = await checkRevisionInbox({ maxMs: remaining });
+      log.push({ action: 'revisions', result: r.ok ? `checked ${r.checked}, ${r.tickets} new` : r.error });
+    } else {
+      log.push({ action: 'revisions', skipped: true, reason: 'out of time budget this run — GitHub Actions/Refresh still cover it' });
+    }
+  } catch (e) {
+    log.push({ action: 'revisions', error: String(e.message || e) });
   }
 
   res.status(200).json({ ok: true, day: today, isFirst, processed: sites.length, log });
