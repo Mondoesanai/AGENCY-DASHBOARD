@@ -229,7 +229,8 @@ createServer(async (req, res) => {
         configured: false,
         lastCheck: Date.now() / 1000 - 3600,
         tickets: [
-          { id: '1', slug: 'relax-tax', siteName: 'Relax Tax', from: 'Angelete May <angelete@example.com>', subject: 'Website update', summary: 'Remove the "cash & check only" line from the homepage', receivedAt: Date.now() - 3 * 3600000, repliedAt: Date.now() - 3 * 3600000 + 120000, calendarLink: 'https://calendar.google.com/', status: 'scheduled' },
+          { id: '1', slug: 'relax-tax', siteName: 'Relax Tax', from: 'Angelete May <angelete@example.com>', subject: 'Website update', summary: 'Remove the "cash & check only" line from the homepage', receivedAt: Date.now() - 3 * 3600000, repliedAt: Date.now() - 3 * 3600000 + 120000, calendarLink: 'https://calendar.google.com/', todoId: 'rev-1', status: 'scheduled' },
+          { id: '2', slug: null, siteName: 'Unmatched site', from: 'Random Person <someone@gmail.com>', subject: 'quick ask', summary: 'Update the about page photo', receivedAt: Date.now() - 1800000, repliedAt: Date.now() - 1770000, calendarLink: 'https://calendar.google.com/', todoId: null, status: 'needs attention' },
         ],
       },
     }));
@@ -238,7 +239,7 @@ createServer(async (req, res) => {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: false, error: 'Google not connected (local preview stub)' }));
   }
-  if (path === '/api/revisions-done') {
+  if (path === '/api/revisions-done' || path === '/api/revisions-assign') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: true }));
   }

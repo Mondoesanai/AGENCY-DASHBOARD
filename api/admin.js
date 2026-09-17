@@ -10,7 +10,7 @@ import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
-import { revisionsStatus, checkRevisionInbox, markTicketDone } from '../lib/revisions.js';
+import { revisionsStatus, checkRevisionInbox, markTicketDone, assignTicketToSite } from '../lib/revisions.js';
 
 function authed(req) {
   const s = process.env.CRON_SECRET;
@@ -67,6 +67,10 @@ export default async function handler(req, res) {
     }
     case 'revisions-done': {
       const out = await markTicketDone(req.query.id);
+      return res.status(200).json(out);
+    }
+    case 'revisions-assign': {
+      const out = await assignTicketToSite(req.query.id, req.query.slug);
       return res.status(200).json(out);
     }
     default:

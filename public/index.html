@@ -748,9 +748,13 @@ function renderRevisions(){
           <span style="margin-left:auto;font-size:11px;color:var(--faint)">${new Date(t.receivedAt).toLocaleString()}</span>
         </div>
         <div class="fd" style="margin-top:5px">${esc(t.summary||t.subject)}</div>
-        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.repliedAt?' · replied':' · <span style="color:var(--warn)">reply failed — check it yourself</span>'}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug?' · <span style="color:var(--warn)">unmatched — route it by hand</span>':t.status==='scheduled'?' · queued for the agent':''}</div>
+        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.repliedAt?' · replied':' · <span style="color:var(--warn)">reply failed — check it yourself</span>'}${t.calendarLink?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug?' · <span style="color:var(--warn)">unmatched — pick the site below (one time — it’ll remember this sender after)</span>':t.status==='scheduled'?' · queued for the agent':''}</div>
+        ${!t.slug&&t.status!=='done'?`<div class="btn-row" style="margin-top:7px">
+            <select data-assign-pick="${esc(t.id)}" style="flex:1"><option value="">Which site is this?</option>${(STATE&&STATE.sites||[]).map(s=>`<option value="${esc(s.slug)}">${esc(s.name)}</option>`).join('')}</select>
+            <button class="btn sm" data-assign="${esc(t.id)}">Assign</button>
+          </div>` : ''}
         ${t.status==='done'?`<div class="note" style="margin-top:3px">${t.completionEmail?.sent?`✓ client notified · ${esc(t.doneAt?new Date(t.doneAt).toLocaleDateString():'')}`:t.completionEmail?`<span style="color:var(--warn)">completion email didn't send — ${esc(t.completionEmail.reason||'')}</span>`:'✓ done'}</div>`
-        :`<div class="btn-row" style="margin-top:7px"><button class="btn sm ghost" data-done="${esc(t.id)}">Mark done</button></div>`}
+        :t.slug?`<div class="btn-row" style="margin-top:7px"><button class="btn sm ghost" data-done="${esc(t.id)}">Mark done</button></div>`:''}
       </div>`).join('') : '<p class="note">No revision requests yet.</p>'}
   `;
   $$('#revPanel .dtabs button').forEach(b=>b.onclick=()=>{ el.hidden=true; el.innerHTML=''; revKey=null; revData=null; });
@@ -765,6 +769,14 @@ function renderRevisions(){
   $$('#revPanel [data-done]').forEach(b=>b.onclick=async()=>{
     const j=await fetch(`/api/admin?do=revisions-done&id=${encodeURIComponent(b.dataset.done)}&secret=${encodeURIComponent(revKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
     if(j.ok) await loadRevisions(); else toast('Could not update','err');
+  });
+  $$('#revPanel [data-assign]').forEach(b=>b.onclick=async()=>{
+    const sel=document.querySelector(`[data-assign-pick="${b.dataset.assign}"]`);
+    const slug=sel&&sel.value; if(!slug){ toast('Pick a site first','err'); return; }
+    b.disabled=true;
+    const j=await fetch(`/api/admin?do=revisions-assign&id=${encodeURIComponent(b.dataset.assign)}&slug=${encodeURIComponent(slug)}&secret=${encodeURIComponent(revKey)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    if(j.ok){ toast('Assigned — queued for the agent, and it’ll remember this sender next time'); await loadRevisions(); }
+    else { b.disabled=false; toast(j.error||'Could not assign','err'); }
   });
 }
 
