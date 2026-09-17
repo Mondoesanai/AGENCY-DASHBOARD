@@ -117,8 +117,12 @@ export default async function handler(req, res) {
   );
 
   const withData = rows.filter((r) => r.stats?.hasData);
+  const revTickets = await readArr('revisions:all');
+  const pendingRevisions = revTickets.filter((t) => t.status !== 'done').length;
+
   const portfolio = {
     sites: rows.length,
+    pendingRevisions,
     visitors30: withData.reduce((t, r) => t + (r.stats?.visitors || 0), 0),
     conversions30: withData.reduce((t, r) => t + (r.stats?.conversions || 0), 0),
     // MRR counts only paying clients — trial clients contribute $0 until their trial ends

@@ -284,10 +284,9 @@
     <div class="top-actions">
       <span class="pill" id="statusPill"><span class="dot"></span><span id="statusTxt">loading</span></span>
       <span class="pill" id="monthPill">—</span>
-      <button class="btn ghost" id="refreshBtn">Refresh</button>
+      <button class="btn ghost" id="refreshBtn" title="Reloads instantly, then refreshes every site's report with today's real numbers">Refresh</button>
       <button class="btn" id="addBtn">+ Add site</button>
       <button class="btn ghost" id="selectBtn">Select</button>
-      <button class="btn ghost" id="genBtn" title="Refresh every site's report with today's real numbers (no emails sent, no AI re-spend if already run today)">Generate all</button>
       <button class="btn ghost" id="howtoBtn" title="How to use this dashboard">❔ Guide</button>
     </div>
   </header>
@@ -539,17 +538,18 @@ function render(data){
   pill.className='pill'; txt.textContent='live · '+(p.backend||'ok');
 
   $('#overview').innerHTML=[
-    ['Visitors · 30d',fmt(p.visitors30),'sites with tracking'],
-    ['Conversions · 30d',fmt(p.conversions30),'calls · forms · bookings'],
-    ['Avg SEO-ready',p.avgSeo??'—','technical setup, not ranking'],
-    ['MRR',money(p.mrr),p.trials?`+ ${money(p.trialMrr)}/mo in ${p.trials} trial${p.trials>1?'s':''}`:'across '+p.sites+' sites'],
-    ['__nextseo__','','tap to see what each site is doing'],
-    ['Open suggestions',p.openFindings,'builder to-dos'],
-  ].map(([k,v,d])=>k==='__nextseo__'
-    ? `<div class="stat clickable" id="nextSeoTile"><div class="k">Next SEO update</div><div class="v ticking" id="nextSeoVal">T‑${fmtCountdown(nextCronMs())}</div><div class="d">${d}</div></div>`
-    : `<div class="stat"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`
+    ['visitors','Visitors · 30d',fmt(p.visitors30),'tap for every site'],
+    ['conversions','Conversions · 30d',fmt(p.conversions30),'tap for every site'],
+    ['seo','Avg SEO-ready',p.avgSeo??'—','tap for every site'],
+    ['revisions','Pending revisions',fmt(p.pendingRevisions||0),'tap to review'],
+    ['__nextseo__','Next SEO update','','tap to see what each site is doing'],
+    ['todos','Open suggestions',p.openFindings,'tap for every site'],
+  ].map(([kind,k,v,d])=>kind==='__nextseo__'
+    ? `<div class="stat clickable" id="nextSeoTile"><div class="k">${k}</div><div class="v ticking" id="nextSeoVal">T‑${fmtCountdown(nextCronMs())}</div><div class="d">${d}</div></div>`
+    : `<div class="stat clickable" data-drill="${kind}"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`
   ).join('');
   $('#nextSeoTile').onclick=openSeoOverview;
+  $$('#overview [data-drill]').forEach(el=>el.onclick=()=>el.dataset.drill==='revisions'?openFinances('revisions'):openDrill(el.dataset.drill));
 
   // --- needs-attention banner (dismiss = session flag + localStorage) ---
   const att=$('#attention');
@@ -710,6 +710,46 @@ function renderSeoOverview(){
   $$('.seo-ov-row').forEach(r=>r.onclick=()=>{
     closeSeoOverview();
     drawerPane='settings'; _openToAgentDetail=true;
+    openDrawer(r.dataset.slug);
+  });
+}
+
+const DRILL={
+  visitors:{title:'Visitors — every site (30d)', pane:'overview', row:s=>({val:s.stats?.hasData?fmt(s.stats.visitors):'—', sub:s.stats?.hasData?deltaHTML(s.stats.deltas?.visitors).replace(/<[^>]+>/g,''):'no tracker data'})},
+  conversions:{title:'Conversions — every site (30d)', pane:'traffic', row:s=>({val:s.stats?.hasData?(s.stats.conversions??0):'—', sub:'calls · forms · bookings'})},
+  seo:{title:'SEO-ready — every site', pane:'overview', row:s=>({val:s.audit?.ok?s.audit.scores.seo:'—', sub:s.audit?.ok?'technical setup, not ranking':'not scanned yet'})},
+  todos:{title:'Open builder suggestions — every site', pane:'todos', row:s=>({val:(s.aiTodos&&s.aiTodos.length)||s.openCount||0, sub:(s.aiTodos&&s.aiTodos.length)?'AI-curated':'rule-based'})},
+};
+function openDrill(kind){
+  if(!STATE||!DRILL[kind]) return;
+  $('#mainView').hidden=true;
+  $('#finPanel').hidden=true; $('#rcptPanel').hidden=true; $('#revPanel')?.remove?.();
+  renderDrill(kind);
+  $('#seoOverview').hidden=false;
+  window.scrollTo(0,0);
+}
+function renderDrill(kind){
+  const cfg=DRILL[kind];
+  const rows=STATE.sites.slice().sort((a,b)=>{
+    const av=cfg.row(a).val, bv=cfg.row(b).val;
+    return (Number(bv)||0)-(Number(av)||0);
+  }).map(s=>{
+    const r=cfg.row(s);
+    return `<button type="button" class="seo-ov-row" data-slug="${s.slug}" data-pane="${cfg.pane}">
+      <span class="seo-ov-name">${esc(s.name)}</span>
+      <span class="seo-ov-mid">${esc(String(r.sub||''))}</span>
+      <span class="seo-ov-rank">${esc(String(r.val))}</span>
+      <span class="seo-ov-go">Details ›</span>
+    </button>`;
+  }).join('');
+  $('#seoOverview').innerHTML=`
+    <div class="seo-ov-head"><h2>${esc(cfg.title)}</h2><p class="note" style="margin:2px 0 0">Tap any site for the full picture.</p></div>
+    <div class="seo-ov-list">${rows||'<div class="note">No sites yet.</div>'}</div>
+    <p class="note" style="margin-top:14px">Click the logo up top to go back.</p>
+  `;
+  $$('#seoOverview .seo-ov-row').forEach(r=>r.onclick=()=>{
+    closeSeoOverview();
+    drawerPane=r.dataset.pane||'overview';
     openDrawer(r.dataset.slug);
   });
 }
@@ -1760,7 +1800,19 @@ function closeDrawer(){ $('#scrim').classList.remove('open'); $('#drawer').class
 $('#scrim').addEventListener('click',closeDrawer);
 $('#drawerX').addEventListener('click',closeDrawer);
 document.addEventListener('keydown',e=>e.key==='Escape'&&(closeDrawer(),$('#modal').classList.remove('open'),$('#churnModal').classList.remove('open')));
-$('#refreshBtn').addEventListener('click',load);
+$('#refreshBtn').addEventListener('click',async()=>{
+  const b=$('#refreshBtn');
+  await load();
+  const k=needKey(); if(!k) return; // fast reload already happened either way
+  b.disabled=true; b.textContent='Refreshing…';
+  const j=await fetch(`/api/report?secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+  b.disabled=false; b.textContent='Refresh';
+  if(j.ok){
+    const skipped=(j.reports||[]).filter(r=>r.skipped).length;
+    toast(skipped?`Refreshed ${j.generated-skipped} of ${j.generated} sites — the rest catch up automatically`:`Refreshed all ${j.generated} sites with today's numbers`);
+    await load();
+  } else toast(j.error||'Could not refresh reports','err');
+});
 
 /* ---------- bulk select + remove ---------- */
 function toggleSel(slug){ selected.has(slug)?selected.delete(slug):selected.add(slug); if(STATE) render(STATE); }
@@ -1828,18 +1880,6 @@ $('#bulkRemove').addEventListener('click',async(e)=>{
   const j=await post(`/api/site?secret=${encodeURIComponent(k)}`,{action:'delete-many',slugs,churn:churnMap});
   if(j.ok){ exitSelect(); await load(); }
   else { e.target.disabled=false; e.target.textContent='Remove from dashboard'; alert(j.error||'Failed — check your password.'); }
-});
-
-$('#genBtn').addEventListener('click',async()=>{
-  const k=needKey(); if(!k) return;
-  const b=$('#genBtn'); b.disabled=true; b.textContent='Generating all…';
-  const j=await fetch(`/api/report?secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-  if(j.ok){
-    const skipped=(j.reports||[]).filter(r=>r.skipped).length;
-    b.textContent=skipped?`Done · ${j.generated-skipped} of ${j.generated} (rest catch up tonight)`:`Done · ${j.generated}`;
-    await load();
-  } else { setKey(''); b.textContent='Failed — key?'; }
-  setTimeout(()=>{ b.disabled=false; b.textContent='Generate all'; },2600);
 });
 
 /* ---------- add site modal ---------- */
