@@ -836,6 +836,7 @@ function ticketCardHTML(t, allTickets){
           Responded: ${t.repliedAt?new Date(t.repliedAt).toLocaleString():'<span style="color:var(--warn)">reply failed — check it yourself</span>'}<br>
           ${completionLine}
         </div>
+        ${t.status==='scheduled'&&t.lastAttempt&&t.lastAttempt.outcome!=='shipped'?`<div class="note" style="margin-top:4px;color:var(--warn)">Last attempt (${agoStr(t.lastAttempt.at)}): ${esc(t.lastAttempt.outcome)}${t.lastAttempt.reason?` — ${esc(t.lastAttempt.reason)}`:''}</div>`:''}
         ${t.repo||t.commitUrl||t.siteUrl?`<div class="note" style="margin-top:3px">${t.shipSummary?`Shipped: ${esc(t.shipSummary)}<br>`:''}${t.repo?`Repo: ${esc(t.repo)}`:''}${t.commitUrl?` · <a href="${esc(t.commitUrl)}" target="_blank" rel="noopener">view commit ↗</a>`:''}${t.siteUrl?` · <a href="${esc(t.siteUrl)}" target="_blank" rel="noopener">view live site ↗</a>`:''}</div>`:''}
         ${!t.slug&&!isClosedTicket(t)?`<div class="btn-row" style="margin-top:7px">
             <select data-assign-pick="${esc(t.id)}" style="flex:1"><option value="">Which site is this?</option>${(STATE&&STATE.sites||[]).map(s=>`<option value="${esc(s.slug)}">${esc(s.name)}</option>`).join('')}</select>
