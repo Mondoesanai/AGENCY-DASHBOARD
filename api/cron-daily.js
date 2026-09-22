@@ -11,6 +11,7 @@ import { monthKey } from '../lib/history.js';
 import { buildForSite } from './report.js';
 import { runAgentCycle, agentStatus } from '../lib/agent.js';
 import { upsellState, sendUpsell } from '../lib/upsell.js';
+import { sendWinsRecap } from '../lib/winsrecap.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
 import { checkRevisionInbox } from '../lib/revisions.js';
 
@@ -163,6 +164,32 @@ export default async function handler(req, res) {
           log.push({ slug: site.slug, action: 'month snapshot' });
         } catch (e) {
           log.push({ slug: site.slug, action: 'month snapshot', error: String(e.message || e) });
+        }
+      }
+
+      // two short "wins recap" emails a month, in addition to the formal
+      // monthly report — spread away from the billing day so clients hear
+      // from us more than once a month without it becoming a second report.
+      // Same autoSend opt-in as the report; skips quietly if there's
+      // nothing new to recap that window (see lib/winsrecap.js).
+      if (site.autoSend && site.email && process.env.RESEND_API_KEY) {
+        const base = site.billingDay || 1;
+        const recapDays = [
+          [1, ((base + 10 - 1) % 28) + 1],
+          [2, ((base + 20 - 1) % 28) + 1],
+        ];
+        for (const [n, day] of recapDays) {
+          if (today !== day) continue;
+          const recapKey = `winsRecapSent:${site.slug}:${MK}:${n}`;
+          const already = await store.get(recapKey).catch(() => null);
+          if (already) continue;
+          try {
+            const r = await sendWinsRecap(site);
+            if (r.sent) await store.set(recapKey, '1', { ex: 60 * 60 * 24 * 45 });
+            log.push({ slug: site.slug, action: `wins recap ${n}`, sent: r.sent, reason: r.reason });
+          } catch (e) {
+            log.push({ slug: site.slug, action: `wins recap ${n}`, error: String(e.message || e) });
+          }
         }
       }
     })

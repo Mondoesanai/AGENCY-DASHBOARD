@@ -9,6 +9,34 @@ import { clientActions, improvementsForClient, overallGrade } from '../lib/sugge
 import { tokenOk } from '../lib/token.js';
 import { store } from '../lib/store.js';
 
+async function readArr(k) {
+  const raw = await store.get(k).catch(() => null);
+  try {
+    const a = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    return Array.isArray(a) ? a : [];
+  } catch {
+    return [];
+  }
+}
+
+// The link Mondo sends clients used to show whatever was true when the
+// monthly report was generated — the numbers had some live fallback, but
+// "what we did" never did, so it looked identical from the day it was sent
+// until the next one went out. This re-reads it fresh on every visit
+// (subject to the 10-min cache below), so it actually reflects the latest
+// shipped work — both AI-picked SEO fixes and things the client themselves
+// asked for.
+async function recentWork(slug) {
+  const [manual, autoShipped] = await Promise.all([readArr(`changelog:${slug}`), readArr(`todos:completed:${slug}`)]);
+  const merged = [
+    ...manual.map((c) => ({ date: c.date, text: c.text, at: Date.parse(c.date) || 0 })),
+    ...autoShipped.map((x) => ({ date: new Date(x.addressedAt).toISOString().slice(0, 10), text: x.title, at: x.addressedAt || 0, fromClientRequest: x.source === 'revision' })),
+  ]
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 10);
+  return merged.map(({ at, ...rest }) => rest);
+}
+
 export default async function handler(req, res) {
   const slug = req.query.slug;
   if (!slug) return res.status(400).json({ error: 'missing slug' });
@@ -17,12 +45,13 @@ export default async function handler(req, res) {
   const site = (await listSites()).find((s) => s.slug === slug);
   if (!site) return res.status(404).json({ error: 'not found' });
 
-  const [history, reportRaw, stats, audit, healthRaw] = await Promise.all([
+  const [history, reportRaw, stats, audit, healthRaw, changelog] = await Promise.all([
     getHistory(slug).catch(() => []),
     store.get(`report:${slug}:latest`).catch(() => null),
     siteStats(slug, site.conversionEvents || []).catch(() => null),
     runAudit(site.url).catch(() => ({ ok: false })),
     store.get(`health:${slug}`).catch(() => null),
+    recentWork(slug).catch(() => []),
   ]);
   const report = reportRaw ? (typeof reportRaw === 'string' ? JSON.parse(reportRaw) : reportRaw) : null;
   const health = healthRaw ? (typeof healthRaw === 'string' ? JSON.parse(healthRaw) : healthRaw) : null;
@@ -65,6 +94,7 @@ export default async function handler(req, res) {
       visitors: h.visitors,
       conversions: h.conversions,
       seo: h.seo,
+      health: h.grade?.score ?? null,
     })),
     current: {
       visitors: stats?.visitors ?? (history.at(-1)?.visitors || 0),
@@ -73,5 +103,6 @@ export default async function handler(req, res) {
     },
     uptime: health ? { up: health.up, ms: health.ms } : null,
     cardUrl: `/api/card?slug=${encodeURIComponent(slug)}`,
+    recentWork: changelog,
   });
 }

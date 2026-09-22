@@ -113,10 +113,16 @@ export default async function handler(req, res) {
   );
   if (host) tasks.push(rememberHost(host, slug)); // seed the host->slug index
 
+  // UTM-derived source (from t.js, persisted for the session) wins when
+  // present — it's more precise than referrer alone (distinguishes paid vs
+  // organic on the same domain). Falls back to referrer classification.
+  const utmSrc = String(d.src || '').slice(0, 40);
+  const source = utmSrc || refHost(d.r);
+
   if (type === 'pv') {
     tasks.push(store.incr(`${p}:day:${day}:pv`));
     tasks.push(store.zincr(`${p}:day:${day}:paths`, path));
-    tasks.push(store.zincr(`${p}:day:${day}:refs`, refHost(d.r)));
+    tasks.push(store.zincr(`${p}:day:${day}:refs`, source));
     if (width) {
       tasks.push(store.incr(`${p}:day:${day}:${width < 768 ? 'mobile' : 'desktop'}`));
     }
@@ -131,6 +137,10 @@ export default async function handler(req, res) {
     const name = cleanSlug(d.n || 'click') || 'click';
     tasks.push(store.incr(`${p}:day:${day}:ev:${name}`));
     tasks.push(store.zincr(`${p}:day:${day}:events`, name));
+    // which channel this specific conversion-worthy click came from — "lead
+    // source" isn't just where traffic comes from, it's where the actual
+    // enquiries come from, which can be a very different ranking.
+    tasks.push(store.zincr(`${p}:day:${day}:leadsrc`, source));
   }
 
   try {

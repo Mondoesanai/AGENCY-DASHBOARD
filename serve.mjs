@@ -21,6 +21,7 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
       visitors: last && dV < 0 ? v : Math.round(v * (0.45 + i * 0.16)),
       conversions: Math.max(0, c - (4 - i)),
       seo: Math.min(100, seo - (4 - i) * 3), grade: { letter, score: seo - 5 },
+      health: Math.min(100, (seo - 5) - (4 - i) * 2),
     };
   });
   const setupFee = price * 8;
@@ -46,6 +47,7 @@ function demoSite(slug, name, url, client, v, dV, c, dC, seo, perf, letter, pric
       topPages: [{ member: '/', score: Math.round(v * 1.3) }, { member: '/services', score: Math.round(v * 0.5) }, { member: '/contact', score: Math.round(v * 0.3) }],
       sources: [{ member: 'google', score: Math.round(v * 0.5) }, { member: 'direct', score: Math.round(v * 0.35) }, { member: 'social', score: Math.round(v * 0.15) }],
       events: [{ member: 'call', score: Math.round(c * 0.6) + 5 }, { member: 'quote-form', score: Math.round(c * 0.4) + 2 }, { member: 'booking', score: 3 }, { member: 'review-click', score: 4 }],
+      leadSources: [{ member: 'google-cpc', score: Math.round(c * 0.5) + 2 }, { member: 'facebook-social', score: Math.round(c * 0.3) + 1 }, { member: 'direct', score: Math.round(c * 0.2) }],
       conversionEvents: [],
     },
     audit: { ok: true, scores: { seo, performance: perf, accessibility: 92, bestPractices: 95 }, vitals: { lcp: 2600, cls: 0.06, tbt: 180 } },
@@ -122,6 +124,11 @@ createServer(async (req, res) => {
       wins: s.report.wins, improvements: s.improvements, clientActions: s.clientActions, grade: s.grade, scores: s.audit.scores, vitals: s.audit.vitals,
       history: s.history, current: { visitors: s.stats.visitors, conversions: s.stats.conversions, deltas: s.stats.deltas },
       uptime: { up: true, ms: 180 }, cardUrl: `/api/card?slug=${s.slug}`,
+      recentWork: [
+        { date: '2026-09-16', text: 'Changed the "Join the community" button to green', fromClientRequest: true },
+        { date: '2026-09-10', text: 'Added LocalBusiness JSON-LD for better local search visibility', fromClientRequest: false },
+        { date: '2026-09-02', text: 'Compressed images, added FAQ section', fromClientRequest: false },
+      ],
     }));
   }
   if (path === '/t.js' || path === '/api/t') {

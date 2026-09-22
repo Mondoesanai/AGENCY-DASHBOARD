@@ -1465,7 +1465,7 @@ function openDrawer(slug){
     </div><!-- /overview -->
 
     <div class="tabpane" data-pane="traffic" hidden>
-    ${st.hasData?`<div class="block"><h3>Traffic sources <span class="ang">where visitors came from</span></h3>${bars(st.sources)}</div><div class="block"><h3>Top pages <span class="ang">what they landed on</span></h3>${bars(st.topPages)}</div>${eventsBlock(s)}`:noTrackerBlock(s)}
+    ${st.hasData?`<div class="block"><h3>Traffic sources <span class="ang">where visitors came from</span></h3>${bars(st.sources)}</div>${st.leadSources&&st.leadSources.length?`<div class="block"><h3>Lead sources <span class="ang">where enquiries came from</span></h3>${bars(st.leadSources)}<p class="note" style="margin-top:6px">Auto-tagged from <code>?utm_source=</code> links when present, otherwise from the referring site. Add UTM tags to ads/social posts to see exactly which ones are converting.</p></div>`:''}<div class="block"><h3>Top pages <span class="ang">what they landed on</span></h3>${bars(st.topPages)}</div>${eventsBlock(s)}`:noTrackerBlock(s)}
     </div><!-- /traffic -->
 
     <div class="tabpane" data-pane="todos" hidden>
@@ -1609,7 +1609,9 @@ function openDrawer(slug){
         <label class="field"><span>What counts as a conversion? (event names, blank = all)</span><input id="cf_conv" value="${esc((s.conversionEvents||[]).join(', '))}" placeholder="call, quote-form, booking" /></label>
         <p class="note" style="margin-top:-4px">Events firing on this site: ${((s.stats&&s.stats.events)||[]).map(e=>esc(e.member)).join(', ')||'none yet'}</p>
         <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:8px 0">
-          <div class="note" style="margin:0 0 6px">Not sure of the event name? Describe the action in plain English and let AI work it out:</div>
+          <div class="btn-row"><button class="btn sm" id="cf_convscan" type="button">🎯 Scan homepage & auto-tag conversions now</button></div>
+          <p class="note" style="margin:6px 0 0">Re-scans this site's homepage and tags any real conversion buttons it finds — safe to run again any time the page changes.</p>
+          <div class="note" style="margin:10px 0 6px">Not sure of the event name, or it's on a different page? Describe the action in plain English and let AI work it out:</div>
           <div class="btn-row"><input id="cf_convdesc" style="flex:1" placeholder='e.g. "when someone clicks the RSVP button"' /><button class="btn sm" id="cf_convai">✨ Figure it out</button></div>
           <div id="cf_convout" class="note" style="margin-top:8px"></div>
         </div>
@@ -1771,6 +1773,16 @@ function wireDrawer(s,bf){
     if(j.ok){ s.changelog=j.changelog; openDrawer(s.slug); }
   });
 
+  $('#cf_convscan')?.addEventListener('click',async(e)=>{
+    const k=needKey(); if(!k) return;
+    e.target.disabled=true; e.target.textContent='Scanning…';
+    const j=await fetch(`/api/admin?do=conversions-setup-all&slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    e.target.disabled=false; e.target.textContent='🎯 Scan homepage & auto-tag conversions now';
+    const r=j.ok&&j.results&&j.results[0];
+    if(r&&r.tagged>0) toast(`Tagged ${r.tagged} conversion${r.tagged===1?'':'s'}: ${(r.applied||[]).map(a=>a.name).join(', ')}`);
+    else if(r&&r.ok) toast(r.note||'Nothing new to tag on the homepage');
+    else toast((r&&r.error)||'Could not scan this site','err');
+  });
   $('#cf_convai')?.addEventListener('click',async(e)=>{
     const k=needKey(); if(!k) return;
     const desc=$('#cf_convdesc').value.trim(); if(!desc) return;

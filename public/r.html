@@ -57,11 +57,13 @@ const TOK = P.get('t') || '';
 const esc = (s)=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const fmt = (n)=> n>=1000 ? (n/1000).toFixed(n>=10000?0:1)+'k' : String(Math.round(n||0));
 
-function uptick(history){
-  const rows=(history||[]).slice(-10).filter(h=>h&&h.month);
-  if(rows.length<2) return `<div class="block"><h3>Visitors by month</h3><div class="w">Your growth line appears here once we have a couple of months of data.</div></div>`;
-  const vals=rows.map(h=>h.visitors||0);
-  const max=Math.max(...vals,1)*1.18;
+function uptick(history,opts){
+  const o=opts||{};
+  const key=o.key||'visitors', title=o.title||'Visitors by month', cls=o.cls||'uptick', isPct=!!o.isPct;
+  const rows=(history||[]).slice(-10).filter(h=>h&&h.month&&h[key]!=null);
+  if(rows.length<2) return `<div class="block"><h3>${esc(title)}</h3><div class="w">This trend line appears here once we have a couple of months of data.</div></div>`;
+  const vals=rows.map(h=>h[key]||0);
+  const max=Math.max(...vals,1)*(isPct?1.05:1.18);
   const W=900,H=300,padL=10,padR=10,padT=16,padB=34;
   const iw=W-padL-padR, ih=H-padT-padB;
   const X=i=>padL+i*(iw/(rows.length-1));
@@ -75,17 +77,18 @@ function uptick(history){
   const pct=first?Math.round((last-first)/first*100):(last>0?100:0);
   const grid=[.25,.5,.75].map(f=>`<line x1="${padL}" y1="${(padT+ih-f*ih).toFixed(1)}" x2="${W-padR}" y2="${(padT+ih-f*ih).toFixed(1)}" stroke="var(--line)"/>`).join('');
   const labels=rows.map((r,i)=>`<text x="${X(i).toFixed(1)}" y="${H-12}" fill="var(--faint)" font-size="13" text-anchor="middle">${esc(r.month.slice(5))}</text>`).join('');
+  const gid='ug-'+key;
   return `<div class="block">
     <div style="display:flex;justify-content:space-between;align-items:baseline">
-      <h3 style="margin:0">Visitors by month</h3>
+      <h3 style="margin:0">${esc(title)}</h3>
       <span style="font-size:13px;font-weight:600;color:${col}">${pct>0?'+':''}${pct}% vs last month</span>
     </div>
-    <svg class="uptick" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin-top:8px;overflow:visible">
-      <defs><linearGradient id="ug" x1="0" y1="0" x2="0" y2="1">
+    <svg class="${cls}" viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin-top:8px;overflow:visible">
+      <defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0" stop-color="${col}" stop-opacity="0.3"/><stop offset="1" stop-color="${col}" stop-opacity="0"/>
       </linearGradient></defs>
       ${grid}
-      <path class="uparea" d="${area}" fill="url(#ug)" opacity="0"/>
+      <path class="uparea" d="${area}" fill="url(#${gid})" opacity="0"/>
       <path class="upline" d="${line}" fill="none" stroke="${col}" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
       <circle class="updot" cx="${pts[pts.length-1][0].toFixed(1)}" cy="${pts[pts.length-1][1].toFixed(1)}" r="6" fill="${col}" opacity="0"/>
       ${labels}
@@ -94,10 +97,10 @@ function uptick(history){
   </div>`;
 }
 function initUptick(){
-  const svg=document.querySelector('.uptick'); if(!svg) return;
+  document.querySelectorAll('.uptick,.uptick-health').forEach(svg=>{
   const line=svg.querySelector('.upline'); const len=line.getTotalLength();
   line.style.strokeDasharray=len; line.style.strokeDashoffset=len;
-  const num=document.querySelector('.upnum'); const to=+(num&&num.dataset.to||0);
+  const num=svg.parentElement.querySelector('.upnum'); const to=+(num&&num.dataset.to||0);
   const go=()=>{
     line.style.transition='stroke-dashoffset 1.4s cubic-bezier(.35,0,.15,1)'; line.style.strokeDashoffset='0';
     const ar=svg.querySelector('.uparea'); ar.style.transition='opacity .9s ease .5s'; ar.style.opacity='1';
@@ -108,6 +111,7 @@ function initUptick(){
     const io=new IntersectionObserver((es)=>es.forEach(e=>{ if(e.isIntersecting){ go(); io.disconnect(); }}),{threshold:0.35});
     io.observe(svg);
   } else go();
+  });
 }
 
 function deltaHTML(d,pct){
@@ -146,7 +150,9 @@ function deltaHTML(d,pct){
       <a href="${esc(d.url)}" target="_blank" rel="noopener"><img class="card-img" style="aspect-ratio:16/9;max-height:340px;object-fit:cover;object-position:top;background:var(--panel) url('/brand/crown-white.png') center/40px no-repeat" src="/api/shot?slug=${encodeURIComponent(SLUG)}" alt="Your website" onerror="this.style.display='none'" /></a>
       ${d.ready===false?`<div class="block" style="border-color:var(--faint)"><div class="w">Your full report is being prepared — the numbers below fill in once your web team runs it.</div></div>`:''}
 
-      ${uptick(d.history)}
+      ${uptick(d.history,{key:'visitors',title:'Visitors by month',cls:'uptick'})}
+
+      ${uptick(d.history,{key:'health',title:'Site health score by month',cls:'uptick-health',isPct:true})}
 
       <div class="stats">
         <div class="stat"><div class="k">Visitors · 30d</div><div class="v">${fmt(cur.visitors)}</div><div class="d">${deltaHTML(dv,true)}</div></div>
@@ -156,6 +162,8 @@ function deltaHTML(d,pct){
       </div>
 
       ${(d.wins&&d.wins.length) ? `<div class="block"><h3>This month</h3>${d.wins.map(w=>`<div class="win">${esc(w)}</div>`).join('')}</div>` : ''}
+
+      ${(d.recentWork&&d.recentWork.length) ? `<div class="block"><h3>Recently done</h3>${d.recentWork.map(w=>`<div class="win">${w.fromClientRequest?'<strong>You asked for this</strong> — ':''}${esc(w.text)} <span style="opacity:.6;font-size:.9em">— ${esc(w.date)}</span></div>`).join('')}</div>` : ''}
 
       ${(d.improvements&&d.improvements.length) ? `<div class="block"><h3>What we're working on next</h3>${d.improvements.map(s=>`<div class="sug"><div class="t">${esc(s.title)}</div><div class="w">${esc(s.why)}</div></div>`).join('')}</div>` : ''}
 

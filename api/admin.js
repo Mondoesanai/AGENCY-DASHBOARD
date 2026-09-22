@@ -95,7 +95,13 @@ export default async function handler(req, res) {
       // Forces conversion auto-tagging right now for every site that hasn't
       // had it yet, instead of waiting on each one's turn in the daily
       // rotation — for retrofitting sites that existed before this feature.
-      const sites = await listSites();
+      // With ?slug=<slug>, scans just that one site (from a site's own
+      // settings) and always re-scans even if it already ran once, since a
+      // site's homepage can change after the first pass.
+      const onlySlug = req.query.slug || null;
+      const forceIt = onlySlug ? req.query.force !== '0' : req.query.force === '1';
+      const sites = onlySlug ? (await listSites()).filter((s) => s.slug === onlySlug) : await listSites();
+      if (onlySlug && !sites.length) return res.status(404).json({ ok: false, error: 'unknown site' });
       const t0 = Date.now();
       const results = [];
       for (const site of sites) {
@@ -104,7 +110,7 @@ export default async function handler(req, res) {
           continue;
         }
         const already = await store.get(`conv:tagged:${site.slug}`).catch(() => null);
-        if (already && req.query.force !== '1') {
+        if (already && !forceIt) {
           results.push({ slug: site.slug, skipped: true, reason: 'already tagged' });
           continue;
         }
