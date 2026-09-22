@@ -255,16 +255,26 @@ createServer(async (req, res) => {
       ticketsNeedingAttention: 3,
       budgets: [{ slug: 'set-apart-movement', name: 'Set Apart Movement', spent: 20, cap: 20, exhausted: true }],
       healthy: false,
+      untagged: ['relax-tax'],
       issues: [
         { level: 'warn', text: "Google isn't connected — the revisions inbox and calendar holds are offline." },
         { level: 'warn', text: '3 revision tickets need a manual look.' },
-        { level: 'warn', text: "Set Apart Movement's SEO budget is used up ($20/$20) — it'll stop shipping automatically until next month (or raise the cap in Settings)." },
+        { level: 'warn', text: "Set Apart Movement's general SEO budget is used up ($20/$20) — discretionary work pauses until next month (client-requested revisions still go through regardless)." },
+        { level: 'info', text: '1 site hasn\'t had conversion tracking auto-set-up yet — use "🎯 Set up conversion tracking on all sites" below to do it right now instead of waiting for their turn.' },
       ],
     }));
   }
   if (path === '/api/revisions-done' || path === '/api/revisions-assign' || path === '/api/revisions-cancel') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: true }));
+  }
+  if (path === '/api/conversions-setup-all') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({ ok: true, results: [
+      { slug: 'relax-tax', ok: true, tagged: 2, applied: [{ name: 'get-quote', text: 'Get a Quote' }, { name: 'book-consult', text: 'Book a Consult' }] },
+      { slug: 'apostello-detailing', ok: true, skipped: true, reason: 'already tagged' },
+      { slug: 'one-more-thing', ok: true, skipped: true, reason: 'already tagged' },
+    ] }));
   }
   if (path === '/api/agent-status') {
     res.writeHead(200, { 'Content-Type': 'application/json' });

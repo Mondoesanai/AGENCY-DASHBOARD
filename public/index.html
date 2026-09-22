@@ -64,6 +64,7 @@
   .sys-health{border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:18px;}
   .sys-health.crit{background:rgba(214,84,74,.12);border:1px solid rgba(214,84,74,.4);color:#e0685a;}
   .sys-health.warn{background:rgba(234,181,74,.12);border:1px solid rgba(234,181,74,.4);color:var(--warn);}
+  .sys-health.info{background:rgba(120,150,220,.1);border:1px solid rgba(120,150,220,.35);color:var(--muted);}
   .sys-health .sh-head{display:flex;align-items:center;gap:8px;font-weight:600;}
   .sys-health ul{margin:6px 0 0;padding-left:18px;}
   .sys-health li{margin:2px 0;}
@@ -579,10 +580,24 @@ function render(data){
   $('#siteCount').textContent=`${data.sites.length} tracked`;
   const upd=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
   $('#footNote').innerHTML=(p.auditQuota?`${upd} <strong>SEO scans rate-limited</strong> — set a free <code>PAGESPEED_API_KEY</code> in Vercel.`:upd)+
-    ` <button type="button" class="link" id="finBtn">🔒 Sales &amp; company stats</button> · <button type="button" class="link" id="rosterBtn">🔒 Client roster</button> · <button type="button" class="link" id="rcptBtn">🔒 Receipts</button>`;
+    ` <button type="button" class="link" id="finBtn">🔒 Sales &amp; company stats</button> · <button type="button" class="link" id="rosterBtn">🔒 Client roster</button> · <button type="button" class="link" id="rcptBtn">🔒 Receipts</button> · <button type="button" class="link" id="convAllBtn" title="Scans every site's homepage right now and tags real conversions — no need to wait for each site's turn in the daily rotation">🎯 Set up conversion tracking on all sites</button>`;
   $('#finBtn').addEventListener('click',()=>openFinances('money'));
   $('#rosterBtn').addEventListener('click',()=>openFinances('roster'));
   $('#rcptBtn').addEventListener('click',()=>openFinances('receipts'));
+  $('#convAllBtn').addEventListener('click',async(e)=>{
+    const k=needKey(); if(!k) return;
+    e.target.disabled=true; e.target.textContent='Scanning every site…';
+    const j=await fetch(`/api/admin?do=conversions-setup-all&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    e.target.disabled=false; e.target.textContent='🎯 Set up conversion tracking on all sites';
+    if(j.ok){
+      const tagged=(j.results||[]).filter(r=>r.tagged>0);
+      const already=(j.results||[]).filter(r=>r.skipped&&r.reason==='already tagged').length;
+      const nothing=(j.results||[]).filter(r=>!r.skipped&&!r.tagged).length;
+      toast(tagged.length
+        ? `Tagged conversions on ${tagged.length} site${tagged.length===1?'':'s'}: ${tagged.map(r=>r.applied?.length+' on '+r.slug).join(', ')}${already?` — ${already} already had it`:''}`
+        : `Nothing new to tag${already?` — ${already} site${already===1?'':'s'} already set up`:''}${nothing?`, ${nothing} had nothing to tag`:''}`);
+    } else toast('Could not run conversion setup','err');
+  });
 
   $('#sites').innerHTML=data.sites.map(siteCard).join('');
   $('#sites').classList.toggle('picking',selectMode);
@@ -984,9 +999,12 @@ function renderSysHealth(h){
   const el=$('#sysHealth'); if(!el) return;
   if(!h||!h.ok||!h.issues||!h.issues.length){ el.hidden=true; el.innerHTML=''; return; }
   const crit=h.issues.some(i=>i.level==='critical');
+  const warn=h.issues.some(i=>i.level==='warn');
+  const cls=crit?'crit':warn?'warn':'info';
+  const icon=crit?'⛔':warn?'⚠':'ℹ';
   el.hidden=false;
-  el.className='sys-health '+(crit?'crit':'warn');
-  el.innerHTML=`<div class="sh-head">${crit?'⛔':'⚠'} System check found ${h.issues.length} thing${h.issues.length===1?'':'s'} worth a look</div>
+  el.className='sys-health '+cls;
+  el.innerHTML=`<div class="sh-head">${icon} System check found ${h.issues.length} thing${h.issues.length===1?'':'s'} worth a look</div>
     <ul>${h.issues.map(i=>`<li>${esc(i.text)}</li>`).join('')}</ul>`;
 }
 setInterval(loadSysHealth,300000); // recheck every 5 min so a fixed issue clears itself without a reload

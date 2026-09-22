@@ -12,6 +12,9 @@ import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
 import { revisionsStatus, checkRevisionInbox, markTicketDone, cancelTicket, assignTicketToSite } from '../lib/revisions.js';
 import { systemHealth } from '../lib/health.js';
+import { autoTagConversions } from '../lib/conversions-setup.js';
+import { markAiMonth } from '../lib/aicost.js';
+import { store } from '../lib/store.js';
 
 function authed(req) {
   const s = process.env.CRON_SECRET;
@@ -87,6 +90,37 @@ export default async function handler(req, res) {
     case 'revisions-assign': {
       const out = await assignTicketToSite(req.query.id, req.query.slug);
       return res.status(200).json(out);
+    }
+    case 'conversions-setup-all': {
+      // Forces conversion auto-tagging right now for every site that hasn't
+      // had it yet, instead of waiting on each one's turn in the daily
+      // rotation — for retrofitting sites that existed before this feature.
+      const sites = await listSites();
+      const t0 = Date.now();
+      const results = [];
+      for (const site of sites) {
+        if (Date.now() - t0 > 45000) {
+          results.push({ slug: site.slug, skipped: true, reason: 'out of time this run — re-run to pick up the rest' });
+          continue;
+        }
+        const already = await store.get(`conv:tagged:${site.slug}`).catch(() => null);
+        if (already && req.query.force !== '1') {
+          results.push({ slug: site.slug, skipped: true, reason: 'already tagged' });
+          continue;
+        }
+        const m = new Date().toISOString().slice(0, 7);
+        const spend = async (usd) => {
+          const cur = Number(await store.get(`agent:spend:${site.slug}:${m}`).catch(() => 0)) || 0;
+          await store.set(`agent:spend:${site.slug}:${m}`, String(+(cur + usd).toFixed(5)), { ex: 60 * 60 * 24 * 45 }).catch(() => {});
+          const curAll = Number(await store.get(`agent:spend:${m}`).catch(() => 0)) || 0;
+          await store.set(`agent:spend:${m}`, String(+(curAll + usd).toFixed(5)), { ex: 60 * 60 * 24 * 45 }).catch(() => {});
+          await markAiMonth(m);
+        };
+        const r = await autoTagConversions(site, { spend }).catch((e) => ({ ok: false, error: String(e.message || e) }));
+        await store.set(`conv:tagged:${site.slug}`, String(Date.now()), { ex: 60 * 60 * 24 * 365 }).catch(() => {});
+        results.push({ slug: site.slug, ...r });
+      }
+      return res.status(200).json({ ok: true, results });
     }
     default:
       return res.status(400).json({ ok: false, error: 'unknown admin action' });
