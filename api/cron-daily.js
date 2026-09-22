@@ -14,6 +14,7 @@ import { upsellState, sendUpsell } from '../lib/upsell.js';
 import { sendWinsRecap } from '../lib/winsrecap.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
 import { checkRevisionInbox } from '../lib/revisions.js';
+import { sendHealthAlert } from '../lib/alerts.js';
 
 const MK = monthKey();
 const monthsBetween = (from) => (from ? Math.max(1, Math.round((Date.now() - from) / (30 * 864e5))) : 1);
@@ -311,5 +312,21 @@ export default async function handler(req, res) {
   // health-check-eats-the-budget bug) had no way to be noticed except by
   // seeing SEO stop happening days later.
   await store.set('cron:daily:lastRun', String(Date.now()), { ex: 60 * 60 * 24 * 45 }).catch(() => {});
+
+  // one email a day, only when there's actually something worth seeing —
+  // this is the approved alert feature, deduped per calendar day so an
+  // overlapping/retried cron run can't send it twice.
+  try {
+    const alertKey = `alert:sent:${MK}:${today}`;
+    const already = await store.get(alertKey).catch(() => null);
+    if (!already) {
+      const r = await sendHealthAlert();
+      if (r.sent) await store.set(alertKey, '1', { ex: 60 * 60 * 24 * 3 });
+      log.push({ action: 'health alert', sent: r.sent, reason: r.reason, count: r.count });
+    }
+  } catch (e) {
+    log.push({ action: 'health alert', error: String(e.message || e) });
+  }
+
   res.status(200).json({ ok: true, day: today, isFirst, processed: sites.length, log });
 }
