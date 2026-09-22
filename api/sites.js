@@ -7,6 +7,7 @@ import { getHistory } from '../lib/history.js';
 import { reportToken } from '../lib/token.js';
 import { store } from '../lib/store.js';
 import { todosState } from '../lib/todos.js';
+import { summarizeRanks, readRankHistory, projectTimeline } from '../lib/ranks.js';
 
 async function readRanks(slug) {
   const raw = await store.get(`agent:ranks:${slug}`).catch(() => null);
@@ -37,7 +38,7 @@ export default async function handler(req, res) {
 
   const rows = await Promise.all(
     list.map(async (site) => {
-      const [stats, audit, report, history, notes, changelog, expenses, ranks, todos] = await Promise.all([
+      const [stats, audit, report, history, notes, changelog, expenses, ranks, todos, rankHistory] = await Promise.all([
         siteStats(site.slug, site.conversionEvents || []).catch(() => null),
         runAudit(site.url, { cachedOnly: true }).catch(() => ({ ok: false, error: 'audit failed' })),
         store.get(`report:${site.slug}:latest`).catch(() => null),
@@ -47,6 +48,7 @@ export default async function handler(req, res) {
         readArr(`expenses:${site.slug}`),
         readRanks(site.slug),
         todosState(site).catch(() => null),
+        readRankHistory(site.slug).catch(() => []),
       ]);
       const expensesTotal = expenses.reduce((t, e) => t + (Number(e.amount) || 0), 0);
       const onTrial = !!(site.trialEnds && site.trialEnds > Date.now());
@@ -54,6 +56,13 @@ export default async function handler(req, res) {
       const findings = buildFindings(audit, stats);
       const grade = overallGrade(audit, stats);
       const rep = report ? (typeof report === 'string' ? JSON.parse(report) : report) : null;
+      // the REAL Google ranking — average position across tracked keywords —
+      // as distinct from "SEO-ready" (audit.scores.seo), which is just
+      // on-page technical setup and says nothing about where the site
+      // actually ranks. rankTimeline is a trend-based projection to top 3,
+      // built from a running history of past checks, not a single snapshot.
+      const rankSummary = summarizeRanks(ranks);
+      const rankTimeline = projectTimeline(rankHistory, 3);
       return {
         slug: site.slug,
         name: site.name,
@@ -80,6 +89,8 @@ export default async function handler(req, res) {
         agentBudget: site.agentBudget || 18,
         agentKeywords: site.agentKeywords || '',
         agentRanks: ranks || null,
+        rankSummary,
+        rankTimeline,
         aiTodos: todos?.current?.items || null,
         aiTodosGeneratedAt: todos?.current?.generatedAt || null,
         aiTodosNextRefresh: todos?.nextRefresh || 0,
@@ -134,10 +145,18 @@ export default async function handler(req, res) {
     trialMrr: rows.reduce((t, r) => t + (r.onTrial ? r.priceMonthly || 0 : 0), 0),
     // detailed money (lifetime sales, expenses, net profit, churn) lives in
     // /api/finances and needs the admin key — never in this public response
+    // technical setup score — NOT where sites actually rank. Kept as a
+    // separate, secondary metric; avgRank below is the one that answers
+    // "how are we actually doing in Google."
     avgSeo: (() => {
       const v = rows.filter((r) => r.audit?.ok).map((r) => r.audit.scores.seo);
       return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null;
     })(),
+    avgRank: (() => {
+      const v = rows.filter((r) => r.rankSummary?.avgRank != null).map((r) => r.rankSummary.avgRank);
+      return v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null;
+    })(),
+    rankedSites: rows.filter((r) => r.rankSummary?.avgRank != null).length,
     improving: withData.filter((r) => (r.stats?.deltas.visitors || 0) >= 10).length,
     openFindings: rows.reduce((t, r) => t + r.openCount, 0),
     attention: rows

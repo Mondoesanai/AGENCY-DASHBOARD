@@ -5,7 +5,8 @@ import {
   saveSiteConfig, deleteSiteConfig, getSiteConfig, slugify, listSites,
   hostKey, slugForHost, rememberHost, matchExistingSite,
 } from '../lib/registry.js';
-import { fetchHomepageCandidates, patchHtml } from '../lib/conversions-setup.js';
+import { fetchHomepageCandidates, patchHtml, autoTagConversions } from '../lib/conversions-setup.js';
+import { initKeywordTracking } from '../lib/agent.js';
 import { commitChangeset } from '../lib/github.js';
 import { markAiMonth } from '../lib/aicost.js';
 
@@ -262,7 +263,44 @@ export default async function handler(req, res) {
       }
 
       const cfg = await saveSiteConfig(slug, patch);
-      return res.status(200).json({ ok: true, site: cfg, repoMatch });
+
+      // Both of these used to only happen on this site's turn in the daily
+      // agent rotation — which could be days away for a site with several
+      // others ahead of it. Run them right now instead, in parallel since
+      // neither depends on the other. Conversion tagging needs a repo
+      // (it's a code commit); keyword/rank tracking doesn't (just the
+      // homepage + DataForSEO), so it runs for every brand-new site.
+      let convSetup = null;
+      let rankSetup = null;
+      const repoNow = patch.repo || repoMatch;
+      if (!before) {
+        const convKey = `conv:tagged:${slug}`;
+        const jobs = [];
+        if (repoNow) {
+          jobs.push(
+            store
+              .get(convKey)
+              .catch(() => null)
+              .then(async (already) => {
+                if (already) return;
+                await store.set(convKey, String(Date.now()), { ex: 60 * 60 * 24 * 365 }).catch(() => {});
+                try {
+                  convSetup = await autoTagConversions(cfg, { spend: spendCoach });
+                } catch (e) {
+                  convSetup = { ok: false, error: String(e.message || e) };
+                }
+              })
+          );
+        }
+        jobs.push(
+          initKeywordTracking(cfg)
+            .then((r) => { rankSetup = r; })
+            .catch((e) => { rankSetup = { ok: false, error: String(e.message || e) }; })
+        );
+        await Promise.all(jobs);
+      }
+
+      return res.status(200).json({ ok: true, site: cfg, repoMatch, convSetup, rankSetup });
     }
 
     if (action === 'delete') {

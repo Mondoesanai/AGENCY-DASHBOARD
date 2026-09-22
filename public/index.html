@@ -549,7 +549,7 @@ function render(data){
   $('#overview').innerHTML=[
     ['visitors','Visitors · 30d',fmt(p.visitors30),'tap for every site'],
     ['conversions','Conversions · 30d',fmt(p.conversions30),'tap for every site'],
-    ['seo','Avg SEO-ready',p.avgSeo??'—','tap for every site'],
+    ['seo','Avg Google ranking',p.avgRank!=null?`#${p.avgRank}`:'—',p.rankedSites?`tap for every site · ${p.rankedSites} tracked`:'tracking starts when a site is added'],
     ['revisions','Pending revisions',fmt(p.pendingRevisions||0),'tap to review'],
     ['__nextseo__','Next agent push','','tap to see what each site is doing'],
     ['todos','Open suggestions',p.openFindings,'tap for every site'],
@@ -580,24 +580,10 @@ function render(data){
   $('#siteCount').textContent=`${data.sites.length} tracked`;
   const upd=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
   $('#footNote').innerHTML=(p.auditQuota?`${upd} <strong>SEO scans rate-limited</strong> — set a free <code>PAGESPEED_API_KEY</code> in Vercel.`:upd)+
-    ` <button type="button" class="link" id="finBtn">🔒 Sales &amp; company stats</button> · <button type="button" class="link" id="rosterBtn">🔒 Client roster</button> · <button type="button" class="link" id="rcptBtn">🔒 Receipts</button> · <button type="button" class="link" id="convAllBtn" title="Scans every site's homepage right now and tags real conversions — no need to wait for each site's turn in the daily rotation">🎯 Set up conversion tracking on all sites</button>`;
+    ` <button type="button" class="link" id="finBtn">🔒 Sales &amp; company stats</button> · <button type="button" class="link" id="rosterBtn">🔒 Client roster</button> · <button type="button" class="link" id="rcptBtn">🔒 Receipts</button>`;
   $('#finBtn').addEventListener('click',()=>openFinances('money'));
   $('#rosterBtn').addEventListener('click',()=>openFinances('roster'));
   $('#rcptBtn').addEventListener('click',()=>openFinances('receipts'));
-  $('#convAllBtn').addEventListener('click',async(e)=>{
-    const k=needKey(); if(!k) return;
-    e.target.disabled=true; e.target.textContent='Scanning every site…';
-    const j=await fetch(`/api/admin?do=conversions-setup-all&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-    e.target.disabled=false; e.target.textContent='🎯 Set up conversion tracking on all sites';
-    if(j.ok){
-      const tagged=(j.results||[]).filter(r=>r.tagged>0);
-      const already=(j.results||[]).filter(r=>r.skipped&&r.reason==='already tagged').length;
-      const nothing=(j.results||[]).filter(r=>!r.skipped&&!r.tagged).length;
-      toast(tagged.length
-        ? `Tagged conversions on ${tagged.length} site${tagged.length===1?'':'s'}: ${tagged.map(r=>r.applied?.length+' on '+r.slug).join(', ')}${already?` — ${already} already had it`:''}`
-        : `Nothing new to tag${already?` — ${already} site${already===1?'':'s'} already set up`:''}${nothing?`, ${nothing} had nothing to tag`:''}`);
-    } else toast('Could not run conversion setup','err');
-  });
 
   $('#sites').innerHTML=data.sites.map(siteCard).join('');
   $('#sites').classList.toggle('picking',selectMode);
@@ -771,7 +757,9 @@ function renderSeoOverview(){
 const DRILL={
   visitors:{title:'Visitors — every site (30d)', pane:'overview', row:s=>({val:s.stats?.hasData?fmt(s.stats.visitors):'—', sub:s.stats?.hasData?deltaHTML(s.stats.deltas?.visitors).replace(/<[^>]+>/g,''):'no tracker data'})},
   conversions:{title:'Conversions — every site (30d)', pane:'traffic', row:s=>({val:s.stats?.hasData?(s.stats.conversions??0):'—', sub:'calls · forms · bookings'})},
-  seo:{title:'SEO-ready — every site', pane:'overview', row:s=>({val:s.audit?.ok?s.audit.scores.seo:'—', sub:s.audit?.ok?'technical setup, not ranking':'not scanned yet'})},
+  seo:{title:'Google ranking — every site', pane:'overview', sortAsc:true, sortKey:s=>s.rankSummary?.avgRank,
+    row:s=>({val:s.rankSummary?.avgRank!=null?`#${s.rankSummary.avgRank} avg`:'Not ranking yet',
+      sub:s.rankSummary?`${s.rankSummary.inTop10}/${s.rankSummary.tracked} keywords in top 10${s.rankSummary.bestRank?` · best #${s.rankSummary.bestRank}`:''}`:(s.agentKeywords?'first check runs automatically':'targets keywords on its next cycle')})},
   todos:{title:'Open builder suggestions — every site', pane:'todos', row:s=>({val:(s.aiTodos&&s.aiTodos.length)||s.openCount||0, sub:(s.aiTodos&&s.aiTodos.length)?'AI-curated':'rule-based'})},
 };
 function openDrill(kind){
@@ -785,6 +773,14 @@ function openDrill(kind){
 function renderDrill(kind){
   const cfg=DRILL[kind];
   const rows=STATE.sites.slice().sort((a,b)=>{
+    if(cfg.sortAsc){
+      // lower is better (rank #1 beats #40) — sites with nothing tracked yet sort last
+      const av=cfg.sortKey(a), bv=cfg.sortKey(b);
+      if(av==null&&bv==null) return 0;
+      if(av==null) return 1;
+      if(bv==null) return -1;
+      return av-bv;
+    }
     const av=cfg.row(a).val, bv=cfg.row(b).val;
     return (Number(bv)||0)-(Number(av)||0);
   }).map(s=>{
@@ -1283,7 +1279,9 @@ function rosterHTML(p){
 function siteCard(s){
   const st=s.stats||{}, g=s.grade;
   const gl=g?g.letter:'NA';
-  const seo=s.audit&&s.audit.ok?s.audit.scores.seo:null;
+  const rk=s.rankSummary;
+  const rankLabel = rk&&rk.avgRank!=null ? `#${rk.avgRank}` : (s.agentKeywords?'checking…':'—');
+  const rankSub = rk&&rk.avgRank!=null ? `${rk.inTop10}/${rk.tracked} top 10` : '';
   const attn=(STATE.portfolio.attention||[]).includes(s.slug);
   const trkTag = s.hasTracker ? (s.awaitingData?'<span class="tag" style="color:var(--faint);background:var(--surface2)">collecting…</span>':'')
     : '<span class="tag" style="color:var(--warn);background:#2c2a17">no tracker</span>';
@@ -1299,7 +1297,7 @@ function siteCard(s){
     <div class="grade ${gl.toLowerCase()}" title="Overall health">${g?gl:'—'}</div>
     <div class="col-hide"><div class="cell-k">Visitors 30d</div><div class="cell-v">${st.hasData?fmt(st.visitors):'—'} ${st.hasData?deltaHTML(st.deltas?.visitors):''}</div></div>
     <div class="col-hide"><div class="cell-k">Conversions</div><div class="cell-v">${st.hasData?(st.conversions??0):'—'} ${st.hasData?deltaHTML(st.deltas?.conversions):''}</div></div>
-    <div class="col-hide"><div class="cell-k">SEO</div><div class="cell-v">${seo??'—'}</div></div>
+    <div class="col-hide"><div class="cell-k">Ranking</div><div class="cell-v">${rankLabel}${rankSub?` <span style="font-size:10.5px;color:var(--faint)">${rankSub}</span>`:''}</div></div>
     ${sparkline(trendOf(s))}
     <span class="chip ${s.openCount?'':'zero'}">${s.openCount||0} to-do${s.openCount===1?'':'s'} ›</span>
   </button>`;
@@ -1336,14 +1334,35 @@ function rankingsBlock(s){
     return `<div class="block"><h3>Google rankings</h3><p class="note" style="margin:0">Link a GitHub repo and turn on the SEO agent (⚙ Settings → Automation) to start tracking real rankings.</p></div>`;
   }
   if(!rk||!rk.results||!rk.results.length){
-    return `<div class="block"><h3>Google rankings</h3><p class="note" style="margin:0">${kw.length?`Targeting ${kw.length} keyword${kw.length===1?'':'s'} — first ranking check runs on the agent's next cycle.`:'The agent picks target keywords on its first run, then starts tracking rank.'}</p></div>`;
+    return `<div class="block"><h3>Google rankings</h3><p class="note" style="margin:0">${kw.length?`Targeting ${kw.length} keyword${kw.length===1?'':'s'} — first ranking check runs automatically.`:'Picking target keywords now, then rank tracking starts right after.'}</p></div>`;
   }
   const rows=rk.results.slice().sort((a,b)=>(a.rank||999)-(b.rank||999));
   const top10=rows.filter(r=>r.rank&&r.rank<=10).length;
   const top3=rows.filter(r=>r.rank&&r.rank<=3).length;
+  const depth=rk.depth||100;
+  const rs=s.rankSummary;
+  const tl=s.rankTimeline;
+  const comp=(rk.competitors||[]).slice(0,3);
+  let tlHtml='';
+  if(tl){
+    if(!tl.ok){
+      tlHtml=`<div class="note" style="margin-top:10px">📈 Timeline to top 3: ${esc(tl.reason)}</div>`;
+    } else if(tl.improving && tl.weeksToTarget){
+      tlHtml=`<div class="note" style="margin-top:10px;color:var(--green-br)">📈 Trending toward top 3 — roughly <strong>${tl.weeksToTarget} week${tl.weeksToTarget===1?'':'s'}</strong> at the current pace (avg position moving from #${tl.current} down by ~${Math.abs(tl.slope).toFixed(2)}/day).</div>`;
+    } else if(tl.improving){
+      tlHtml=`<div class="note" style="margin-top:10px;color:var(--green-br)">📈 Already averaging top 3 or better.</div>`;
+    } else {
+      tlHtml=`<div class="note" style="margin-top:10px">📈 Timeline to top 3: ${esc(tl.reason)} (currently averaging #${tl.current}).</div>`;
+    }
+  }
+  const compHtml = comp.length
+    ? `<div class="note" style="margin-top:8px">Showing up alongside: ${comp.map(c=>`${esc(c.domain)} (best #${c.bestRank})`).join(', ')}</div>`
+    : '';
   return `<div class="block"><h3>Google rankings <span class="ang">${top10}/${rows.length} in the top 10${top3?` · ${top3} in the top 3`:''}</span></h3>
-    <div class="note" style="margin:0 0 8px">Checked ${agoStr(rk.at)} · tracked live by the SEO agent</div>
-    ${rows.slice(0,10).map(r=>`<div class="fin-row"><span title="${esc(r.keyword)}">${esc(r.keyword)}</span><span class="r" style="color:${r.rank&&r.rank<=3?'var(--pos)':r.rank&&r.rank<=10?'var(--green-br)':'var(--faint)'}">${r.rank?'#'+r.rank:'not in top '+(rk.results[0]?.total||100)}</span></div>`).join('')}
+    <div class="note" style="margin:0 0 8px">Checked ${agoStr(rk.at)} · avg position <strong>${rs&&rs.avgRank!=null?'#'+rs.avgRank:'—'}</strong> across ${rows.length} tracked keyword${rows.length===1?'':'s'}</div>
+    ${rows.slice(0,10).map(r=>`<div class="fin-row"><span title="${esc(r.keyword)}">${esc(r.keyword)}</span><span class="r" style="color:${r.rank&&r.rank<=3?'var(--pos)':r.rank&&r.rank<=10?'var(--green-br)':'var(--faint)'}">${r.rank?'#'+r.rank:'not in top '+depth}</span></div>`).join('')}
+    ${compHtml}
+    ${tlHtml}
   </div>`;
 }
 function histChart(hist){
@@ -2120,6 +2139,12 @@ $('#m_save').addEventListener('click',async()=>{
     const newSlug=j.site&&j.site.slug;
     if(newSlug && STATE.sites.some(x=>x.slug===newSlug)) openDrawer(newSlug);
     if(!finalRepo) setTimeout(()=>toast('No GitHub repo linked yet — add one in ⚙ Settings → Automation so the agent can run'),1400);
+    const cs=j.convSetup;
+    if(cs) setTimeout(()=>toast(
+      cs.ok&&cs.tagged>0?`Conversion tracking set up automatically — tagged ${cs.tagged} element${cs.tagged===1?'':'s'} on the homepage.`:
+      cs.ok?`Conversion tracking scanned — ${cs.note||'nothing to tag yet'}.`:
+      `Conversion tracking scan failed — ${cs.error||'try the per-site button in Settings later'}.`
+    ),1800);
   }
   else $('#m_msg').textContent=j.error||'Failed.';
 });
