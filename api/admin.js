@@ -10,7 +10,7 @@ import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
-import { revisionsStatus, checkRevisionInbox, markTicketDone, cancelTicket, assignTicketToSite } from '../lib/revisions.js';
+import { revisionsStatus, checkRevisionInbox, markTicketDone, cancelTicket, assignTicketToSite, retryTicket } from '../lib/revisions.js';
 import { systemHealth } from '../lib/health.js';
 import { autoTagConversions } from '../lib/conversions-setup.js';
 import { markAiMonth } from '../lib/aicost.js';
@@ -85,6 +85,10 @@ export default async function handler(req, res) {
     }
     case 'revisions-cancel': {
       const out = await cancelTicket(req.query.id);
+      return res.status(200).json(out);
+    }
+    case 'revisions-retry': {
+      const out = await retryTicket(req.query.id);
       return res.status(200).json(out);
     }
     case 'revisions-assign': {

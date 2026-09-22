@@ -157,6 +157,14 @@ export default async function handler(req, res) {
       return v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null;
     })(),
     rankedSites: rows.filter((r) => r.rankSummary?.avgRank != null).length,
+    // no site has a real position yet — fall back to the average "field
+    // size" so the tile shows a real, shrinking number instead of a blank
+    // dash for however many months it takes a brand-new site to crack the
+    // top 100 for anything.
+    avgRoughField: (() => {
+      const v = rows.filter((r) => r.rankSummary?.avgRank == null && r.rankSummary?.roughField != null).map((r) => r.rankSummary.roughField);
+      return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : null;
+    })(),
     improving: withData.filter((r) => (r.stats?.deltas.visitors || 0) >= 10).length,
     openFindings: rows.reduce((t, r) => t + r.openCount, 0),
     attention: rows

@@ -441,6 +441,16 @@ const $ = (s,r=document)=>r.querySelector(s);
 const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
 const esc=(s)=>String(s??'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));
 const fmt=(n)=> n>=1000 ? (n/1000).toFixed(n>=10000?0:1)+'k' : String(Math.round(n||0));
+// "1.2M" style, for the rough-field-size ranking proxy — a much bigger
+// number than fmt() usually sees (Google's own results-count estimates run
+// into the millions), so it needs its own K/M/B tiers.
+const fmtBig=(n)=>{
+  n=Number(n)||0;
+  if(n>=1e9) return (n/1e9).toFixed(1)+'B';
+  if(n>=1e6) return (n/1e6).toFixed(1)+'M';
+  if(n>=1e3) return (n/1e3).toFixed(1)+'k';
+  return String(Math.round(n));
+};
 const money=(n)=>'$'+Math.round(n||0).toLocaleString('en-US');
 const deltaHTML=(d)=>{ if(d==null) return ''; const c=d>0?'up':d<0?'down':''; const s=d>0?'▲':d<0?'▼':'·'; return `<small class="${c}">${s} ${Math.abs(d)}%</small>`; };
 async function runRepoPicker(boxSel,inputSel,url){
@@ -549,7 +559,8 @@ function render(data){
   $('#overview').innerHTML=[
     ['visitors','Visitors · 30d',fmt(p.visitors30),'tap for every site'],
     ['conversions','Conversions · 30d',fmt(p.conversions30),'tap for every site'],
-    ['seo','Avg Google ranking',p.avgRank!=null?`#${p.avgRank}`:'—',p.rankedSites?`tap for every site · ${p.rankedSites} tracked`:'tracking starts when a site is added'],
+    ['seo','Avg Google ranking',p.avgRank!=null?`#${p.avgRank}`:(p.avgRoughField!=null?`~${fmtBig(p.avgRoughField)}`:'—'),
+      p.avgRank!=null?`tap for every site · ${p.rankedSites} tracked`:(p.avgRoughField!=null?'pages competing for your keywords — watch it shrink':'tracking starts when a site is added')],
     ['revisions','Pending revisions',fmt(p.pendingRevisions||0),'tap to review'],
     ['__nextseo__','Next agent push','','tap to see what each site is doing'],
     ['todos','Open suggestions',p.openFindings,'tap for every site'],
@@ -862,7 +873,9 @@ function ticketCardHTML(t, allTickets){
             <button class="btn sm ghost" data-cancel="${esc(t.id)}" title="Not a real request, or a duplicate — closes it without emailing anyone">Cancel</button>
           </div>` : ''}
         ${t.status==='done'?`<div class="note" style="margin-top:3px">${t.completionEmail?.sent?`✓ client notified`:t.completionEmail?`<span style="color:var(--warn)">completion email didn't send — ${esc(t.completionEmail.reason||'')}</span>`:'✓ done'}</div>`
-        :t.status==='cancelled'?'':t.slug?`<div class="btn-row" style="margin-top:7px"><button class="btn sm" data-done="${esc(t.id)}" title="Fixed and live — emails the client it's done">Done</button><button class="btn sm ghost" data-cancel="${esc(t.id)}" title="Duplicate or not needed — pulls it from the to-do list and cancels the calendar hold, no email sent">Cancel</button></div>`:''}
+        :t.status==='cancelled'?''
+        :t.status==='needs attention'&&t.slug?`<div class="btn-row" style="margin-top:7px"><button class="btn sm" data-retry="${esc(t.id)}" title="The automatic system already gave up on this — use this once you believe the underlying issue is fixed, to give it a fresh attempt">↻ Retry</button><button class="btn sm ghost" data-done="${esc(t.id)}" title="Fixed it yourself — emails the client it's done">Done</button><button class="btn sm ghost" data-cancel="${esc(t.id)}" title="Not doable this way, or no longer needed — closes it, no email sent">Cancel</button></div>`
+        :t.slug?`<div class="btn-row" style="margin-top:7px"><button class="btn sm" data-done="${esc(t.id)}" title="Fixed and live — emails the client it's done">Done</button><button class="btn sm ghost" data-cancel="${esc(t.id)}" title="Duplicate or not needed — pulls it from the to-do list and cancels the calendar hold, no email sent">Cancel</button></div>`:''}
       </div>`;
 }
 function revisionsHTML(st){
@@ -955,6 +968,13 @@ function wireRevWidget(){
     const j=await fetch(`/api/admin?do=revisions-cancel&id=${encodeURIComponent(b.dataset.cancel)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
     if(j.ok){ toast('Cancelled — pulled from the to-do list and the calendar hold is cancelled'); await loadRevWidget(); }
     else { b.disabled=false; toast('Could not cancel','err'); }
+  });
+  $$('#revWidget [data-retry]').forEach(b=>b.onclick=async()=>{
+    const k=needKey(); if(!k) return;
+    b.disabled=true; b.textContent='Retrying…';
+    const j=await fetch(`/api/admin?do=revisions-retry&id=${encodeURIComponent(b.dataset.retry)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
+    if(j.ok){ toast('Queued for a fresh attempt — picked up on the next automatic check'); await loadRevWidget(); }
+    else { b.disabled=false; b.textContent='↻ Retry'; toast(j.error||'Could not retry','err'); }
   });
   $$('#revWidget [data-goto-slug]').forEach(b=>b.onclick=()=>{
     drawerPane='todos';
@@ -1280,8 +1300,8 @@ function siteCard(s){
   const st=s.stats||{}, g=s.grade;
   const gl=g?g.letter:'NA';
   const rk=s.rankSummary;
-  const rankLabel = rk&&rk.avgRank!=null ? `#${rk.avgRank}` : (s.agentKeywords?'checking…':'—');
-  const rankSub = rk&&rk.avgRank!=null ? `${rk.inTop10}/${rk.tracked} top 10` : '';
+  const rankLabel = rk&&rk.avgRank!=null ? `#${rk.avgRank}` : rk&&rk.roughField!=null ? `~${fmtBig(rk.roughField)}` : (s.agentKeywords?'checking…':'—');
+  const rankSub = rk&&rk.avgRank!=null ? `${rk.inTop10}/${rk.tracked} top 10` : rk&&rk.roughField!=null ? 'pages ahead' : '';
   const attn=(STATE.portfolio.attention||[]).includes(s.slug);
   const trkTag = s.hasTracker ? (s.awaitingData?'<span class="tag" style="color:var(--faint);background:var(--surface2)">collecting…</span>':'')
     : '<span class="tag" style="color:var(--warn);background:#2c2a17">no tracker</span>';
@@ -1358,8 +1378,12 @@ function rankingsBlock(s){
   const compHtml = comp.length
     ? `<div class="note" style="margin-top:8px">Showing up alongside: ${comp.map(c=>`${esc(c.domain)} (best #${c.bestRank})`).join(', ')}</div>`
     : '';
+  const roughLine = (rs&&rs.avgRank==null&&rs.roughField!=null)
+    ? `<div class="note" style="margin:2px 0 0">Not showing up in the visible search results yet for these keywords — roughly <strong>${fmtBig(rs.roughField)}</strong> pages currently competing for them. Not a real rank (Google doesn't give one this deep) — just a rough sense of the field, worth watching shrink as the site builds authority.</div>`
+    : '';
   return `<div class="block"><h3>Google rankings <span class="ang">${top10}/${rows.length} in the top 10${top3?` · ${top3} in the top 3`:''}</span></h3>
     <div class="note" style="margin:0 0 8px">Checked ${agoStr(rk.at)} · avg position <strong>${rs&&rs.avgRank!=null?'#'+rs.avgRank:'—'}</strong> across ${rows.length} tracked keyword${rows.length===1?'':'s'}</div>
+    ${roughLine}
     ${rows.slice(0,10).map(r=>`<div class="fin-row"><span title="${esc(r.keyword)}">${esc(r.keyword)}</span><span class="r" style="color:${r.rank&&r.rank<=3?'var(--pos)':r.rank&&r.rank<=10?'var(--green-br)':'var(--faint)'}">${r.rank?'#'+r.rank:'not in top '+depth}</span></div>`).join('')}
     ${compHtml}
     ${tlHtml}
