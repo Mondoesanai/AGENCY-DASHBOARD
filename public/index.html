@@ -1613,7 +1613,7 @@ function eventsBlock(s){
   const evs=(s.stats&&s.stats.events)||[];
   const counted=(s.conversionEvents||[]);
   if(!evs.length) return `<div class="block"><h3>Conversions <span class="ang">what counts as a lead</span></h3>
-    <div class="note">No conversion events have fired yet. The tracker auto-counts clicks on phone / text / email / WhatsApp / booking / "leave a review" links. For anything else, add <code>data-track="name"</code> to the button or form on the site.</div></div>`;
+    <div class="note">No conversion events have fired yet. The tracker auto-counts clicks on phone / text / email / WhatsApp / booking / "leave a review" links, every form submit, and — once the agent's first run finishes — whatever other buttons on the homepage it judged to be a real conversion (join, RSVP, donate, sign up, etc., auto-tagged with <code>data-track</code>, no manual edit needed). Still missing one? Describe it in Site settings and hit "✨ Figure it out" — it'll try to add the tag itself.</div></div>`;
   return `<div class="block"><h3>Conversions <span class="ang">what counts as a lead</span></h3>
     <div class="note" style="margin-bottom:8px">${counted.length?`Counting only: <strong>${counted.map(esc).join(', ')}</strong>. Change this in Site settings.`:'Right now <strong>every</strong> event below counts as a conversion. Narrow it in Site settings (e.g. only <code>call, quote-form</code>).'}</div>
     ${evs.map(e=>`<div class="bar-row" style="grid-template-columns:1fr 60px"><span>${esc(e.member)} ${counted.length&&counted.includes(String(e.member).toLowerCase())?'<span class="pillmini good">counted</span>':(counted.length?'<span class="pillmini">ignored</span>':'')}</span><span class="n">${e.score}</span></div>`).join('')}

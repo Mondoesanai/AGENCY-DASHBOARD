@@ -72,21 +72,22 @@ function authed(req) {
   return h === `Bearer ${secret}` || req.query.secret === secret;
 }
 
-async function checkHealth(url) {
+async function checkHealth(url, { skipSsl } = {}) {
   const out = { url, up: false, status: 0, ms: null, sslDaysLeft: null, checkedAt: Date.now() };
   const t0 = Date.now();
   try {
-    const r = await fetch(url, { method: 'GET', redirect: 'follow', signal: AbortSignal.timeout(12000) });
+    const r = await fetch(url, { method: 'GET', redirect: 'follow', signal: AbortSignal.timeout(6000) });
     out.status = r.status;
     out.up = r.status < 500;
     out.ms = Date.now() - t0;
   } catch (e) {
     out.error = String(e.message || e);
   }
+  if (skipSsl) return out;
   try {
     const host = new URL(url).hostname;
     out.sslDaysLeft = await new Promise((resolve) => {
-      const sock = tls.connect({ host, port: 443, servername: host, timeout: 8000 }, () => {
+      const sock = tls.connect({ host, port: 443, servername: host, timeout: 5000 }, () => {
         const cert = sock.getPeerCertificate();
         sock.end();
         if (cert && cert.valid_to) {
@@ -114,37 +115,58 @@ export default async function handler(req, res) {
   const isFirst = today === 1;
   const log = [];
 
-  for (const site of sites) {
-    // health
-    try {
-      const h = await checkHealth(site.url);
-      await store.set(`health:${site.slug}`, JSON.stringify(h), { ex: 60 * 60 * 30 });
-      if (!h.up || (h.sslDaysLeft != null && h.sslDaysLeft < 14)) {
-        log.push({ slug: site.slug, alert: !h.up ? `down (${h.status || h.error})` : `SSL expires in ${h.sslDaysLeft}d` });
-      }
-    } catch (e) {
-      log.push({ slug: site.slug, healthError: String(e.message || e) });
-    }
-
-    const billingToday = site.billingDay && site.billingDay === today;
-    const alreadySent = (await store.get(`lastSent:${site.slug}`).catch(() => null)) === MK;
-
-    if (billingToday && site.autoSend && site.email && process.env.RESEND_API_KEY && !alreadySent) {
+  // Health + billing/snapshot used to run one site at a time — with fetch
+  // (up to 12s) and a raw TLS connect for the SSL check (up to 8s) EACH,
+  // sequentially, this alone could burn 15-20+ seconds per slow/unresponsive
+  // site. With the SEO-agent section below only getting a shot at starting
+  // work in the first 18s of the whole 58s budget, a single slow site here
+  // was enough to eat that window before any SEO/revision work ever got a
+  // turn — silently, day after day, which is exactly "hasn't run in days."
+  // Now runs every site in parallel (bounded by the slowest one, not the
+  // sum of all of them), with tighter timeouts, and skips the slow TLS/SSL
+  // check on any site checked within the last 5 days — certs don't expire
+  // that fast, no need to re-verify on every single run.
+  await Promise.all(
+    sites.map(async (site) => {
       try {
-        const r = await buildForSite(site, { doSend: true, req });
-        log.push({ slug: site.slug, action: 'billing-day send', sent: r.emailResult?.sent, reason: r.emailResult?.reason });
+        const cachedRaw = await store.get(`health:${site.slug}`).catch(() => null);
+        let cached = null;
+        try {
+          cached = cachedRaw ? (typeof cachedRaw === 'string' ? JSON.parse(cachedRaw) : cachedRaw) : null;
+        } catch {
+          /* treat as no cache */
+        }
+        const sslFresh = cached?.sslDaysLeft != null && cached.checkedAt && Date.now() - cached.checkedAt < 5 * 86400000;
+        const h = await checkHealth(site.url, { skipSsl: sslFresh });
+        if (sslFresh) h.sslDaysLeft = cached.sslDaysLeft;
+        await store.set(`health:${site.slug}`, JSON.stringify(h), { ex: 60 * 60 * 30 });
+        if (!h.up || (h.sslDaysLeft != null && h.sslDaysLeft < 14)) {
+          log.push({ slug: site.slug, alert: !h.up ? `down (${h.status || h.error})` : `SSL expires in ${h.sslDaysLeft}d` });
+        }
       } catch (e) {
-        log.push({ slug: site.slug, action: 'billing-day send', error: String(e.message || e) });
+        log.push({ slug: site.slug, healthError: String(e.message || e) });
       }
-    } else if (isFirst) {
-      try {
-        await buildForSite(site, { doSend: false, req });
-        log.push({ slug: site.slug, action: 'month snapshot' });
-      } catch (e) {
-        log.push({ slug: site.slug, action: 'month snapshot', error: String(e.message || e) });
+
+      const billingToday = site.billingDay && site.billingDay === today;
+      const alreadySent = (await store.get(`lastSent:${site.slug}`).catch(() => null)) === MK;
+
+      if (billingToday && site.autoSend && site.email && process.env.RESEND_API_KEY && !alreadySent) {
+        try {
+          const r = await buildForSite(site, { doSend: true, req });
+          log.push({ slug: site.slug, action: 'billing-day send', sent: r.emailResult?.sent, reason: r.emailResult?.reason });
+        } catch (e) {
+          log.push({ slug: site.slug, action: 'billing-day send', error: String(e.message || e) });
+        }
+      } else if (isFirst) {
+        try {
+          await buildForSite(site, { doSend: false, req });
+          log.push({ slug: site.slug, action: 'month snapshot' });
+        } catch (e) {
+          log.push({ slug: site.slug, action: 'month snapshot', error: String(e.message || e) });
+        }
       }
-    }
-  }
+    })
+  );
 
   // company snapshot: on the 1st, or any day it's missing this month
   try {

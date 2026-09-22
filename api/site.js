@@ -5,6 +5,8 @@ import {
   saveSiteConfig, deleteSiteConfig, getSiteConfig, slugify, listSites,
   hostKey, slugForHost, rememberHost, matchExistingSite,
 } from '../lib/registry.js';
+import { fetchHomepageCandidates, patchHtml } from '../lib/conversions-setup.js';
+import { commitChangeset } from '../lib/github.js';
 
 const normEvent = (s) =>
   String(s || '')
@@ -50,69 +52,99 @@ async function recordChurn(slug, churn) {
   await store.sadd('churn:index', slug);
 }
 
-// Turn a plain-English "what counts as a conversion" description into a real
-// event name + setup instructions, by looking at the site's actual HTML.
+// Turn a plain-English "what counts as a conversion" description into an
+// actual data-track attribute committed to the site's repo — not just an
+// instruction for a human to go implement later (which was the old
+// behavior, and nobody ever actually went and did it). Falls back to a
+// manual instruction only when there's no repo, no match found on the
+// homepage (it's probably on a different page), or the commit itself fails.
 async function analyzeConversion({ site, description }) {
   const desc = String(description || '').trim();
   if (!desc) return { ok: false, error: 'describe the action first' };
+  const key = process.env.ANTHROPIC_API_KEY;
 
-  let html = '';
-  try {
-    const r = await fetch(site.url, { redirect: 'follow', signal: AbortSignal.timeout(12000) });
-    html = (await r.text()).slice(0, 45000);
-  } catch {
-    html = '';
-  }
-  // pull the interactive bits so the model has a compact view
-  const bits = (html.match(/<(a|button|form|input)[^>]*>[^<]{0,60}/gi) || []).slice(0, 120).join('\n');
-
-  const fallback = () => {
+  const manualFallback = async (why) => {
     const name = normEvent(desc) || 'conversion';
+    let explanation = `Saved "${name}" as a counted conversion.`;
+    let instruction = `Add data-track="${name}" to the element the visitor clicks for "${desc}". Then this event will count.`;
+    if (key && !why) {
+      // still worth a quick AI read of the live page for a better instruction,
+      // even when we can't commit it ourselves (no repo, or it's not on the homepage)
+      try {
+        const r = await fetch(site.url, { redirect: 'follow', signal: AbortSignal.timeout(12000) });
+        const html = (await r.text()).slice(0, 45000);
+        const bits = (html.match(/<(a|button|form|input)[^>]*>[^<]{0,60}/gi) || []).slice(0, 120).join('\n');
+        const { default: Anthropic } = await import('@anthropic-ai/sdk');
+        const client = new Anthropic({ apiKey: key });
+        const resp = await client.messages.create({
+          model: 'claude-haiku-4-5-20251001',
+          max_tokens: 400,
+          system:
+            'You configure conversion tracking for a small analytics tool. Given the owner\'s plain-English description and a slice of the page HTML, find the matching element and return ONLY minified JSON: {"matched_element":string (short description, or ""),"instruction":string (exact, copy-pasteable instruction for a developer),"explanation":string (1-2 plain sentences for a non-technical owner)}.',
+          messages: [{ role: 'user', content: `Business: ${site.name}\nURL: ${site.url}\nOwner wants to count as a conversion: "${desc}"\n\nInteractive elements:\n${bits || '(could not fetch the page)'}` }],
+        });
+        const txt = (resp.content || []).find((b) => b.type === 'text')?.text || '';
+        const j = JSON.parse(txt.replace(/^```json\s*|\s*```$/g, '').trim());
+        if (j.instruction) instruction = j.instruction;
+        if (j.explanation) explanation = j.explanation;
+      } catch {
+        /* keep the plain fallback text above */
+      }
+    }
     return {
       ok: true,
-      ai: false,
+      ai: !!key,
       event_name: name,
       needs_data_track: true,
-      instruction: `Add data-track="${name}" to the element the visitor clicks for "${desc}". Then this event will count.`,
-      explanation: `Saved "${name}" as a counted conversion. The tracker already auto-detects phone / text / email / WhatsApp / booking / review links and form submits — if "${desc}" is one of those it will just work. Otherwise add the data-track attribute above.`,
+      instruction,
+      explanation: `${explanation}${why ? ' ' + why : ''}`,
     };
   };
 
-  if (!process.env.ANTHROPIC_API_KEY) return fallback();
-  let Anthropic;
+  if (!key) return manualFallback();
+  if (!site.repo) return manualFallback('This site has no GitHub repo linked yet, so it can\'t be added automatically — a developer needs to add it by hand.');
+
   try {
-    ({ default: Anthropic } = await import('@anthropic-ai/sdk'));
-  } catch {
-    return fallback();
-  }
-  try {
-    const client = new Anthropic();
-    const model = process.env.ANTHROPIC_MODEL || 'claude-opus-5';
-    const sys =
-      'You configure conversion tracking for a small analytics tool. The tracker fires an ' +
-      '"event" and AUTO-DETECTS these without any setup: phone links (event "call"), sms ("text"), ' +
-      'mailto ("email"), WhatsApp ("whatsapp"), Calendly/Cal.com/Acuity/booking links ("booking"), ' +
-      'Google-review / "leave a review" links ("review-click"), Google-Maps links ("directions"), ' +
-      'and any form submit ("form-<name>"). For anything else the site owner adds data-track="name" ' +
-      'to the element. Given the owner\'s plain-English description and a slice of the page HTML, ' +
-      'return ONLY minified JSON: {"event_name":string (short kebab slug),"needs_data_track":boolean,' +
-      '"matched_element":string (short description of the element you found, or ""),' +
-      '"instruction":string (exact, copy-pasteable thing for the web developer to do — or ' +
-      '"Nothing to do — it is auto-detected." ),"explanation":string (1-2 plain sentences for a ' +
-      'non-technical owner)}.';
-    const user = `Business: ${site.name}\nURL: ${site.url}\nOwner wants to count as a conversion: "${desc}"\n\nInteractive elements on the page:\n${bits || '(could not fetch the page)'}`;
+    const fetched = await fetchHomepageCandidates(site);
+    if (!fetched.ok || !fetched.home || !fetched.candidates.length) {
+      return manualFallback('Nothing matched on the homepage — it may be on a different page.');
+    }
+    const { default: Anthropic } = await import('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey: key });
+    const list = fetched.candidates.map((c, i) => `${i}. <${c.tag}> "${c.text}"${c.href ? ` href="${c.href}"` : ''}`).join('\n');
     const r = await client.messages.create({
-      model,
-      max_tokens: 700,
-      system: sys,
-      messages: [{ role: 'user', content: user }],
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 300,
+      system:
+        'You match a plain-English description of a website action to one specific element in a numbered list. Return ONLY JSON: {"index": number or null (null if nothing on this list matches), "event_name": "short-kebab-slug"}.',
+      messages: [{ role: 'user', content: `Description: "${desc}"\n\nElements:\n${list}` }],
     });
-    const txt = r.content.find((b) => b.type === 'text')?.text || '';
+    const txt = (r.content || []).find((b) => b.type === 'text')?.text || '';
     const j = JSON.parse(txt.replace(/^```json\s*|\s*```$/g, '').trim());
-    j.event_name = normEvent(j.event_name) || normEvent(desc) || 'conversion';
-    return { ok: true, ai: true, ...j };
-  } catch {
-    return fallback();
+    if (j.index == null || !fetched.candidates[j.index]) {
+      return manualFallback('Nothing on the homepage matched that description — it may be on a different page, or already auto-detected.');
+    }
+    const eventName = normEvent(j.event_name) || normEvent(desc) || 'conversion';
+    const { html: patched, applied } = patchHtml(fetched.html, fetched.candidates, [{ index: j.index, event_name: eventName }]);
+    if (!applied.length) return manualFallback();
+    const res = await commitChangeset(site.repo, {
+      files: [{ path: fetched.home, content: patched }],
+      message: `Add conversion tracking: ${desc}`.slice(0, 100),
+      branchPrefix: 'conv-setup',
+      autoMerge: !!site.agentAutoMerge,
+      body: `Added \`data-track="${applied[0].name}"\` on "${applied[0].text}" per the request: "${desc}"\n\n_Automated conversion-tracking setup._`,
+    });
+    return {
+      ok: true,
+      ai: true,
+      committed: true,
+      event_name: applied[0].name,
+      matched_element: applied[0].text,
+      instruction: 'Nothing to do — it was just added automatically.',
+      explanation: `Found "${applied[0].text}" on the homepage and tagged it — it'll start counting the next time someone clicks it.${res?.prUrl ? ` (${res.prUrl})` : ''}`,
+    };
+  } catch (e) {
+    return manualFallback('Something went wrong trying to add it automatically (' + (e.message || e) + ') — falling back to a manual instruction.');
   }
 }
 

@@ -118,7 +118,10 @@ export default async function handler(req, res) {
 
   const withData = rows.filter((r) => r.stats?.hasData);
   const revTickets = await readArr('revisions:all');
-  const pendingRevisions = revTickets.filter((t) => t.status !== 'done').length;
+  // 'cancelled' is a closed state too (added after this counter was first
+  // written) — counting it as pending is exactly why a cancelled ticket kept
+  // inflating the overview tile after being closed out.
+  const pendingRevisions = revTickets.filter((t) => t.status !== 'done' && t.status !== 'cancelled').length;
 
   const portfolio = {
     sites: rows.length,
