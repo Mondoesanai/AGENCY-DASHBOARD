@@ -279,5 +279,10 @@ export default async function handler(req, res) {
     log.push({ action: 'revisions', error: String(e.message || e) });
   }
 
+  // real signal for "is the daily automation actually running" — nothing
+  // else recorded this anywhere, so a multi-day silent outage (like the
+  // health-check-eats-the-budget bug) had no way to be noticed except by
+  // seeing SEO stop happening days later.
+  await store.set('cron:daily:lastRun', String(Date.now()), { ex: 60 * 60 * 24 * 45 }).catch(() => {});
   res.status(200).json({ ok: true, day: today, isFirst, processed: sites.length, log });
 }

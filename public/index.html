@@ -61,6 +61,12 @@
   .attention{background:rgba(234,181,74,.12);border:1px solid rgba(234,181,74,.4);color:var(--warn);border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
   .attention .link{background:none;border:1px solid rgba(234,181,74,.5);color:var(--warn);border-radius:7px;padding:4px 9px;font-size:12px;white-space:nowrap;}
   .attention .link:hover{background:rgba(234,181,74,.15);}
+  .sys-health{border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:18px;}
+  .sys-health.crit{background:rgba(214,84,74,.12);border:1px solid rgba(214,84,74,.4);color:#e0685a;}
+  .sys-health.warn{background:rgba(234,181,74,.12);border:1px solid rgba(234,181,74,.4);color:var(--warn);}
+  .sys-health .sh-head{display:flex;align-items:center;gap:8px;font-weight:600;}
+  .sys-health ul{margin:6px 0 0;padding-left:18px;}
+  .sys-health li{margin:2px 0;}
   button.link{background:none;border:none;color:var(--green-br);text-decoration:underline;cursor:pointer;font-size:inherit;padding:0;}
 
   #finPanel{display:flex;flex-direction:column;gap:10px;margin-top:10px;}
@@ -293,6 +299,7 @@
   </header>
 
   <div id="mainView">
+  <div id="sysHealth" hidden></div>
   <div class="attention" id="attention" hidden></div>
   <div class="overview" id="overview"></div>
 
@@ -830,17 +837,17 @@ function ticketCardHTML(t, allTickets){
           <span class="pillmini ${t.status==='done'?'good':t.status==='needs attention'?'bad':''}">${esc(t.status)}</span>
         </div>
         <div class="fd" style="margin-top:5px">${esc(t.summary||t.subject)}</div>
-        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.calendarLink&&t.status!=='cancelled'?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug&&t.status!=='cancelled'?' · <span style="color:var(--warn)">unmatched — pick the site below (one time — it’ll remember this sender after)</span>':''}${t.corrected?' · <span class="pillmini good">corrected via reply</span>':''}${t.verify&&t.verify.verified===false?` · <span style="color:var(--warn)">auto-check couldn't confirm this on the live site${t.verify.note?` — ${esc(t.verify.note)}`:''} — please review</span>`:''}</div>
+        <div class="note" style="margin-top:4px">From ${esc(t.from)}${t.calendarLink&&t.status!=='cancelled'?` · <a href="${esc(t.calendarLink)}" target="_blank" rel="noopener">calendar hold ↗</a>`:''}${!t.todoId&&!t.slug&&t.status!=='cancelled'&&!t.lowConfidence?' · <span style="color:var(--warn)">unmatched — pick the site below (one time — it’ll remember this sender after)</span>':''}${t.lowConfidence&&!isClosedTicket(t)?' · <span style="color:var(--warn)">not sure this is a real revision request — held back, no reply sent yet. Confirm below or Cancel if it\'s not.</span>':''}${t.corrected?' · <span class="pillmini good">corrected via reply</span>':''}${t.verify&&t.verify.verified===false?` · <span style="color:var(--warn)">auto-check couldn't confirm this on the live site${t.verify.note?` — ${esc(t.verify.note)}`:''} — please review</span>`:''}</div>
         <div class="note" style="margin-top:4px">
           Asked: ${new Date(t.receivedAt).toLocaleString()}<br>
-          Responded: ${t.repliedAt?new Date(t.repliedAt).toLocaleString():'<span style="color:var(--warn)">reply failed — check it yourself</span>'}<br>
+          Responded: ${t.repliedAt?new Date(t.repliedAt).toLocaleString():t.lowConfidence?'not yet — held for review':'<span style="color:var(--warn)">reply failed — check it yourself</span>'}<br>
           ${completionLine}
         </div>
         ${t.status==='scheduled'&&t.lastAttempt&&t.lastAttempt.outcome!=='shipped'?`<div class="note" style="margin-top:4px;color:var(--warn)">Last attempt (${agoStr(t.lastAttempt.at)}): ${esc(t.lastAttempt.outcome)}${t.lastAttempt.reason?` — ${esc(t.lastAttempt.reason)}`:''}</div>`:''}
         ${t.repo||t.commitUrl||t.siteUrl?`<div class="note" style="margin-top:3px">${t.shipSummary?`Shipped: ${esc(t.shipSummary)}<br>`:''}${t.repo?`Repo: ${esc(t.repo)}`:''}${t.commitUrl?` · <a href="${esc(t.commitUrl)}" target="_blank" rel="noopener">view commit ↗</a>`:''}${t.siteUrl?` · <a href="${esc(t.siteUrl)}" target="_blank" rel="noopener">view live site ↗</a>`:''}</div>`:''}
-        ${!t.slug&&!isClosedTicket(t)?`<div class="btn-row" style="margin-top:7px">
-            <select data-assign-pick="${esc(t.id)}" style="flex:1"><option value="">Which site is this?</option>${(STATE&&STATE.sites||[]).map(s=>`<option value="${esc(s.slug)}">${esc(s.name)}</option>`).join('')}</select>
-            <button class="btn sm" data-assign="${esc(t.id)}">Assign</button>
+        ${(!t.slug||t.lowConfidence)&&!isClosedTicket(t)?`<div class="btn-row" style="margin-top:7px">
+            <select data-assign-pick="${esc(t.id)}" style="flex:1"><option value="">Which site is this?</option>${(STATE&&STATE.sites||[]).map(s=>`<option value="${esc(s.slug)}" ${t.slug===s.slug?'selected':''}>${esc(s.name)}</option>`).join('')}</select>
+            <button class="btn sm" data-assign="${esc(t.id)}">${t.lowConfidence?'Confirm — yes, do this':'Assign'}</button>
             <button class="btn sm ghost" data-cancel="${esc(t.id)}" title="Not a real request, or a duplicate — closes it without emailing anyone">Cancel</button>
           </div>` : ''}
         ${t.status==='done'?`<div class="note" style="margin-top:3px">${t.completionEmail?.sent?`✓ client notified`:t.completionEmail?`<span style="color:var(--warn)">completion email didn't send — ${esc(t.completionEmail.reason||'')}</span>`:'✓ done'}</div>`
@@ -967,6 +974,22 @@ function startRevPoll(){
     await loadRevWidget();
   },180000); // 3 min — frequent enough to feel live, not so frequent it stacks up against the server-side lock
 }
+
+/* ---------- System health — proactive self-check, no password, always visible when something's actually wrong ---------- */
+async function loadSysHealth(){
+  const j=await fetch(`/api/admin?do=system-health`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+  renderSysHealth(j);
+}
+function renderSysHealth(h){
+  const el=$('#sysHealth'); if(!el) return;
+  if(!h||!h.ok||!h.issues||!h.issues.length){ el.hidden=true; el.innerHTML=''; return; }
+  const crit=h.issues.some(i=>i.level==='critical');
+  el.hidden=false;
+  el.className='sys-health '+(crit?'crit':'warn');
+  el.innerHTML=`<div class="sh-head">${crit?'⛔':'⚠'} System check found ${h.issues.length} thing${h.issues.length===1?'':'s'} worth a look</div>
+    <ul>${h.issues.map(i=>`<li>${esc(i.text)}</li>`).join('')}</ul>`;
+}
+setInterval(loadSysHealth,300000); // recheck every 5 min so a fixed issue clears itself without a reload
 
 /* ---------- Receipts / tax (now a tab inside #finPanel) ---------- */
 function receiptsHTML(j){
@@ -1950,6 +1973,7 @@ $('#refreshBtn').addEventListener('click',async()=>{
     toast((skipped?`Refreshed ${j.generated-skipped} of ${j.generated} sites — the rest catch up automatically`:`Refreshed all ${j.generated} sites with today's numbers`)+revNote);
     await load();
     await loadRevWidget();
+    await loadSysHealth();
   } else toast(j.error||'Could not refresh reports','err');
 });
 
@@ -2121,6 +2145,7 @@ setInterval(()=>{
 
 renderUnlock();
 fillLeadSourceList();
+loadSysHealth();
 (async()=>{
   await load(); // let the main dashboard paint first — revisions renders after, not ahead of everything else
   await loadRevWidget();

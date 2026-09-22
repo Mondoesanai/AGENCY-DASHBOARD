@@ -235,6 +235,7 @@ createServer(async (req, res) => {
           { id: '3', threadId: 't3', slug: 'apostello-detailing', siteName: 'Apostello Detailing', from: 'Shiloh <shiloh@example.com>', subject: 'Change join button color', summary: 'Change the "Join the community" button to green', receivedAt: Date.now() - 2 * 86400000, repliedAt: Date.now() - 2 * 86400000 + 90000, calendarLink: 'https://calendar.google.com/', todoId: null, status: 'done', doneAt: Date.now() - 86400000, completionEmail: { sent: true }, repo: 'Mondoesanai/apostellodetailing', commitUrl: 'https://github.com/Mondoesanai/apostellodetailing/pull/12', branch: 'seo-agent-1234', shipSummary: 'Changed CTA button color to brand green', siteUrl: 'https://apostellodetailing.vercel.app' },
           { id: '4', threadId: 't4', slug: 'relax-tax', siteName: 'Relax Tax', from: 'Angelete May <angelete@example.com>', subject: 'Footer phone number', summary: 'Update the footer phone number to the new line', receivedAt: Date.now() - 6 * 86400000, repliedAt: Date.now() - 6 * 86400000 + 90000, calendarLink: 'https://calendar.google.com/', todoId: null, status: 'done', doneAt: Date.now() - 5 * 86400000, completionEmail: { sent: true }, repo: 'Mondoesanai/Relaxtax', commitUrl: 'https://github.com/Mondoesanai/Relaxtax/pull/8', shipSummary: 'Updated footer phone number', siteUrl: 'https://relaxtax.vercel.app' },
           { id: '5', threadId: 't5', slug: 'one-more-thing', siteName: 'One More Thing Services', from: 'Angie <angie@example.com>', subject: 'Update hours', summary: 'Change business hours on the contact page to close at 6pm', receivedAt: Date.now() - 40 * 60000, repliedAt: Date.now() - 39 * 60000, calendarLink: 'https://calendar.google.com/', todoId: null, status: 'needs attention', repo: 'Mondoesanai/onemorething', commitUrl: 'https://github.com/Mondoesanai/onemorething/pull/5', shipSummary: 'Updated contact page copy', siteUrl: 'https://one-more-thing-gold.vercel.app', verify: { verified: false, note: 'Contact page still shows 8pm closing time', checkedAt: Date.now() - 60000 } },
+          { id: '6', threadId: 't6', slug: 'relax-tax', siteName: 'Relax Tax', from: 'Someone <vendor@example.com>', subject: 'Quick question', summary: 'Unclear — possibly about the pricing page, possibly a vendor pitch', receivedAt: Date.now() - 12 * 60000, repliedAt: null, calendarLink: null, todoId: null, status: 'needs attention', lowConfidence: true },
         ],
       },
     }));
@@ -242,6 +243,24 @@ createServer(async (req, res) => {
   if (path === '/api/revisions-check') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ ok: false, error: 'Google not connected (local preview stub)' }));
+  }
+  if (path === '/api/system-health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    return res.end(JSON.stringify({
+      ok: true,
+      checkedAt: Date.now(),
+      env: { anthropic: true, anthropicAgent: true, github: true, resend: true, google: false, dataforseo: true, storage: true, cronSecret: true },
+      cronLastRun: Date.now() - 5 * 3600000,
+      revisionsLastCheck: Date.now() - 3 * 60000,
+      ticketsNeedingAttention: 3,
+      budgets: [{ slug: 'set-apart-movement', name: 'Set Apart Movement', spent: 20, cap: 20, exhausted: true }],
+      healthy: false,
+      issues: [
+        { level: 'warn', text: "Google isn't connected — the revisions inbox and calendar holds are offline." },
+        { level: 'warn', text: '3 revision tickets need a manual look.' },
+        { level: 'warn', text: "Set Apart Movement's SEO budget is used up ($20/$20) — it'll stop shipping automatically until next month (or raise the cap in Settings)." },
+      ],
+    }));
   }
   if (path === '/api/revisions-done' || path === '/api/revisions-assign' || path === '/api/revisions-cancel') {
     res.writeHead(200, { 'Content-Type': 'application/json' });

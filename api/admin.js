@@ -11,6 +11,7 @@ import { runAgentCycle, agentStatus } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
 import { revisionsStatus, checkRevisionInbox, markTicketDone, cancelTicket, assignTicketToSite } from '../lib/revisions.js';
+import { systemHealth } from '../lib/health.js';
 
 function authed(req) {
   const s = process.env.CRON_SECRET;
@@ -26,8 +27,15 @@ async function siteBySlug(slug) {
 export default async function handler(req, res) {
   // ticket status is client-request/scheduling info, not financial — same
   // trust level as the public /api/sites feed, so it's never password-gated.
+  // Same for system-health — it's config/uptime flags (same trust level
+  // /api/sites already exposes via emailEnabled/aiEnabled/backend), not
+  // client revenue, and it needs to load without a click for the "tell me
+  // proactively when something's wrong" goal to actually work.
   if (req.query.do === 'revisions-status') {
     return res.status(200).json({ ok: true, status: await revisionsStatus() });
+  }
+  if (req.query.do === 'system-health') {
+    return res.status(200).json(await systemHealth());
   }
   if (!authed(req)) return res.status(401).json({ ok: false, error: 'bad password' });
   switch (req.query.do) {

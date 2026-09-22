@@ -7,6 +7,7 @@ import {
 } from '../lib/registry.js';
 import { fetchHomepageCandidates, patchHtml } from '../lib/conversions-setup.js';
 import { commitChangeset } from '../lib/github.js';
+import { markAiMonth } from '../lib/aicost.js';
 
 const normEvent = (s) =>
   String(s || '')
@@ -14,6 +15,22 @@ const normEvent = (s) =>
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .slice(0, 40);
+const MONTH = () => new Date().toISOString().slice(0, 7);
+async function num(k) {
+  const v = await store.get(k).catch(() => null);
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+// "Figure it out" was untracked — every click's Claude usage was invisible
+// to the budget/company-stats dashboard. Same general-ops bucket classify()
+// and verifyShippedFix() already use (lib/revisions.js), not a site's SEO
+// agent budget — this is a one-off manual lookup, not agent work.
+async function spendCoach(usd) {
+  const m = MONTH();
+  const cur = await num(`coach:spend:${m}`);
+  await store.set(`coach:spend:${m}`, String(+(cur + usd).toFixed(5)), { ex: 60 * 60 * 24 * 45 }).catch(() => {});
+  await markAiMonth(m);
+}
 
 async function readList(key) {
   const raw = await store.get(key).catch(() => null);
@@ -83,6 +100,7 @@ async function analyzeConversion({ site, description }) {
             'You configure conversion tracking for a small analytics tool. Given the owner\'s plain-English description and a slice of the page HTML, find the matching element and return ONLY minified JSON: {"matched_element":string (short description, or ""),"instruction":string (exact, copy-pasteable instruction for a developer),"explanation":string (1-2 plain sentences for a non-technical owner)}.',
           messages: [{ role: 'user', content: `Business: ${site.name}\nURL: ${site.url}\nOwner wants to count as a conversion: "${desc}"\n\nInteractive elements:\n${bits || '(could not fetch the page)'}` }],
         });
+        await spendCoach(+(((resp.usage?.input_tokens || 0) / 1e6) * 1 + ((resp.usage?.output_tokens || 0) / 1e6) * 5).toFixed(5));
         const txt = (resp.content || []).find((b) => b.type === 'text')?.text || '';
         const j = JSON.parse(txt.replace(/^```json\s*|\s*```$/g, '').trim());
         if (j.instruction) instruction = j.instruction;
@@ -119,6 +137,7 @@ async function analyzeConversion({ site, description }) {
         'You match a plain-English description of a website action to one specific element in a numbered list. Return ONLY JSON: {"index": number or null (null if nothing on this list matches), "event_name": "short-kebab-slug"}.',
       messages: [{ role: 'user', content: `Description: "${desc}"\n\nElements:\n${list}` }],
     });
+    await spendCoach(+(((r.usage?.input_tokens || 0) / 1e6) * 1 + ((r.usage?.output_tokens || 0) / 1e6) * 5).toFixed(5));
     const txt = (r.content || []).find((b) => b.type === 'text')?.text || '';
     const j = JSON.parse(txt.replace(/^```json\s*|\s*```$/g, '').trim());
     if (j.index == null || !fetched.candidates[j.index]) {
