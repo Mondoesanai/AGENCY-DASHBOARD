@@ -9,7 +9,7 @@ import { listSites } from '../lib/registry.js';
 import { store } from '../lib/store.js';
 import { monthKey } from '../lib/history.js';
 import { buildForSite } from './report.js';
-import { runAgentCycle, agentStatus } from '../lib/agent.js';
+import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, sendUpsell } from '../lib/upsell.js';
 import { sendWinsRecap } from '../lib/winsrecap.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
@@ -192,6 +192,18 @@ export default async function handler(req, res) {
             log.push({ slug: site.slug, action: `wins recap ${n}`, error: String(e.message || e) });
           }
         }
+      }
+
+      // Real Google ranking, refreshed on its own reliable cadence — decoupled
+      // from the technical-fix rotation below, which can lose its turn for
+      // weeks to budget caps, pacing, or a pending revision jumping the
+      // queue. Ranking freshness shouldn't have to wait on any of that.
+      try {
+        const r = await refreshRanksIfStale(site);
+        if (r.ok && !r.skipped) log.push({ slug: site.slug, action: 'rank refresh', inTop10: r.ranks?.inTop10 });
+        else if (!r.ok) log.push({ slug: site.slug, action: 'rank refresh', error: r.error });
+      } catch (e) {
+        log.push({ slug: site.slug, action: 'rank refresh', error: String(e.message || e) });
       }
     })
   );

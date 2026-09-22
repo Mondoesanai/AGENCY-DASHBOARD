@@ -7,7 +7,7 @@ import { coachHandler } from '../lib/coach.js';
 import { receiptsHandler } from '../lib/receipts.js';
 import { reposHandler } from '../lib/repos.js';
 import { listSites } from '../lib/registry.js';
-import { runAgentCycle, agentStatus } from '../lib/agent.js';
+import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
 import { revisionsStatus, checkRevisionInbox, markTicketDone, cancelTicket, assignTicketToSite, retryTicket } from '../lib/revisions.js';
@@ -128,6 +128,30 @@ export default async function handler(req, res) {
         };
         const r = await autoTagConversions(site, { spend }).catch((e) => ({ ok: false, error: String(e.message || e) }));
         await store.set(`conv:tagged:${site.slug}`, String(Date.now()), { ex: 60 * 60 * 24 * 365 }).catch(() => {});
+        results.push({ slug: site.slug, ...r });
+      }
+      return res.status(200).json({ ok: true, results });
+    }
+    case 'ranks-refresh-all': {
+      // Manual "don't wait for the cron" trigger — the whole reason this
+      // exists is the daily cron's own reliability is currently in
+      // question, so ranking freshness can't fully depend on it working.
+      // ?force=1 ignores the ~3-day staleness check and rechecks everyone.
+      // ?slug=<slug> limits it to one site (always forces, like the
+      // per-site button — waiting 3 days to prove the button worked would
+      // defeat the point of a manual "check it now" action).
+      const onlySlug = req.query.slug || null;
+      const force = onlySlug ? true : req.query.force === '1';
+      const sites = onlySlug ? (await listSites()).filter((s) => s.slug === onlySlug) : await listSites();
+      if (onlySlug && !sites.length) return res.status(404).json({ ok: false, error: 'unknown site' });
+      const t0 = Date.now();
+      const results = [];
+      for (const site of sites) {
+        if (Date.now() - t0 > 45000) {
+          results.push({ slug: site.slug, skipped: true, reason: 'out of time this run — re-run to pick up the rest' });
+          continue;
+        }
+        const r = await refreshRanksIfStale(site, { force }).catch((e) => ({ ok: false, error: String(e.message || e) }));
         results.push({ slug: site.slug, ...r });
       }
       return res.status(200).json({ ok: true, results });
