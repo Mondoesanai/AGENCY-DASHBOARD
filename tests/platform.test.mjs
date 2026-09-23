@@ -44,11 +44,12 @@ const t0 = Date.now();
 const tick = await runAutoTick();
 check('tick ok, returned quickly', tick.ok && tick.ms < 15000, JSON.stringify(tick).slice(0, 300));
 check('worked exactly one site this tick', !!tick.agent && ['one', 'two'].includes(tick.agent.slug), JSON.stringify(tick.agent));
-check('refreshed rankings for exactly one (the stalest) site, 15 keywords in one go', tick.ranks.length === 1 && W.dfs.calls === 15, `ranks=${JSON.stringify(tick.ranks)} dfsCalls=${W.dfs.calls}`);
+check('refreshed rankings for exactly one (the stalest) site: 15 keywords + 1 indexed-pages check, in one go', tick.ranks.length === 1 && W.dfs.calls === 16, `ranks=${JSON.stringify(tick.ranks)} dfsCalls=${W.dfs.calls}`);
 const refreshedSlug = tick.ranks[0]?.slug;
 const stored = JSON.parse(await store.get(`agent:ranks:${refreshedSlug}`));
 check('stored ranks include competitor titles, People-Also-Ask and related searches per keyword', stored.results.every((x) => x.topTitles?.length && x.paa?.length && x.related?.length));
 check('stored ranks record the real search depth (100), not a results count', stored.depth === 100);
+check('stored ranks record how many pages Google has indexed (site: check)', stored.indexed?.count === 3, JSON.stringify(stored.indexed));
 check('rank history point appended', (await readRankHistory(refreshedSlug)).length === 1);
 h = await systemHealth();
 check('after a tick health no longer says never checked in', !h.issues.some((i) => /never checked in/.test(i.text)) && h.tickLast > 0);
@@ -175,5 +176,25 @@ check('conversion tracking ran immediately', !!r.body.convSetup, JSON.stringify(
 check('conversion tags were committed to the live site', r.body.convSetup?.tagged === 2 && /data-track="quote-request"/.test(W.repos['acme/new'].files['index.html']) && /data-track="book-now"/.test(W.repos['acme/new'].files['index.html']), JSON.stringify(r.body.convSetup) + ' :: ' + W.repos['acme/new'].files['index.html']);
 check('it will not re-tag on every later save', !!(await store.get('conv:tagged:' + r.body.site.slug)));
 delete process.env.CRON_SECRET;
+
+
+section('P11  the automation upgrades old-format client reports on its own (no email), once per site per month');
+W.router = (req) => {
+  const sys = String(req.system || '');
+  if (/account manager at a small web studio/.test(sys)) return JSON.stringify({ headline: 'h', summary: 's', progress: 'PROGRESS NARRATIVE', work_done: [{ title: 'did x', detail: 'd' }], improvements: [], client_actions: [{ title: 'a', why: 'w', target: '10 by Sunday' }], builder_notes: [], email: { subject: 'x', body_text: 'y' } });
+  return '{}';
+};
+await store.set(`report:one:regen:x`, '1');
+for (const s of ['one', 'two', 'nokw']) await store.set(`report:regen:${s}:${MK}`, '');
+await store.set('report:one:latest', JSON.stringify({ slug: 'one', headline: 'old', summary: 'old generic report', clientActions: [{ title: 'Ask 3 happy customers for a Google review' }] }));
+for (const s of ['two', 'nokw']) await store.set(`report:${s}:latest`, JSON.stringify({ progress: 'already detailed' }));
+const emailsBefore = W.emails.length;
+let tk11 = await runAutoTick();
+const rep1 = JSON.parse(await store.get('report:one:latest'));
+check('legacy report was regenerated with the detailed fields', rep1.progress === 'PROGRESS NARRATIVE' && rep1.clientActions[0].target === '10 by Sunday', JSON.stringify(rep1).slice(0, 200));
+check('no client email was sent by that refresh', W.emails.length === emailsBefore);
+const calls11 = W.anthropicCalls.filter((c) => /account manager/.test(String(c.system))).length;
+const tk11b = await runAutoTick();
+check('it does not redo the same site again this month (it moves on to a different one)', tk11b.report?.slug !== 'one' && !!(await store.get(`report:regen:one:${MK}`)), JSON.stringify(tk11b.report));
 
 done();

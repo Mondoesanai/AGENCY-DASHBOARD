@@ -108,6 +108,7 @@ async function buildReportContext(site, stats, changelog, period) {
           inTop3: summary.inTop3,
           inTop10: summary.inTop10,
           notInTop100Count: summary.tracked - summary.found,
+          pagesGoogleHasIndexed: summary.indexed ? summary.indexed.count : null,
           competingPagesEstimate: summary.roughField,
           keywords: keywordTable(cur, prev).slice(0, 12),
           topCompetitors: (summary.competitors || []).slice(0, 4).map((c) => c.domain),
@@ -276,10 +277,11 @@ async function sendEmail({ site, subject, body, cardPng, reportUrl, to }) {
   }
 }
 
-async function buildForSite(site, { doSend, req, style, isBatch, period, sentKey }) {
+async function buildForSite(site, { doSend, req, style, isBatch, period, sentKey, fast }) {
   const [stats, audit, changelogRaw] = await Promise.all([
     siteStats(site.slug, site.conversionEvents || []).catch(() => null),
-    runAudit(site.url, { fresh: !isBatch }).catch(() => ({ ok: false, error: 'audit failed' })),
+    // fast: never wait on a live speed test (used by the background refresh)
+    runAudit(site.url, { fresh: !isBatch && !fast, cachedOnly: !!fast }).catch(() => ({ ok: false, error: 'audit failed' })),
     readLog(site.slug),
   ]);
   const changelog = await withAutoShipped(site.slug, changelogRaw);

@@ -560,7 +560,7 @@ function render(data){
     ['visitors','Visitors · 30d',fmt(p.visitors30),'tap for every site'],
     ['conversions','Conversions · 30d',fmt(p.conversions30),'tap for every site'],
     ['seo','Avg Google ranking',p.avgRank!=null?`#${p.avgRank}`:(p.avgRoughField!=null?`~${fmtBig(p.avgRoughField)}`:'—'),
-      p.avgRank!=null?`tap for every site · ${p.rankedSites} tracked`:(p.avgRoughField!=null?'pages competing for your keywords — watch it shrink':'tracking starts when a site is added')],
+      p.avgRank!=null?`tap for every site · ${p.rankedSites} tracked`:(p.avgRoughField!=null?'results Google lists for your searches — not a rank, just the field':'tracking starts when a site is added')],
     ['revisions','Pending revisions',fmt(p.pendingRevisions||0),'tap to review'],
     ['__nextseo__','Next agent push','','tap to see what each site is doing'],
     ['todos','Open suggestions',p.openFindings,'tap for every site'],
@@ -1306,7 +1306,7 @@ function siteCard(s){
   const gl=g?g.letter:'NA';
   const rk=s.rankSummary;
   const rankLabel = rk&&rk.avgRank!=null ? `#${rk.avgRank}` : rk&&rk.roughField!=null ? `~${fmtBig(rk.roughField)}` : (s.agentKeywords?'checking…':'—');
-  const rankSub = rk&&rk.avgRank!=null ? `${rk.inTop10}/${rk.tracked} top 10` : rk&&rk.roughField!=null ? 'pages ahead' : '';
+  const rankSub = rk&&rk.avgRank!=null ? `${rk.inTop10}/${rk.tracked} top 10` : rk&&rk.roughField!=null ? 'results listed' : '';
   const attn=(STATE.portfolio.attention||[]).includes(s.slug);
   const trkTag = s.hasTracker ? (s.awaitingData?'<span class="tag" style="color:var(--faint);background:var(--surface2)">collecting…</span>':'')
     : '<span class="tag" style="color:var(--warn);background:#2c2a17">no tracker</span>';
@@ -1384,9 +1384,10 @@ function rankingsBlock(s){
     ? `<div class="note" style="margin-top:8px">Showing up alongside: ${comp.map(c=>`${esc(c.domain)} (best #${c.bestRank})`).join(', ')}</div>`
     : '';
   const roughLine = (rs&&rs.avgRank==null&&rs.roughField!=null)
-    ? `<div class="note" style="margin:2px 0 0">Not showing up in the visible search results yet for these keywords — roughly <strong>${fmtBig(rs.roughField)}</strong> pages currently competing for them. Not a real rank (Google doesn't give one this deep) — just a rough sense of the field, worth watching shrink as the site builds authority.</div>`
+    ? `<div class="note" style="margin:2px 0 0">Not showing up in the visible search results yet for these keywords — Google lists roughly <strong>${fmtBig(rs.roughField)}</strong> results for these searches. Not a rank (Google doesn't give one this deep) — a small number means the searches are very specific.</div>`
     : '';
   return `<div class="block"><h3>Google rankings <span class="ang">${top10}/${rows.length} in the top 10${top3?` · ${top3} in the top 3`:''}</span></h3>
+    ${rs&&rs.indexed?`<div class="note" style="margin:0 0 6px">Google has indexed <strong>${rs.indexed.count}${rs.indexed.count>=100?'+':''}</strong> page${rs.indexed.count===1?'':'s'} of this site${rs.indexed.count===0?' — a page Google hasn\'t indexed cannot rank, so check the sitemap is submitted in Search Console':''}.</div>`:''}
     <div class="note" style="margin:0 0 8px">Checked ${agoStr(rk.at)} · avg position <strong>${rs&&rs.avgRank!=null?'#'+rs.avgRank:'—'}</strong> across ${rows.length} tracked keyword${rows.length===1?'':'s'}</div>
     ${roughLine}
     ${rows.slice(0,10).map(r=>`<div class="fin-row"><span title="${esc(r.keyword)}">${esc(r.keyword)}</span><span class="r" style="color:${r.rank&&r.rank<=3?'var(--pos)':r.rank&&r.rank<=10?'var(--green-br)':'var(--faint)'}">${r.rank?'#'+r.rank:'not in top '+depth}</span></div>`).join('')}

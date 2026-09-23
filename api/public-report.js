@@ -130,6 +130,7 @@ export default async function handler(req, res) {
           inTop10: rankSummary.inTop10,
           depth: rankSummary.depth,
           roughField: rankSummary.roughField,
+          indexed: rankSummary.indexed,
           keywords: keywordTable(curRanks, prevRanks).slice(0, 12),
           competitors: (rankSummary.competitors || []).slice(0, 4).map((c) => ({ domain: c.domain, bestRank: c.bestRank })),
           history: (rankHist || []).slice(-24).map((h) => ({ at: h.at, avgRank: h.avgRank, inTop10: h.inTop10 })),

@@ -137,6 +137,10 @@ function anthropic(body) {
 function dataforseo(body) {
   W.dfs.calls++;
   const kw = body[0].keyword;
+  if (/^site:/.test(kw)) {
+    const d = kw.slice(5);
+    return json({ status_code: 20000, cost: 0.002, tasks: [{ status_code: 20000, result: [{ se_results_count: 3, items: [1, 2, 3].map((i) => ({ type: 'organic', rank_absolute: i, domain: d, url: `https://${d}/p${i}`, title: 'p' + i })) }] }] });
+  }
   const rank = kw in W.dfs.ranks ? W.dfs.ranks[kw] : null;
   const items = [
     { type: 'organic', rank_absolute: 1, domain: 'bigcompetitor.com', url: 'https://bigcompetitor.com/x', title: `Best ${kw} - BigCompetitor` },

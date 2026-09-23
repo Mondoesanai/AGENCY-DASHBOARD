@@ -162,7 +162,8 @@ function rankBlock(d){
        <div><div class="rk-big">${r.inTop10}<span style="font-size:20px;color:var(--faint)"> / ${r.tracked}</span></div><div class="rk-lbl">keywords on page 1 (top 10)</div></div>
        ${r.bestRank?`<div><div class="rk-big">#${r.bestRank}</div><div class="rk-lbl">your best keyword</div></div>`:''}</div>`
     : `<div class="rk-top"><div><div class="rk-big">Building</div><div class="rk-lbl">not on the first ${r.depth||100} results yet for your ${r.tracked} keywords — normal for a newer site</div></div>
-       ${r.roughField?`<div><div class="rk-big">~${bigNum(r.roughField)}</div><div class="rk-lbl">pages competing for your search terms</div></div>`:''}</div>`;
+       ${r.indexed?`<div><div class="rk-big">${r.indexed.count}${r.indexed.count>=100?'+':''}</div><div class="rk-lbl">pages of your site Google has indexed</div></div>`:''}
+       ${r.roughField?`<div><div class="rk-big">~${bigNum(r.roughField)}</div><div class="rk-lbl">results Google lists for your search terms</div></div>`:''}</div>`;
   const rows=(r.keywords||[]).map(k=>{
     let chg='<span style="color:var(--faint)">—</span>';
     if(k.change===999) chg='<span class="up">▲ new</span>';
