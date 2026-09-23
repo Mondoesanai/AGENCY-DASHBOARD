@@ -8,6 +8,7 @@ import { reportToken } from '../lib/token.js';
 import { store } from '../lib/store.js';
 import { todosState } from '../lib/todos.js';
 import { summarizeRanks, readRankHistory, projectTimeline } from '../lib/ranks.js';
+import { agentStatus } from '../lib/agent.js';
 
 async function readRanks(slug) {
   const raw = await store.get(`agent:ranks:${slug}`).catch(() => null);
@@ -38,7 +39,7 @@ export default async function handler(req, res) {
 
   const rows = await Promise.all(
     list.map(async (site) => {
-      const [stats, audit, report, history, notes, changelog, expenses, ranks, todos, rankHistory] = await Promise.all([
+      const [stats, audit, report, history, notes, changelog, expenses, ranks, todos, rankHistory, agent] = await Promise.all([
         siteStats(site.slug, site.conversionEvents || []).catch(() => null),
         runAudit(site.url, { cachedOnly: true }).catch(() => ({ ok: false, error: 'audit failed' })),
         store.get(`report:${site.slug}:latest`).catch(() => null),
@@ -49,6 +50,7 @@ export default async function handler(req, res) {
         readRanks(site.slug),
         todosState(site).catch(() => null),
         readRankHistory(site.slug).catch(() => []),
+        agentStatus(site).catch(() => null),
       ]);
       const expensesTotal = expenses.reduce((t, e) => t + (Number(e.amount) || 0), 0);
       const onTrial = !!(site.trialEnds && site.trialEnds > Date.now());
@@ -92,6 +94,19 @@ export default async function handler(req, res) {
         agentRanks: ranks || null,
         rankSummary,
         rankTimeline,
+        // what the automation is doing for this site right now — why it is or
+        // isn't eligible, its last few actions, this month's spend. Same trust
+        // level as the changelog already shown here (no secrets, no client data).
+        agent: agent
+          ? {
+              eligible: agent.eligible,
+              reasons: agent.reasons,
+              spent: agent.spentThisMonth,
+              cap: agent.cap,
+              keywords: (agent.keywords || []).length,
+              recent: (agent.lastLog || []).slice(0, 5).map((e) => ({ at: e.at, action: e.action, detail: String(e.detail || '').slice(0, 140), prUrl: e.prUrl || null })),
+            }
+          : null,
         aiTodos: todos?.current?.items || null,
         aiTodosGeneratedAt: todos?.current?.generatedAt || null,
         aiTodosNextRefresh: todos?.nextRefresh || 0,

@@ -62,6 +62,19 @@ W.dfs.calls = 0;
 const tick3 = await runAutoTick();
 check('third tick makes no rank lookups (both fresh <3 days) so it is cheap', tick3.ranks.length === 0 && W.dfs.calls === 0, JSON.stringify(tick3.ranks) + ' calls ' + W.dfs.calls);
 
+section('P3b  a keyword-less site must not starve the others, and gets tracking started when nothing is stale');
+await saveSiteConfig('nokw', { url: 'https://nokw.test', name: 'No Keywords Co' }); // no repo, no keywords
+W.dfs.calls = 0;
+await store.set('agent:ranks:one', JSON.stringify({ at: Date.now() - 5 * 864e5, depth: 100, results: [{ keyword: 'x', rank: 9 }] }));
+await store.set('agent:lastCycleAt:one', String(Date.now())); await store.set('agent:lastCycleAt:two', String(Date.now()));
+let tk = await runAutoTick();
+check('stale site with keywords is refreshed (not blocked by the keyword-less site sorting first)', tk.ranks.length === 1 && tk.ranks[0].slug === 'one', JSON.stringify(tk.ranks));
+W.router = (req) => (/local SEO strategist/.test(String(req.system)) ? '{"keywords":["nokw a","nokw b"]}' : '{}');
+tk = await runAutoTick();
+check('when everything is fresh, the keyword-less site (no repo needed) gets keyword + rank tracking started', tk.ranks.length === 1 && tk.ranks[0].slug === 'nokw' && tk.ranks[0].startedTracking === 2, JSON.stringify(tk.ranks));
+check('...and its first rank check ran', !!(await store.get('agent:ranks:nokw')));
+W.router = (req) => (/senior technical-SEO/.test(String(req.system)) ? 'NOOP: already good' : '{}');
+
 section('P4  the tick tells the owner if the automation had been offline for hours');
 await store.set('auto:lastTick', String(Date.now() - 11 * 3600000));
 W.sms.length = 0;
@@ -118,6 +131,7 @@ r = await call(sitesHandler, {});
 check('pending revisions counts open + needs-attention, NOT cancelled/done', r.body.portfolio.pendingRevisions === 2, String(r.body.portfolio.pendingRevisions));
 const row = r.body.sites.find((s) => s.slug === 'one');
 check('site rows expose the real rank summary + timeline', !!row.rankSummary && row.rankSummary.avgRank === 30 && row.rankTimeline && 'ok' in row.rankTimeline, JSON.stringify(row.rankSummary));
+check('each site row shows what the automation is doing (eligibility, reasons, recent actions)', !!row.agent && Array.isArray(row.agent.reasons) && Array.isArray(row.agent.recent) && typeof row.agent.cap === 'number', JSON.stringify(row.agent));
 check('overview tile average ranking is computed', r.body.portfolio.avgRank === 30 && r.body.portfolio.rankedSites >= 1, JSON.stringify({ a: r.body.portfolio.avgRank, n: r.body.portfolio.rankedSites }));
 
 section('P8  lead-source (UTM) tagging end to end through the tracker endpoint');
