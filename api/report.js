@@ -165,6 +165,9 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
     'were re-checked. title = short outcome, detail = one plain sentence. If shippedWork is thin, list fewer',
     'items — never pad or invent.',
     'improvements = 2-4 things WE will do NEXT, specific to their data (name the page / keyword), no jargon.',
+    'NEVER promise image compression or resizing, colour / contrast / font / layout changes, or anything about\n    the visual design — this system does not do those automatically, so promising them is a broken promise.',
+    'Only promise the kind of work it really does: search titles and descriptions, structured data, sitemap,',
+    'image descriptions, loading hints, new pages, and targeting specific searches.',
     'client_actions = 3-4 things the BUSINESS OWNER can do THIS WEEK to help their site grow. They must be',
     'SPECIFIC and MEASURABLE, built from their own numbers, and never generic. Each one has: title (the exact',
     'action), why (one sentence tying it to THEIR data — a real page, keyword, traffic source, or enquiry count',
@@ -293,6 +296,13 @@ async function sendEmail({ site, subject, body, cardPng, reportUrl, to }) {
   }
 }
 
+// The audit's generic "fixes" include things this system deliberately never
+// does on its own (compress/resize images, change colours or contrast, fonts,
+// layout). A client report that says "we're working on compressing your hero
+// image" is a promise nobody is going to keep, so those never reach the report.
+const NOT_AUTOMATED = /compress|resiz|hero image|webp|contrast|grey|gray|colou?r|font|layout|spacing|darken|lighten|image size|largest content|\blcp\b/i;
+const doable = (x) => !NOT_AUTOMATED.test(`${x?.title || ''} ${x?.why || ''}`);
+
 async function auditWithin(url, { fresh, cachedOnly, ms }) {
   const bad = { ok: false, error: 'audit failed' };
   if (cachedOnly) return runAudit(url, { cachedOnly: true }).catch(() => bad);
@@ -314,7 +324,7 @@ async function buildForSite(site, { doSend, req, style, isBatch, period, sentKey
   const changelog = await withAutoShipped(site.slug, changelogRaw);
   const grade = overallGrade(audit, stats);
   const findings = buildFindings(audit, stats);
-  const improvements = improvementsForClient(audit, stats);
+  const improvements = improvementsForClient(audit, stats).filter(doable);
   const actions = clientActions(audit, stats, site);
 
   const row =
@@ -405,6 +415,7 @@ async function buildForSite(site, { doSend, req, style, isBatch, period, sentKey
     grade,
     headline: ai?.headline || `${site.name} — ${MONTH}`,
     summary: ai?.summary || rules.wins.join(' '),
+    reportVersion: 2, // bump to have the automation regenerate every stored report once
     progress: ai?.progress || '',
     workDone: ai?.work_done || [],
     period: period || 'monthly',
@@ -481,6 +492,7 @@ async function regenEmail(site, { style, req }) {
     generatedAt: Date.now(), grade,
     headline: ai?.headline || prev?.headline || `${site.name} — ${MONTH}`,
     summary: ai?.summary || prev?.summary || rules.wins.join(' '),
+    reportVersion: 2,
     progress: ai?.progress || prev?.progress || '',
     workDone: ai?.work_done || prev?.workDone || [],
     period: prev?.period || 'monthly',

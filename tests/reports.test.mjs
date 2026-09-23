@@ -142,4 +142,10 @@ const partB = W.anthropicCalls.filter((c) => /PART B of 2/.test(String(c.system)
 check('every report used a part-A and a part-B call', partCalls.length > 0 && partCalls.length === partB.length, partCalls.length + '/' + partB.length);
 check('each call is capped well below the old 8000 tokens', W.anthropicCalls.filter((c) => /account manager/.test(String(c.system))).every((c) => c.max_tokens <= 3500));
 
+
+section('R10  the report never promises work the system will not do (image compression, colours, layout)');
+const sysText = String(callB.system);
+check('the writing prompt forbids promising image/colour/layout work', /NEVER promise image compression or resizing, colour \/ contrast \/ font \/ layout changes/.test(sysText));
+check('...and lists what it may promise instead', /search titles and descriptions, structured data, sitemap/.test(sysText));
+
 done();
