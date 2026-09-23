@@ -1024,6 +1024,11 @@ function renderSysHealth(h){
     <ul>${h.issues.map(i=>`<li>${esc(i.text)}</li>`).join('')}</ul>`;
 }
 setInterval(loadSysHealth,300000); // recheck every 5 min so a fixed issue clears itself without a reload
+// Nudges the SEO automation whenever this page is open. GitHub's free scheduler
+// is bursty, so it can't be the only thing driving the agent — the server
+// rate-limits this to one real run per 20 min, so pinging often is harmless.
+function pokeAutomation(){ fetch('/api/admin?do=auto-poke',{cache:'no-store'}).catch(()=>{}); }
+pokeAutomation(); setInterval(pokeAutomation,10*60*1000);
 
 /* ---------- Receipts / tax (now a tab inside #finPanel) ---------- */
 function receiptsHTML(j){
