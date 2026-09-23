@@ -31,7 +31,7 @@ await store.set('agent:ranks:acme', JSON.stringify({ at: Date.now() - 4 * 864e5,
   { keyword: 'ceramic coating denton', rank: null, topTitles: [{ rank: 1, domain: 'other.org', title: 'Ceramic Coating Denton | Other' }], paa: [], related: ['ceramic coating cost'] },
 ] }));
 for (const k of ['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`, `newpage:${MK}`]) await store.set('agent:playbook:acme', JSON.stringify([...(await readArr('agent:playbook:acme')), k]));
-const resetPacing = () => store.set('agent:lastCycleAt:acme', '0');
+const resetPacing = () => Promise.all([store.set('agent:lastCycleAt:acme', '0'), store.set('agent:lastShipAt:acme', '0')]);
 
 const PATCH_TITLE = `SUMMARY: Rewrote the Google title and description on your homepage so it reads better and includes "mobile car detailing".
 COMMIT: seo: sharpen homepage title
@@ -69,7 +69,8 @@ check('prompt carries competitor titles (SERP intel)', /bigcompetitor\.com/.test
 check('prompt carries People-Also-Ask questions', /How much does mobile detailing cost/.test(prompt));
 check('playbook task only sampled its own page (not the whole site)', prompt.includes('END-OF-INDEX') && !prompt.includes('RANKINGS-MARKER'));
 check('spend recorded against the site', Number(await store.get(`agent:spend:acme:${MK}`)) > 0);
-check('pacing timestamp set', Number(await store.get('agent:lastCycleAt:acme')) > 0);
+check('attempt timestamp set', Number(await store.get('agent:lastCycleAt:acme')) > 0);
+check('after a SHIPPED change the site is paced for ~2 days', Number(await store.get('agent:lastShipAt:acme')) > 0 && (await agentStatus(site)).reasons.some((x) => /a change just shipped.*~4[78]h/.test(x)), JSON.stringify((await agentStatus(site)).reasons));
 
 section('S2  "already good" -> NOOP: no commit, no error, step retired');
 await resetPacing();
@@ -80,7 +81,7 @@ check('reports no-change (not an error)', r.ok === true && r.action === 'no-chan
 check('nothing committed', W.merged.length === mergedBefore);
 check('step retired so it is not retried', (await readArr('agent:playbook:acme')).includes(`meta:rankings.html:${MK}`));
 const lc = Number(await store.get('agent:lastCycleAt:acme'));
-check('next attempt allowed within ~2h, not a full 2 days', Date.now() - lc > 45.9 * 3600000 && Date.now() - lc < 46.1 * 3600000, String((Date.now() - lc) / 3600000));
+check('a "nothing to change" answer does NOT lock the site out: next attempt within ~5 minutes, not 2 days', Date.now() - lc > 24 * 60000 && Date.now() - lc < 26 * 60000 && !(await agentStatus(site)).reasons.some((x) => /change just shipped/.test(x)), String((Date.now() - lc) / 60000));
 
 section('S3  model gives an un-applyable patch twice -> one retry, then item parked + failure counted');
 await resetPacing();
@@ -191,7 +192,7 @@ W.anthropic.push('{"keywords":["fresh kw one","fresh kw two"]}');
 r = await runAgentCycle(fresh, { manual: false });
 check('first cycle picks keywords', r.action === 'keywords', JSON.stringify(r).slice(0, 160));
 const gap = Date.now() - Number(await store.get('agent:lastCycleAt:fresh'));
-check('...and the real work can start within ~10 minutes, not after 2 days', gap > 47.8 * 3600000 && gap < 48 * 3600000, String(gap / 3600000));
+check('...and the real work can start within minutes, not after 2 days', gap > 24 * 60000 && gap < 26 * 60000 && !(await agentStatus(fresh)).reasons.some((x) => /change just shipped/.test(x)), String(gap / 60000));
 
 
 section('S12  approval-gated NEW PAGE: drafted as an unmerged PR, owner texted, YES publishes, NO discards');
@@ -234,7 +235,7 @@ check('...and only now is it on the client "what we did" list', (await readArr('
 
 section('S12b  NO discards the draft');
 await store.set('agent:playbook:np', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
-await store.set('agent:lastCycleAt:np', '0');
+await store.set('agent:lastCycleAt:np', '0'); await store.set('agent:lastShipAt:np', '0');
 await store.set('agent:ranks:np', JSON.stringify({ at: Date.now(), depth: 100, results: [{ keyword: 'ceramic coating denton tx', rank: 27 }, { keyword: 'window tint corinth', rank: null, topTitles: [], paa: [] }] }));
 const GOOD2 = GOOD_PAGE.replace(/ceramic coating/gi, 'window tint').replace(/denton-tx/g, 'corinth');
 W.anthropic.push('SUMMARY: Added a page for window tint corinth\nCOMMIT: p\nFILE: window-tint-corinth.html\nREASON: r\n---BEGIN CONTENT---\n' + GOOD2 + '\n---END CONTENT---\nPATCH: sitemap.xml\nREASON: r\n---FIND---\n</urlset>\n---REPLACE---\n<url><loc>x</loc></url>\n</urlset>\n---END PATCH---');
@@ -247,7 +248,7 @@ check('NO closes the PR and publishes nothing', /Discarded/.test(no) && JSON.str
 
 section('S12c  a low-quality / too-short draft is rejected, never proposed');
 await store.set('agent:playbook:np', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
-await store.set('agent:lastCycleAt:np', '0');
+await store.set('agent:lastCycleAt:np', '0'); await store.set('agent:lastShipAt:np', '0');
 await store.set('agent:ranks:np', JSON.stringify({ at: Date.now(), depth: 100, results: [{ keyword: 'paint correction denton', rank: null }] }));
 const prsBefore = Object.keys(W.repos['acme/np'].prs).length;
 W.anthropic.push('SUMMARY: s\nCOMMIT: c\nFILE: paint-correction-denton.html\nREASON: r\n---BEGIN CONTENT---\n<html><title>x</title></html>\n---END CONTENT---');
@@ -256,7 +257,7 @@ check('rejected, no PR opened', r.ok === false && Object.keys(W.repos['acme/np']
 
 section('S12d  a template with huge inline CSS cannot be reused: honest skip, not a broken page');
 await store.set('agent:playbook:np', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
-await store.set('agent:lastCycleAt:np', '0');
+await store.set('agent:lastCycleAt:np', '0'); await store.set('agent:lastShipAt:np', '0');
 await store.set('agent:pages:np', '[]');
 await store.set('agent:stuck:np', '[]'); // S12c parked the step for 14 days after a bad draft
 await store.set('agent:ranks:np', JSON.stringify({ at: Date.now(), depth: 100, results: [{ keyword: 'brand new term', rank: null }] }));
@@ -266,7 +267,7 @@ check('skipped cleanly and the step is retired for the month', r.action === 'no-
 
 section('S13  RANK-DROP RECOVERY jumps the queue and tells the owner');
 await store.set('agent:playbook:np', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`, `newpage:${MK}`]));
-await store.set('agent:lastCycleAt:np', '0');
+await store.set('agent:lastCycleAt:np', '0'); await store.set('agent:lastShipAt:np', '0');
 await saveRanks('np', { at: Date.now() - 3 * 864e5, depth: 100, results: [{ keyword: 'ceramic coating denton tx', rank: 12, url: 'https://np.test/' }, { keyword: 'other kw', rank: 5, url: 'https://np.test/' }] });
 await saveRanks('np', { at: Date.now() - 1000, depth: 100, results: [{ keyword: 'ceramic coating denton tx', rank: 31, url: 'https://np.test/', topTitles: [{ rank: 1, domain: 'rival.com', title: 'Rival ceramic' }] }, { keyword: 'other kw', rank: 5, url: 'https://np.test/' }] });
 let recPrompt = '';
@@ -281,5 +282,21 @@ check('...with the actual drop stated (#12 to #31)', /dropped from #12 to #31/.t
 check('...and it shipped', r.action === 'change' && W.repos['acme/np'].files['index.html'].includes('Ceramic Coating Denton TX | Acme'));
 check('owner was told about the drop', W.sms.some((s) => /Rank drop on NP Detailing.*#12 to #31/.test(s.body)), JSON.stringify(W.sms.map((s) => s.body)));
 check('a keyword that did not drop is not touched', !/other kw/.test(recPrompt.split('TASK THIS CYCLE')[1] || ''));
+
+
+section('S14  REGRESSION (live): four of six sites idle behind attempts that produced nothing');
+await saveSiteConfig('idle', { url: 'https://idle.test', name: 'Idle Co', repo: 'acme/site', email: 'i@idle.test' });
+const idle = (await listSites()).find((s) => s.slug === 'idle');
+await store.set('conv:tagged:idle', '1');
+await store.set('agent:keywords:idle', JSON.stringify(['a b']));
+await store.set('agent:lastCycleAt:idle', String(Date.now() - 45 * 60000)); // a setup/failed attempt 45 minutes ago (old rule: locked out for 2 days)
+check('a site whose last attempt shipped nothing is eligible again after 30 minutes', (await agentStatus(idle)).eligible === true, JSON.stringify((await agentStatus(idle)).reasons));
+await store.set('agent:lastCycleAt:idle', String(Date.now() - 10 * 60000));
+check('...but not within 30 minutes of an attempt (no double runs)', (await agentStatus(idle)).eligible === false);
+await store.set('agent:lastCycleAt:idle', '0');
+await store.set('agent:lastShipAt:idle', String(Date.now() - 3 * 3600000));
+check('a site that shipped 3 hours ago stays paced (steady drip, not a burst)', (await agentStatus(idle)).reasons.some((x) => /change just shipped/.test(x)));
+await store.set('agent:lastShipAt:idle', String(Date.now() - 49 * 3600000));
+check('...and is free again after 2 days', (await agentStatus(idle)).eligible === true);
 
 done();
