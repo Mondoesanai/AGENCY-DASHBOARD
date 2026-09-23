@@ -164,4 +164,31 @@ const items = ['Largest content loads in 4.4s', 'Fix low-contrast grey text', 'C
 const RE = /(compress\w*|resiz\w*|shrink\w*|optimi[sz]\w*|convert\w*|reduc\w*|serv\w*|replac\w*)\b[^.\n]{0,50}\b(images?|photos?|hero|videos?|fonts?|files?)\b|\b(webp|avif)\b|\blargest content\w*|\blcp\b|\bcore web vitals\b|\bcontrast\b|\bcolou?rs?\b|\bfont size\b|\bspacing\b|\blayout\b/i;
 check('image/color/LCP tasks are filtered, alt-text is not', items.map((x) => RE.test(x)).join() === 'true,true,true,false');
 
+
+section('S9  BUDGET CAP HOLDS: an over-budget site with a given-up revision must not keep shipping (live bug: $23.81 of $20, 5 commits in 40 min)');
+await saveSiteConfig('capped', { url: 'https://capped.test', name: 'Capped Co', repo: 'acme/site', email: 'c@capped.test' });
+const capped = (await listSites()).find((s) => s.slug === 'capped');
+await store.set('conv:tagged:capped', '1');
+await store.set('agent:keywords:capped', JSON.stringify(['a b']));
+await store.set(`agent:spend:capped:${MK}`, '23.81');
+await addRevisionTodo('capped', { title: 'Impossible live-data change', detail: 'x', ticketId: 'TG' });
+await store.set('agent:revgaveup:rev-TG', '1'); // the agent already gave up on it; the to-do stays listed for the ticket
+const nCap = W.anthropicCalls.length;
+r = await runAgentCycle(capped, { manual: false });
+check('over-budget site with only a GIVEN-UP revision is skipped for budget', r.skipped === true && /budget is used/.test(r.reason || ''), JSON.stringify(r).slice(0, 220));
+check('no model call was made (no spend)', W.anthropicCalls.length === nCap);
+await addRevisionTodo('capped', { title: 'A real new client change', detail: 'x', ticketId: 'TL' });
+W.anthropic.push('SUMMARY: cannot\nCOMMIT: none\nBLOCKED: needs a dashboard');
+r = await runAgentCycle(capped, { manual: false });
+check('a LIVE client revision still gets worked even over budget (bounded by the separate revision ceiling)', r.skipped !== true && W.anthropicCalls.length === nCap + 1, JSON.stringify(r).slice(0, 200));
+
+section('S10  one-off setup steps do not burn the 2-day pacing window');
+await saveSiteConfig('fresh', { url: 'https://fresh.test', name: 'Fresh Co', repo: 'acme/site', email: 'f@fresh.test' });
+const fresh = (await listSites()).find((s) => s.slug === 'fresh');
+W.anthropic.push('{"keywords":["fresh kw one","fresh kw two"]}');
+r = await runAgentCycle(fresh, { manual: false });
+check('first cycle picks keywords', r.action === 'keywords', JSON.stringify(r).slice(0, 160));
+const gap = Date.now() - Number(await store.get('agent:lastCycleAt:fresh'));
+check('...and the real work can start within ~10 minutes, not after 2 days', gap > 47.8 * 3600000 && gap < 48 * 3600000, String(gap / 3600000));
+
 done();
