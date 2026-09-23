@@ -54,8 +54,13 @@ async function runAutoTick() {
   if (cands.length) {
     const s = cands[0].s;
     try {
-      const r = await runAgentCycle(s, { manual: false });
-      out.agent = { slug: s.slug, action: r.action || (r.skipped ? 'skipped' : r.error ? 'error' : 'ok'), reason: r.reason || r.error || null, pr: r.pr?.prUrl || null };
+      // hard stop well inside Vercel's 60s limit — a function killed mid-cycle
+      // leaves nothing recorded and looks like the automation silently died
+      const cycle = runAgentCycle(s, { manual: false }).catch((e) => ({ ok: false, error: String(e.message || e) }));
+      const r = await Promise.race([cycle, new Promise((resolve) => setTimeout(() => resolve({ __slow: true }), 45000))]);
+      out.agent = r.__slow
+        ? { slug: s.slug, action: 'slow', reason: 'cycle is taking longer than one tick — it keeps going and the next tick picks up after it' }
+        : { slug: s.slug, action: r.action || (r.skipped ? 'skipped' : r.error ? 'error' : 'ok'), reason: r.reason || r.error || null, pr: r.pr?.prUrl || null };
     } catch (e) {
       out.agent = { slug: s.slug, action: 'error', reason: String(e.message || e) };
     }
