@@ -134,7 +134,12 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
   } catch (e) {
     return { __error: 'sdk import failed: ' + (e.message || e) };
   }
-  const client = new Anthropic();
+  // Hard per-call timeout, no retries. The whole report has to fit inside a 60s
+  // serverless function alongside everything else, and a model call still running
+  // when the function is killed means the client's email NEVER sends. A live test
+  // showed one big report call taking over 45s. A call that times out here just
+  // falls back to the rule-based email, which still goes out.
+  const client = new Anthropic({ maxRetries: 0, timeout: Number(process.env.REPORT_MODEL_TIMEOUT_MS) || 36000 });
   // Sonnet 5 is the practical default here (widely available on any key, cheap
   // enough for monthly emails across dozens of sites). Set ANTHROPIC_MODEL to override.
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
@@ -199,28 +204,39 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
     rule_client_actions: actions,
     ...ctx,
   };
-  try {
-    const r = await client.messages.create({
-      model,
-      max_tokens: 8000,
-      system,
-      messages: [{ role: 'user', content: JSON.stringify(payload) }],
-    });
-    const t = (r.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('');
-    if (!t.trim()) return { __error: 'model returned no text (stop_reason: ' + (r.stop_reason || '?') + ')' };
-    // tolerate ```json fences or a preamble — grab the outermost {...}
-    let raw = t.replace(/```json|```/g, '').trim();
-    const a = raw.indexOf('{');
-    const b = raw.lastIndexOf('}');
-    if (a >= 0 && b > a) raw = raw.slice(a, b + 1);
+  // Two smaller calls IN PARALLEL instead of one big one: generation time is
+  // dominated by output length, so this roughly halves the wall time.
+  const parts = [
+    'PART A of 2 — return ONLY these keys: headline, summary, progress, work_done, improvements, builder_notes. Leave out client_actions and email.',
+    'PART B of 2 — return ONLY these keys: client_actions and email. Leave out everything else. The email must still contain the real ranking line and the "what we did" bullets, taken from the data.',
+  ];
+  const one = async (part) => {
     try {
-      return JSON.parse(raw);
-    } catch (pe) {
-      return { __error: 'could not parse model JSON: ' + (pe.message || pe) + ' — first 120 chars: ' + t.slice(0, 120) };
+      const r = await client.messages.create({
+        model,
+        max_tokens: 3500,
+        system: system + ' ' + part,
+        messages: [{ role: 'user', content: JSON.stringify(payload) }],
+      });
+      const t = (r.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('');
+      if (!t.trim()) return { __error: 'model returned no text (stop_reason: ' + (r.stop_reason || '?') + ')' };
+      // tolerate ```json fences or a preamble — grab the outermost {...}
+      let raw = t.replace(/```json|```/g, '').trim();
+      const i = raw.indexOf('{');
+      const j = raw.lastIndexOf('}');
+      if (i >= 0 && j > i) raw = raw.slice(i, j + 1);
+      try {
+        return JSON.parse(raw);
+      } catch (pe) {
+        return { __error: 'could not parse model JSON: ' + (pe.message || pe) + ' — first 120 chars: ' + t.slice(0, 120) };
+      }
+    } catch (e) {
+      return { __error: 'model call failed: ' + (e.status ? e.status + ' ' : '') + (e.message || e) };
     }
-  } catch (e) {
-    return { __error: 'model call failed: ' + (e.status ? e.status + ' ' : '') + (e.message || e) };
-  }
+  };
+  const [pa, pb] = await Promise.all(parts.map(one));
+  if (pa.__error || pb.__error) return { __error: pa.__error || pb.__error };
+  return { ...pa, ...pb };
 }
 
 async function sendEmail({ site, subject, body, cardPng, reportUrl, to }) {
@@ -277,11 +293,22 @@ async function sendEmail({ site, subject, body, cardPng, reportUrl, to }) {
   }
 }
 
+async function auditWithin(url, { fresh, cachedOnly, ms }) {
+  const bad = { ok: false, error: 'audit failed' };
+  if (cachedOnly) return runAudit(url, { cachedOnly: true }).catch(() => bad);
+  const live = runAudit(url, { fresh }).catch(() => bad);
+  const first = await Promise.race([live, new Promise((resolve) => setTimeout(() => resolve(null), ms))]);
+  if (first) return first;
+  return runAudit(url, { cachedOnly: true }).catch(() => bad);
+}
+
 async function buildForSite(site, { doSend, req, style, isBatch, period, sentKey, fast }) {
   const [stats, audit, changelogRaw] = await Promise.all([
     siteStats(site.slug, site.conversionEvents || []).catch(() => null),
-    // fast: never wait on a live speed test (used by the background refresh)
-    runAudit(site.url, { fresh: !isBatch && !fast, cachedOnly: !!fast }).catch(() => ({ ok: false, error: 'audit failed' })),
+    // A live speed test can take 15-40s by itself, and the model call comes after
+    // it inside the same 60s function — so wait for a fresh one only briefly, then
+    // settle for the cached scores. fast: never wait at all (background refresh).
+    auditWithin(site.url, { fresh: !isBatch && !fast, cachedOnly: !!fast, ms: 12000 }),
     readLog(site.slug),
   ]);
   const changelog = await withAutoShipped(site.slug, changelogRaw);

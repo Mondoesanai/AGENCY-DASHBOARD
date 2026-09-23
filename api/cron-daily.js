@@ -9,7 +9,7 @@ import { listSites } from '../lib/registry.js';
 import { store } from '../lib/store.js';
 import { monthKey } from '../lib/history.js';
 import { buildForSite } from './report.js';
-import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
+import { refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, sendUpsell } from '../lib/upsell.js';
 import { sendWinsRecap } from '../lib/winsrecap.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
@@ -233,45 +233,11 @@ export default async function handler(req, res) {
     log.push({ action: 'company snapshot', error: String(e.message || e) });
   }
 
-  // SEO agent — rotates through eligible sites by day-of-month, one at a time,
-  // and only starts a site's cycle if there's a safe amount of wall-clock left.
-  // Vercel hard-caps this whole function at 60s; health checks + billing sends
-  // above already spend part of that, and a single agent cycle (rank check +
-  // a technical fix + a GitHub commit) can itself take 20-40s. The previous
-  // version tried 2 sites per run unconditionally, regularly blew past 60s,
-  // and got hard-killed by the platform — silently, with nothing logged —
-  // which is why nothing was happening day to day despite being "scheduled."
-  const HARD_LIMIT_MS = 58000;
-  const PER_SITE_BUDGET_MS = 40000;
-  try {
-    const eligible = [];
-    for (const s of sites) {
-      const es = await agentStatus(s).catch(() => ({ eligible: false }));
-      if (es.eligible) eligible.push(s);
-    }
-    if (!eligible.length) {
-      log.push({ action: 'seo agent', skipped: true, reason: 'no eligible sites' });
-    } else {
-      let ran = 0;
-      for (let i = 0; i < eligible.length; i++) {
-        if (Date.now() - t0 > HARD_LIMIT_MS - PER_SITE_BUDGET_MS) {
-          log.push({ action: 'seo agent', skipped: true, reason: `stopped after ${ran} site(s) — out of safe time budget this run, continues next run` });
-          break;
-        }
-        const s = eligible[(today + i) % eligible.length];
-        try {
-          const r = await runAgentCycle(s, { manual: false });
-          log.push({ slug: s.slug, action: 'seo agent', result: r.action || (r.skipped ? 'skipped' : r.error ? 'error' : 'ok'), pr: r.pr?.prUrl, reason: r.reason });
-        } catch (e) {
-          log.push({ slug: s.slug, action: 'seo agent', error: String(e.message || e) });
-        }
-        ran++;
-        if (ran >= 3) break; // even with room to spare, don't run more than 3 in one invocation
-      }
-    }
-  } catch (e) {
-    log.push({ action: 'seo agent', error: String(e.message || e) });
-  }
+  // SEO agent cycles are NOT run here any more. The automation tick
+  // (lib/tick.js, every few minutes-to-hours from three triggers) does that with a
+  // hard deadline; a cycle started inside this 60s pass could overrun it and
+  // take the rest of the daily work (billing emails, health alert, heartbeat)
+  // down with it, silently.
 
   // AI-curated to-dos — every site (doesn't need GitHub, just the Anthropic
   // key), refreshed every 14 days. One stale site per run, same time-budget

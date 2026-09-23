@@ -185,7 +185,7 @@ W.router = (req) => {
   return '{}';
 };
 await store.set(`report:one:regen:x`, '1');
-for (const s of ['one', 'two', 'nokw']) await store.set(`report:regen:${s}:${MK}`, '');
+for (const s of ['one', 'two', 'nokw']) await store.set(`report:regen:${s}:${MK}`, '0');
 await store.set('report:one:latest', JSON.stringify({ slug: 'one', headline: 'old', summary: 'old generic report', clientActions: [{ title: 'Ask 3 happy customers for a Google review' }] }));
 for (const s of ['two', 'nokw']) await store.set(`report:${s}:latest`, JSON.stringify({ progress: 'already detailed' }));
 const emailsBefore = W.emails.length;

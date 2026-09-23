@@ -120,4 +120,26 @@ await runCron();
 check('monthly client gets the quick wins recap on its recap day', emailsTo('recapM@recapM.test').some((e) => /quick update/.test(e.subject)), JSON.stringify(W.emails.map((e) => e.to + '|' + e.subject)));
 check('biweekly client does not', !emailsTo('recapB@recapB.test').some((e) => /quick update/.test(e.subject)));
 
+
+section('R8  a SLOW model never costs a client their email: it times out and the plain report still sends');
+process.env.REPORT_MODEL_TIMEOUT_MS = '300';
+W.delayMs = 1500;
+await mk('slowmodel', { billingDay: 15, reportEvery: 'monthly' });
+setNow('2026-09-15T15:00:00Z');
+const t0 = Date.now();
+await runCron();
+const slowMail = emailsTo('slowmodel@slowmodel.test');
+check('the client email STILL went out', slowMail.length === 1, JSON.stringify(W.emails.map((e) => e.to)));
+check('...as the built-in fallback report (no AI text)', slowMail.length === 1 && !/Where you rank in Google: kw/.test(slowMail[0].text));
+const slowRep = JSON.parse(await store.get('report:slowmodel:latest'));
+check('the report records that the AI step failed instead of hiding it', !!slowRep.aiError && /timed out|timeout|Request/i.test(slowRep.aiError), slowRep.aiError);
+W.delayMs = 0;
+delete process.env.REPORT_MODEL_TIMEOUT_MS;
+
+section('R9  the report is written by two parallel smaller calls');
+const partCalls = W.anthropicCalls.filter((c) => /PART A of 2/.test(String(c.system)));
+const partB = W.anthropicCalls.filter((c) => /PART B of 2/.test(String(c.system)));
+check('every report used a part-A and a part-B call', partCalls.length > 0 && partCalls.length === partB.length, partCalls.length + '/' + partB.length);
+check('each call is capped well below the old 8000 tokens', W.anthropicCalls.filter((c) => /account manager/.test(String(c.system))).every((c) => c.max_tokens <= 3500));
+
 done();

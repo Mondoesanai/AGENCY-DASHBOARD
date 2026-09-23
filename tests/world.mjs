@@ -201,7 +201,19 @@ globalThis.fetch = async (input, init = {}) => {
   let body = null;
   if (typeof bodyRaw === 'string') { try { body = JSON.parse(bodyRaw); } catch { body = bodyRaw; } }
   if (url.startsWith('https://api.github.com')) return github(url, method, body);
-  if (url.startsWith('https://api.anthropic.com')) return anthropic(body);
+  if (url.startsWith('https://api.anthropic.com')) {
+    if (W.delayMs) {
+      // like a real network call: an aborted request (client timeout) rejects
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, W.delayMs);
+        init.signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));
+        });
+      });
+    }
+    return anthropic(body);
+  }
   if (url.startsWith('https://api.dataforseo.com')) return dataforseo(body);
   if (url.startsWith('https://oauth2.googleapis.com')) return json({ access_token: 'at', expires_in: 3500 });
   if (url.startsWith('https://gmail.googleapis.com') || url.startsWith('https://www.googleapis.com/calendar')) return gmail(url, method, body);
