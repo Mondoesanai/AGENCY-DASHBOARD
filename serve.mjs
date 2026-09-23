@@ -129,6 +129,34 @@ createServer(async (req, res) => {
         { date: '2026-09-10', text: 'Added LocalBusiness JSON-LD for better local search visibility', fromClientRequest: false },
         { date: '2026-09-02', text: 'Compressed images, added FAQ section', fromClientRequest: false },
       ],
+      period: 'monthly',
+      progress: 'Your average Google position is #34 across 12 tracked keywords, with 2 now on page 1. "student faith community hurst tx" climbed from #41 to #27 this month. New sites usually take 1-3 months of steady work to break through, and we are rechecking every few days.',
+      workDone: [
+        { title: 'Sharpened your homepage Google listing', detail: 'Rewrote the title and description so it reads better and includes "student faith community hurst tx".' },
+        { title: 'Described every image for search', detail: 'Added clear descriptions to your photos so Google understands what is on each page.' },
+        { title: 'Told Google about your business', detail: 'Added structured data so your name, area and services show up correctly in results.' },
+      ],
+      rankings: {
+        checkedAt: Date.now() - 86400000, tracked: 12, found: 5, avgRank: 34.2, bestRank: 8, inTop3: 0, inTop10: 2, depth: 100, roughField: null,
+        keywords: [
+          { keyword: 'student faith community hurst tx', rank: 8, prevRank: 12, change: 4 },
+          { keyword: 'youth meetup north east mall hurst', rank: 9, prevRank: 9, change: 0 },
+          { keyword: 'teen faith group denton tx', rank: 27, prevRank: 41, change: 14 },
+          { keyword: 'christian student community dfw teens', rank: 48, prevRank: 39, change: -9 },
+          { keyword: 'free youth events hurst texas', rank: 79, prevRank: null, change: 999 },
+          { keyword: 'student led movement denton texas', rank: null, prevRank: null, change: 0 },
+        ],
+        competitors: [{ domain: 'facebook.com', bestRank: 2 }, { domain: 'eventbrite.com', bestRank: 8 }],
+        history: [40, 39, 37, 38, 35, 34.2].map((v, i) => ({ at: Date.now() - (5 - i) * 4 * 86400000, avgRank: v, inTop10: 1 })),
+        timeline: { ok: true, improving: true, weeksToTarget: 9 },
+      },
+      traffic: {
+        topPages: [{ member: '/', score: 484 }, { member: '/rankings', score: 47 }, { member: '/c/009', score: 20 }],
+        sources: [{ member: 'direct', score: 414 }, { member: 'social', score: 247 }, { member: 'google', score: 8 }],
+        events: [{ member: 'whatsapp', score: 4 }, { member: 'waitlist-join', score: 3 }],
+        leadSources: [{ member: 'instagram-social', score: 3 }],
+        device: { mobile: 623, desktop: 47 }, avgDwell: 74,
+      },
     }));
   }
   if (path === '/t.js' || path === '/api/t') {
