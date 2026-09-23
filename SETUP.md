@@ -112,3 +112,46 @@ npx vercel dev      # the real thing, needs the Vercel CLI
 - `maxDuration` is set to 60s (the Hobby ceiling) for the audit/report/cron
   functions.
 - Google Search Console (keywords, rankings) is still a future add-on.
+
+---
+
+## Text messages (Twilio) — optional, ~5 minutes
+
+The automation texts you an FYI when something happens, or a yes/no question when it needs you.
+Without this everything still works — the same messages come to your email instead — but the
+"publish this new page?" approvals stay switched off (they need a way to ask you).
+
+**What you'll get texted**
+- A client revision arrived (FYI) — or, from a sender it doesn't recognise, "handle it and reply to them?" → YES / NO
+- A revision it can't do by editing files → DONE / RETRY / SKIP
+- A revision is live (client already emailed)
+- A keyword dropped in Google, SEO paused for the day after 3 failures, or the automation was offline for hours
+- A drafted new page → YES publishes it, NO discards it
+
+Reply `YES` / `NO` / `DONE` / `RETRY` / `SKIP` (it applies to the newest question; `YES 7` answers question #7) or `STATUS`.
+
+**Set up**
+1. Create a Twilio account and buy one number (US local ≈ $1–2/month; a toll-free number also works).
+2. In Vercel → Project → Environment Variables add:
+   - `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` (Twilio console home page)
+   - `TWILIO_FROM` = the Twilio number, e.g. `+15551230000`
+   - `OWNER_PHONE` = your own cell, e.g. `+15559876543`
+   - optional `SMS_DAILY_CAP` (default 20 texts/day — a hard ceiling on cost)
+3. In Twilio, open the number → Messaging → "A message comes in" → Webhook (POST) →
+   `https://agency-dashboard-omega-red.vercel.app/api/admin?do=sms-inbound&secret=YOUR_CRON_SECRET`
+4. US carriers require business texting numbers to be registered (A2P 10DLC, or verification for a toll-free
+   number). Twilio walks you through it in the console. A free trial account can text a number you've verified
+   with no registration, which is enough to test.
+
+**Cost.** Each text is one ~1¢ segment (messages are forced to plain characters and kept short so they never
+become 2-3 segments). A busy month is roughly 30–60 texts including your replies, i.e. well under a dollar in
+message fees plus the number rental and the one-time registration fees. Check Twilio's pricing page for
+today's exact rates.
+
+## Keeping the automation running
+
+GitHub's free scheduler is slow (a "10 minute" job really fires every few hours), so three independent
+triggers drive it: the `check-revisions` and `seo-automation` workflows, and the dashboard itself
+(open it and it nudges the automation; the server allows one real run per 8 minutes no matter how often it's
+pinged). For a true every-few-minutes cadence you can also add a free pinger (e.g. cron-job.org) hitting
+`https://agency-dashboard-omega-red.vercel.app/api/admin?do=auto-poke` every 10 minutes — no secret needed.
