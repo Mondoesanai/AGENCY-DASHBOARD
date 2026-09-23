@@ -87,21 +87,32 @@ async function github(url, method, body) {
     W.pending[sha] = { tree: body.tree, message: body.message };
     return json({ sha });
   }
-  if (p.endsWith('/git/refs') && method === 'POST') return json({ ref: body.ref });
+  if (p.endsWith('/git/refs') && method === 'POST') {
+    repo.refs = repo.refs || {};
+    repo.refs[body.ref.replace('refs/heads/', '')] = body.sha;
+    return json({ ref: body.ref });
+  }
   if (p.endsWith('/pulls') && method === 'POST') {
     repo.prCount = (repo.prCount || 0) + 1;
     repo.prs = repo.prs || {};
-    repo.prs[repo.prCount] = body;
+    repo.prs[repo.prCount] = { ...body, state: 'open' };
     return json({ number: repo.prCount, html_url: `https://github.com/${name}/pull/${repo.prCount}` });
   }
   if (/\/pulls\/\d+\/merge$/.test(p) && method === 'PUT') {
-    // squash-merge: the newest pending tree becomes main
-    const trees = Object.entries(W.pending).filter(([k]) => k.startsWith('tree') && k !== 'tree0');
-    const [, files] = trees[trees.length - 1];
+    // squash-merge THIS pull request: its branch's tree becomes main
+    const num = /\/pulls\/(\d+)\/merge/.exec(p)[1];
+    const pr = repo.prs[num];
+    const commit = repo.refs[pr.head];
+    const files = W.pending[W.pending[commit].tree];
     repo.files = { ...files };
     repo.sha = 'merged' + repo.n++;
-    W.merged.push({ repo: name, title: repo.prs[/\/pulls\/(\d+)\//.exec(p)[1]]?.title });
+    pr.state = 'merged';
+    W.merged.push({ repo: name, title: pr.title });
     return json({ merged: true });
+  }
+  if (/\/pulls\/\d+$/.test(p) && method === 'PATCH') {
+    repo.prs[p.split('/').pop()].state = body.state;
+    return json({});
   }
   return json({ message: 'unhandled ' + method + ' ' + p }, 500);
 }

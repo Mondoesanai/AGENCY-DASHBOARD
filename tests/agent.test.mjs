@@ -3,6 +3,8 @@ import { store } from '../lib/store.js';
 import { saveSiteConfig, listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus } from '../lib/agent.js';
 import { addRevisionTodo, todosState } from '../lib/todos.js';
+import { handleInbound } from '../lib/sms-actions.js';
+import { saveRanks } from '../lib/ranks.js';
 
 const MK = new Date().toISOString().slice(0, 7);
 const readArr = async (k) => { const r = await store.get(k); try { const a = typeof r === 'string' ? JSON.parse(r) : r; return Array.isArray(a) ? a : []; } catch { return []; } };
@@ -28,7 +30,7 @@ await store.set('agent:ranks:acme', JSON.stringify({ at: Date.now() - 4 * 864e5,
   { keyword: 'mobile car detailing corinth tx', rank: 27, topTitles: [{ rank: 1, domain: 'bigcompetitor.com', title: 'Best mobile car detailing corinth tx - BigCompetitor' }], paa: ['How much does mobile detailing cost?'], related: ['detailing near me', 'ceramic coat prices'] },
   { keyword: 'ceramic coating denton', rank: null, topTitles: [{ rank: 1, domain: 'other.org', title: 'Ceramic Coating Denton | Other' }], paa: [], related: ['ceramic coating cost'] },
 ] }));
-for (const k of ['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]) await store.set('agent:playbook:acme', JSON.stringify([...(await readArr('agent:playbook:acme')), k]));
+for (const k of ['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`, `newpage:${MK}`]) await store.set('agent:playbook:acme', JSON.stringify([...(await readArr('agent:playbook:acme')), k]));
 const resetPacing = () => store.set('agent:lastCycleAt:acme', '0');
 
 const PATCH_TITLE = `SUMMARY: Rewrote the Google title and description on your homepage so it reads better and includes "mobile car detailing".
@@ -190,5 +192,94 @@ r = await runAgentCycle(fresh, { manual: false });
 check('first cycle picks keywords', r.action === 'keywords', JSON.stringify(r).slice(0, 160));
 const gap = Date.now() - Number(await store.get('agent:lastCycleAt:fresh'));
 check('...and the real work can start within ~10 minutes, not after 2 days', gap > 47.8 * 3600000 && gap < 48 * 3600000, String(gap / 3600000));
+
+
+section('S12  approval-gated NEW PAGE: drafted as an unmerged PR, owner texted, YES publishes, NO discards');
+addRepo('acme/np', {
+  'index.html': '<html><head><title>Acme</title><link rel="stylesheet" href="css/site.css"></head><body><nav>NAV-HERE</nav><h1>Acme Detailing</h1><p>We offer mobile car detailing and ceramic coating in Corinth and Denton, TX. Call 555-0100.</p><footer>FOOT-HERE</footer></body></html>',
+  'sitemap.xml': '<?xml version="1.0"?><urlset>\n<url><loc>https://np.test/</loc></url>\n</urlset>',
+  'robots.txt': 'x', 'llms.txt': 'x', 'css/site.css': 'body{}',
+});
+W.pages['https://np.test'] = '<html><head><script type="application/ld+json">{"@type":"LocalBusiness"}</script></head></html>';
+await saveSiteConfig('np', { url: 'https://np.test', name: 'NP Detailing', repo: 'acme/np', email: 'np@np.test' });
+const npSite = (await listSites()).find((s) => s.slug === 'np');
+await store.set('conv:tagged:np', '1');
+await store.set('agent:keywords:np', JSON.stringify(['ceramic coating denton tx', 'mobile detailing corinth']));
+await store.set('agent:ranks:np', JSON.stringify({ at: Date.now(), depth: 100, results: [
+  { keyword: 'ceramic coating denton tx', rank: 27, topTitles: [{ rank: 1, domain: 'rival.com', title: 'Ceramic Coating in Denton TX - Rival Auto' }], paa: ['How long does ceramic coating last?'], related: ['ceramic coating cost'] },
+  { keyword: 'mobile detailing corinth', rank: 4 },
+] }));
+await store.set('agent:playbook:np', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
+const GOOD_PAGE = '<!doctype html><html><head><meta charset="utf-8"><title>Ceramic Coating in Denton, TX | NP Detailing</title><meta name="description" content="Ceramic coating in Denton TX by NP Detailing."><link rel="canonical" href="https://np.test/ceramic-coating-denton-tx.html"><link rel="stylesheet" href="css/site.css"></head><body><nav>NAV-HERE</nav><h1>Ceramic Coating in Denton, TX</h1>' + Array.from({ length: 12 }, (_, i) => '<p>' + Array.from({ length: 30 }, (_, j) => 'detail' + (i * 30 + j)).join(' ') + '</p>').join('') + '<footer>FOOT-HERE</footer></body></html>';
+let npPrompt = '';
+W.anthropic.push((req) => {
+  npPrompt = req.messages[0].content[0].text;
+  return 'SUMMARY: Added a new page for people searching "ceramic coating denton tx"\nCOMMIT: new page\nFILE: ceramic-coating-denton-tx.html\nREASON: new page\n---BEGIN CONTENT---\n' + GOOD_PAGE + '\n---END CONTENT---\nPATCH: sitemap.xml\nREASON: list it\n---FIND---\n</urlset>\n---REPLACE---\n<url><loc>https://np.test/ceramic-coating-denton-tx.html</loc></url>\n</urlset>\n---END PATCH---';
+});
+const mergedBeforeNp = W.merged.length;
+W.sms.length = 0;
+r = await runAgentCycle(npSite, { manual: false });
+check('page drafted and proposed', r.action === 'new-page-proposed', JSON.stringify({ a: r.action, e: r.error, r: r.reason }));
+check('targets the keyword closest to page 1 that has no page (not the one already at #4)', /ceramic coating denton tx/.test(npPrompt) && !/Target search: "mobile detailing corinth"/.test(npPrompt));
+check('prompt carries competitor title + People-Also-Ask, and forbids invented facts', /Rival Auto/.test(npPrompt) && /How long does ceramic coating last/.test(npPrompt) && /NEVER invent prices/.test(npPrompt));
+check('prompt gives the model the real homepage as the template', /NAV-HERE/.test(npPrompt) && /FOOT-HERE/.test(npPrompt));
+check('NOT published: nothing merged, live site has no new page', W.merged.length === mergedBeforeNp && !W.repos['acme/np'].files['ceramic-coating-denton-tx.html']);
+check('a pull request is open with the draft', W.repos['acme/np'].prs && Object.values(W.repos['acme/np'].prs).some((p) => p.state === 'open'));
+const npAsk = W.sms.find((s) => /new page/.test(s.body));
+check('owner texted with the PR link and a Publish question', !!npAsk && /github\.com\/acme\/np\/pull\/\d+/.test(npAsk.body) && /Publish it\?/.test(npAsk.body) && /Reply YES or NO/.test(npAsk.body), npAsk?.body);
+check('no "what we did" claim before approval', !(await readArr('changelog:np')).some((c) => /new page/i.test(c.text)));
+const yes = await handleInbound({ from: '+15551234567', body: 'yes' });
+check('YES publishes: merged, page + sitemap live', /Published/.test(yes) && !!W.repos['acme/np'].files['ceramic-coating-denton-tx.html'] && /ceramic-coating-denton-tx\.html/.test(W.repos['acme/np'].files['sitemap.xml']), yes);
+check('...and only now is it on the client "what we did" list', (await readArr('changelog:np')).some((c) => /new page for people searching/i.test(c.text)));
+
+section('S12b  NO discards the draft');
+await store.set('agent:playbook:np', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
+await store.set('agent:lastCycleAt:np', '0');
+await store.set('agent:ranks:np', JSON.stringify({ at: Date.now(), depth: 100, results: [{ keyword: 'ceramic coating denton tx', rank: 27 }, { keyword: 'window tint corinth', rank: null, topTitles: [], paa: [] }] }));
+const GOOD2 = GOOD_PAGE.replace(/ceramic coating/gi, 'window tint').replace(/denton-tx/g, 'corinth');
+W.anthropic.push('SUMMARY: Added a page for window tint corinth\nCOMMIT: p\nFILE: window-tint-corinth.html\nREASON: r\n---BEGIN CONTENT---\n' + GOOD2 + '\n---END CONTENT---\nPATCH: sitemap.xml\nREASON: r\n---FIND---\n</urlset>\n---REPLACE---\n<url><loc>x</loc></url>\n</urlset>\n---END PATCH---');
+W.sms.length = 0;
+r = await runAgentCycle(npSite, { manual: false });
+check('second page proposed for a DIFFERENT keyword (the first is remembered as covered)', r.action === 'new-page-proposed', JSON.stringify({ a: r.action, e: r.error }));
+const before = JSON.stringify(W.repos['acme/np'].files);
+const no = await handleInbound({ from: '+15551234567', body: 'no' });
+check('NO closes the PR and publishes nothing', /Discarded/.test(no) && JSON.stringify(W.repos['acme/np'].files) === before && Object.values(W.repos['acme/np'].prs).some((p) => p.state === 'closed'), no);
+
+section('S12c  a low-quality / too-short draft is rejected, never proposed');
+await store.set('agent:playbook:np', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
+await store.set('agent:lastCycleAt:np', '0');
+await store.set('agent:ranks:np', JSON.stringify({ at: Date.now(), depth: 100, results: [{ keyword: 'paint correction denton', rank: null }] }));
+const prsBefore = Object.keys(W.repos['acme/np'].prs).length;
+W.anthropic.push('SUMMARY: s\nCOMMIT: c\nFILE: paint-correction-denton.html\nREASON: r\n---BEGIN CONTENT---\n<html><title>x</title></html>\n---END CONTENT---');
+r = await runAgentCycle(npSite, { manual: false });
+check('rejected, no PR opened', r.ok === false && Object.keys(W.repos['acme/np'].prs).length === prsBefore, JSON.stringify(r).slice(0, 200));
+
+section('S12d  a template with huge inline CSS cannot be reused: honest skip, not a broken page');
+await store.set('agent:playbook:np', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
+await store.set('agent:lastCycleAt:np', '0');
+await store.set('agent:pages:np', '[]');
+await store.set('agent:stuck:np', '[]'); // S12c parked the step for 14 days after a bad draft
+await store.set('agent:ranks:np', JSON.stringify({ at: Date.now(), depth: 100, results: [{ keyword: 'brand new term', rank: null }] }));
+W.anthropic.push('NOOP: template uses large inline styles');
+r = await runAgentCycle(npSite, { manual: false });
+check('skipped cleanly and the step is retired for the month', r.action === 'no-change' && /large inline styles/.test(r.reason || '') && (await readArr('agent:playbook:np')).includes(`newpage:${MK}`), JSON.stringify(r).slice(0, 200));
+
+section('S13  RANK-DROP RECOVERY jumps the queue and tells the owner');
+await store.set('agent:playbook:np', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`, `newpage:${MK}`]));
+await store.set('agent:lastCycleAt:np', '0');
+await saveRanks('np', { at: Date.now() - 3 * 864e5, depth: 100, results: [{ keyword: 'ceramic coating denton tx', rank: 12, url: 'https://np.test/' }, { keyword: 'other kw', rank: 5, url: 'https://np.test/' }] });
+await saveRanks('np', { at: Date.now() - 1000, depth: 100, results: [{ keyword: 'ceramic coating denton tx', rank: 31, url: 'https://np.test/', topTitles: [{ rank: 1, domain: 'rival.com', title: 'Rival ceramic' }] }, { keyword: 'other kw', rank: 5, url: 'https://np.test/' }] });
+let recPrompt = '';
+W.sms.length = 0;
+W.anthropic.push((req) => {
+  recPrompt = req.messages[0].content[0].text;
+  return 'SUMMARY: Rewrote your homepage Google title to win back "ceramic coating denton tx"\nCOMMIT: recover\nPATCH: index.html\nREASON: title\n---FIND---\n<title>Acme</title>\n---REPLACE---\n<title>Ceramic Coating Denton TX | Acme</title>\n---END PATCH---';
+});
+r = await runAgentCycle(npSite, { manual: false });
+check('the recovery task ran first (before any monthly step)', /Recover the ranking for "ceramic coating denton tx"/.test(recPrompt), recPrompt.slice(0, 120));
+check('...with the actual drop stated (#12 to #31)', /dropped from #12 to #31/.test(recPrompt));
+check('...and it shipped', r.action === 'change' && W.repos['acme/np'].files['index.html'].includes('Ceramic Coating Denton TX | Acme'));
+check('owner was told about the drop', W.sms.some((s) => /Rank drop on NP Detailing.*#12 to #31/.test(s.body)), JSON.stringify(W.sms.map((s) => s.body)));
+check('a keyword that did not drop is not touched', !/other kw/.test(recPrompt.split('TASK THIS CYCLE')[1] || ''));
 
 done();
