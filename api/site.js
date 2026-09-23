@@ -263,7 +263,12 @@ export default async function handler(req, res) {
         }
       }
 
-      const cfg = await saveSiteConfig(slug, patch);
+      const savedCfg = await saveSiteConfig(slug, patch);
+      // saveSiteConfig returns the RAW stored config, which has no agentAutoMerge
+      // (that's applied when sites are listed). The add flow used to pass the raw
+      // config on, so the conversion-tracking commit opened a pull request that
+      // never merged — tracking on a brand-new site silently never went live.
+      const cfg = (await listSites()).find((x) => x.slug === slug) || savedCfg;
 
       // Both of these used to only happen on this site's turn in the daily
       // agent rotation — which could be days away for a site with several
