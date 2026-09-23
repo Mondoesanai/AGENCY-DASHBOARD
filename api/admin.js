@@ -77,18 +77,34 @@ async function runAutoTick() {
     }
   }
   await mark('ranks phase');
-  if (Date.now() - t0 < 32000) {
-    const stale = sites.slice(0, 40);
-    const results = await Promise.all(
-      stale.map((s) =>
-        Date.now() - t0 > 50000
-          ? null
-          : refreshRanksIfStale(s)
-              .then((r) => (r && r.ok && !r.skipped ? { slug: s.slug, inTop10: r.ranks?.inTop10 } : null))
-              .catch(() => null)
+  if (Date.now() - t0 < 30000) {
+    // The live tick died here once: it fired 12-keyword rank checks for EVERY
+    // stale site at the same time (60+ live lookups) and blew the 60s limit.
+    // Now: only the two stalest sites per tick, raced against a hard deadline.
+    const ages = await Promise.all(
+      sites.map(async (x) => {
+        const raw = await store.get(`agent:ranks:${x.slug}`).catch(() => null);
+        let at = 0;
+        try {
+          at = (raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {}).at || 0;
+        } catch {
+          at = 0;
+        }
+        return { x, at };
+      })
+    );
+    const batch = ages.sort((p, q) => p.at - q.at).slice(0, 2).map((e) => e.x);
+    const work = Promise.all(
+      batch.map((x) =>
+        refreshRanksIfStale(x)
+          .then((r) => (r && r.ok && !r.skipped ? { slug: x.slug, inTop10: r.ranks?.inTop10 } : null))
+          .catch(() => null)
       )
     );
-    out.ranks = results.filter(Boolean);
+    const left = Math.max(3000, 46000 - (Date.now() - t0));
+    const done = await Promise.race([work, new Promise((resolve) => setTimeout(() => resolve('slow'), left))]);
+    out.ranks = Array.isArray(done) ? done.filter(Boolean) : [];
+    await mark('ranks ' + (Array.isArray(done) ? 'done' : 'SLOW'));
   }
   // the revisions inbox poller is on the same throttled scheduler, so give it a
   // turn here too when there's time left (a no-new-mail check takes ~2s)
