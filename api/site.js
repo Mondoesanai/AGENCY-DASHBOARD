@@ -237,6 +237,7 @@ export default async function handler(req, res) {
         trialEnds: body.trialEnds,
         billingDay: body.billingDay,
         autoSend: body.autoSend,
+        reportEvery: body.reportEvery,
         leadValue: body.leadValue,
         reviewUrl: body.reviewUrl || '',
         conversionEvents: body.conversionEvents,

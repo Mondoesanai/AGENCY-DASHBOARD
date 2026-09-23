@@ -81,6 +81,7 @@ export default async function handler(req, res) {
         leadValue: site.leadValue || 0,
         billingDay: site.billingDay || null,
         autoSend: !!site.autoSend,
+        reportEvery: site.reportEvery || 'monthly',
         reviewUrl: site.reviewUrl || '',
         conversionEvents: site.conversionEvents || [],
         source: site.source,

@@ -8,6 +8,7 @@ import { siteStats } from '../lib/stats.js';
 import { clientActions, improvementsForClient, overallGrade } from '../lib/suggestions.js';
 import { tokenOk } from '../lib/token.js';
 import { store } from '../lib/store.js';
+import { summarizeRanks, readPrevRanks, keywordTable, readRankHistory, projectTimeline } from '../lib/ranks.js';
 
 async function readArr(k) {
   const raw = await store.get(k).catch(() => null);
@@ -45,14 +46,24 @@ export default async function handler(req, res) {
   const site = (await listSites()).find((s) => s.slug === slug);
   if (!site) return res.status(404).json({ error: 'not found' });
 
-  const [history, reportRaw, stats, audit, healthRaw, changelog] = await Promise.all([
+  const [history, reportRaw, stats, audit, healthRaw, changelog, ranksRaw, prevRanks, rankHist] = await Promise.all([
     getHistory(slug).catch(() => []),
     store.get(`report:${slug}:latest`).catch(() => null),
     siteStats(slug, site.conversionEvents || []).catch(() => null),
     runAudit(site.url).catch(() => ({ ok: false })),
     store.get(`health:${slug}`).catch(() => null),
     recentWork(slug).catch(() => []),
+    store.get(`agent:ranks:${slug}`).catch(() => null),
+    readPrevRanks(slug).catch(() => null),
+    readRankHistory(slug).catch(() => []),
   ]);
+  let curRanks = null;
+  try {
+    curRanks = ranksRaw ? (typeof ranksRaw === 'string' ? JSON.parse(ranksRaw) : ranksRaw) : null;
+  } catch {
+    curRanks = null;
+  }
+  const rankSummary = summarizeRanks(curRanks);
   const report = reportRaw ? (typeof reportRaw === 'string' ? JSON.parse(reportRaw) : reportRaw) : null;
   const health = healthRaw ? (typeof healthRaw === 'string' ? JSON.parse(healthRaw) : healthRaw) : null;
 
@@ -104,5 +115,36 @@ export default async function handler(req, res) {
     uptime: health ? { up: health.up, ms: health.ms } : null,
     cardUrl: `/api/card?slug=${encodeURIComponent(slug)}`,
     recentWork: changelog,
+    period: report?.period || 'monthly',
+    progress: report?.progress || '',
+    workDone: report?.workDone || [],
+    // the real Google position data, live — not frozen at report time
+    rankings: rankSummary
+      ? {
+          checkedAt: rankSummary.checkedAt,
+          tracked: rankSummary.tracked,
+          found: rankSummary.found,
+          avgRank: rankSummary.avgRank,
+          bestRank: rankSummary.bestRank,
+          inTop3: rankSummary.inTop3,
+          inTop10: rankSummary.inTop10,
+          depth: rankSummary.depth,
+          roughField: rankSummary.roughField,
+          keywords: keywordTable(curRanks, prevRanks).slice(0, 12),
+          competitors: (rankSummary.competitors || []).slice(0, 4).map((c) => ({ domain: c.domain, bestRank: c.bestRank })),
+          history: (rankHist || []).slice(-24).map((h) => ({ at: h.at, avgRank: h.avgRank, inTop10: h.inTop10 })),
+          timeline: projectTimeline(rankHist, 3),
+        }
+      : null,
+    traffic: stats
+      ? {
+          topPages: (stats.topPages || []).slice(0, 6),
+          sources: (stats.sources || []).slice(0, 6),
+          events: (stats.events || []).slice(0, 8),
+          leadSources: (stats.leadSources || []).slice(0, 6),
+          device: stats.device || null,
+          avgDwell: stats.avgDwell ?? null,
+        }
+      : null,
   });
 }

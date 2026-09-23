@@ -132,6 +132,52 @@ export default async function handler(req, res) {
       }
       return res.status(200).json({ ok: true, results });
     }
+    case 'auto-tick': {
+      // The heartbeat of the whole SEO automation, called every ~30 min by
+      // GitHub Actions (.github/workflows/seo-automation.yml) — NOT Vercel's
+      // cron, which never recorded a single run for this project. Each call is
+      // one bounded unit of work: the single most-overdue eligible site gets
+      // one improvement cycle, then any site whose rankings are >3 days stale
+      // gets refreshed with whatever time is left. Per-site pacing, the
+      // monthly budget cap and the concurrency lock all still apply, so calling
+      // it often is safe — most calls find nothing due and return in ~1s.
+      const t0 = Date.now();
+      await store.set('auto:lastTick', String(t0), { ex: 60 * 60 * 24 * 30 }).catch(() => {});
+      const sites = await listSites();
+      const out = { agent: null, ranks: [] };
+      const cands = [];
+      for (const s of sites) {
+        const st = await agentStatus(s).catch(() => ({ eligible: false }));
+        if (!st.eligible || st.running) continue;
+        const last = Number(await store.get(`agent:lastCycleAt:${s.slug}`).catch(() => 0)) || 0;
+        cands.push({ s, last });
+      }
+      cands.sort((a, b) => a.last - b.last);
+      if (cands.length) {
+        const s = cands[0].s;
+        try {
+          const r = await runAgentCycle(s, { manual: false });
+          out.agent = { slug: s.slug, action: r.action || (r.skipped ? 'skipped' : r.error ? 'error' : 'ok'), reason: r.reason || r.error || null, pr: r.pr?.prUrl || null };
+        } catch (e) {
+          out.agent = { slug: s.slug, action: 'error', reason: String(e.message || e) };
+        }
+      }
+      if (Date.now() - t0 < 32000) {
+        const stale = sites.slice(0, 40);
+        const results = await Promise.all(
+          stale.map((s) =>
+            Date.now() - t0 > 50000
+              ? null
+              : refreshRanksIfStale(s)
+                  .then((r) => (r && r.ok && !r.skipped ? { slug: s.slug, inTop10: r.ranks?.inTop10 } : null))
+                  .catch(() => null)
+          )
+        );
+        out.ranks = results.filter(Boolean);
+      }
+      out.ms = Date.now() - t0;
+      return res.status(200).json({ ok: true, ...out });
+    }
     case 'ranks-refresh-all': {
       // Manual "don't wait for the cron" trigger — the whole reason this
       // exists is the daily cron's own reliability is currently in

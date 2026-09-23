@@ -41,6 +41,23 @@
   .sug:first-child{border-top:0;}
   .sug .t{font-weight:600;font-size:14.5px;}
   .sug .w{color:var(--muted);font-size:13.5px;margin-top:2px;}
+  .rk-top{display:flex;align-items:flex-end;gap:22px;flex-wrap:wrap;margin-bottom:6px;}
+  .rk-big{font-family:"Fraunces",serif;font-size:44px;font-weight:600;line-height:1;}
+  .rk-lbl{font-size:12px;color:var(--faint);margin-top:4px;}
+  .rk-row{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:9px 0;border-top:1px solid var(--line);font-size:14px;}
+  .rk-row:first-of-type{border-top:0;}
+  .rk-pos{font-weight:600;min-width:64px;text-align:right;}
+  .rk-chg{font-size:12.5px;min-width:70px;text-align:right;}
+  .bar{display:grid;grid-template-columns:110px 1fr 46px;gap:10px;align-items:center;padding:5px 0;font-size:13.5px;}
+  .bar .tr{height:8px;border-radius:99px;background:var(--panel2);overflow:hidden;}
+  .bar .fi{height:100%;border-radius:99px;background:var(--green);}
+  .bar .n{text-align:right;color:var(--muted);}
+  .bar .nm{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .tgt{display:inline-block;margin-top:6px;padding:3px 10px;border-radius:99px;background:rgba(119,219,170,.14);color:var(--green-br);font-size:12.5px;font-weight:600;}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:16px;}
+  .step{padding:10px 0;border-top:1px solid var(--line);}
+  .step:first-child{border-top:0;}
+  @media(max-width:640px){.two{grid-template-columns:1fr;}.rk-big{font-size:36px;}}
   .foot{margin-top:34px;color:var(--faint);font-size:12.5px;text-align:center;line-height:1.7;}
   .err{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:40px;text-align:center;color:var(--muted);}
   @media(max-width:640px){.stats{grid-template-columns:repeat(2,1fr);}}
@@ -114,6 +131,66 @@ function initUptick(){
   });
 }
 
+function bigNum(n){
+  n=Number(n)||0;
+  if(n>=1e9) return (n/1e9).toFixed(1)+'B';
+  if(n>=1e6) return (n/1e6).toFixed(1)+'M';
+  if(n>=1e3) return (n/1e3).toFixed(1)+'k';
+  return String(Math.round(n));
+}
+// average position over time — lower is better, so the line is drawn flipped
+// (going UP the page means moving up in Google)
+function rankTrend(hist){
+  const pts=(hist||[]).filter(h=>h.avgRank!=null);
+  if(pts.length<2) return '';
+  const W=600,H=110,pad=8;
+  const vals=pts.map(p=>p.avgRank);
+  const lo=Math.min(...vals), hi=Math.max(...vals), span=Math.max(hi-lo,1);
+  const X=i=>pad+i*((W-pad*2)/(pts.length-1));
+  const Y=v=>pad+((v-lo)/span)*(H-pad*2);
+  const line=pts.map((p,i)=>`${i?'L':'M'}${X(i).toFixed(1)} ${Y(p.avgRank).toFixed(1)}`).join(' ');
+  const improving=vals[vals.length-1]<=vals[0];
+  const col=improving?'var(--green-br)':'var(--neg)';
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;margin-top:10px;overflow:visible"><path d="${line}" fill="none" stroke="${col}" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${X(pts.length-1).toFixed(1)}" cy="${Y(vals[vals.length-1]).toFixed(1)}" r="5" fill="${col}"/></svg><div class="rk-lbl">Average Google position over ${pts.length} checks — ${improving?'climbing':'slipping'} (higher on this line = closer to #1)</div>`;
+}
+function rankBlock(d){
+  const r=d.rankings;
+  if(!r) return `<div class="block"><h3>Where you rank in Google</h3><div class="w">We're setting up your keyword tracking — your first rankings check lands here within a day or two, and then refreshes automatically every few days.</div></div>`;
+  const checked=r.checkedAt?new Date(r.checkedAt).toLocaleDateString('en-US',{month:'short',day:'numeric'}):'';
+  const head = r.avgRank!=null
+    ? `<div class="rk-top"><div><div class="rk-big">#${r.avgRank}</div><div class="rk-lbl">average position across ${r.found} ranking keyword${r.found===1?'':'s'}</div></div>
+       <div><div class="rk-big">${r.inTop10}<span style="font-size:20px;color:var(--faint)"> / ${r.tracked}</span></div><div class="rk-lbl">keywords on page 1 (top 10)</div></div>
+       ${r.bestRank?`<div><div class="rk-big">#${r.bestRank}</div><div class="rk-lbl">your best keyword</div></div>`:''}</div>`
+    : `<div class="rk-top"><div><div class="rk-big">Building</div><div class="rk-lbl">not on the first ${r.depth||100} results yet for your ${r.tracked} keywords — normal for a newer site</div></div>
+       ${r.roughField?`<div><div class="rk-big">~${bigNum(r.roughField)}</div><div class="rk-lbl">pages competing for your search terms</div></div>`:''}</div>`;
+  const rows=(r.keywords||[]).map(k=>{
+    let chg='<span style="color:var(--faint)">—</span>';
+    if(k.change===999) chg='<span class="up">▲ new</span>';
+    else if(k.change===-999) chg='<span class="down">▼ dropped</span>';
+    else if(k.change>0) chg=`<span class="up">▲ ${k.change}</span>`;
+    else if(k.change<0) chg=`<span class="down">▼ ${Math.abs(k.change)}</span>`;
+    else if(k.change===0 && k.rank) chg='<span style="color:var(--faint)">no change</span>';
+    return `<div class="rk-row"><span>${esc(k.keyword)}</span><span class="rk-pos" style="color:${k.rank&&k.rank<=10?'var(--green-br)':'var(--muted)'}">${k.rank?'#'+k.rank:'not yet'}</span><span class="rk-chg">${chg}</span></div>`;
+  }).join('');
+  const tl=r.timeline;
+  const tlLine = tl&&tl.ok&&tl.improving&&tl.weeksToTarget
+    ? `<div class="rk-lbl" style="margin-top:12px;color:var(--green-br)">At the current pace, top-3 average is roughly ${tl.weeksToTarget} week${tl.weeksToTarget===1?'':'s'} away.</div>` : '';
+  return `<div class="block"><h3>Where you rank in Google</h3>${head}
+    ${d.progress?`<p style="margin:14px 0 6px;color:var(--muted)">${esc(d.progress)}</p>`:''}
+    ${rankTrend(r.history)}${tlLine}
+    <div style="margin-top:14px">${rows}</div>
+    <div class="rk-lbl" style="margin-top:10px">Checked ${esc(checked)} · rechecked automatically every few days${(r.competitors&&r.competitors.length)?` · showing up alongside: ${r.competitors.map(c=>esc(c.domain)).join(', ')}`:''}</div></div>`;
+}
+function barsBlock(title, items, note){
+  if(!items||!items.length) return '';
+  const max=Math.max(...items.map(i=>i.score),1);
+  return `<div class="block"><h3>${esc(title)}</h3>${items.map(i=>`<div class="bar"><span class="nm" title="${esc(i.member)}">${esc(String(i.member).replace(/-/g,' '))}</span><span class="tr"><span class="fi" style="display:block;width:${Math.max(4,(i.score/max)*100)}%"></span></span><span class="n">${fmt(i.score)}</span></div>`).join('')}${note?`<div class="rk-lbl" style="margin-top:8px">${esc(note)}</div>`:''}</div>`;
+}
+function workBlock(d){
+  const wd=(d.workDone||[]);
+  if(wd.length) return `<div class="block"><h3>What we did for you</h3>${wd.map(w=>`<div class="step"><div class="t" style="font-weight:600;font-size:14.5px">${esc(w.title)}</div>${w.detail?`<div class="w" style="color:var(--muted);font-size:13.5px;margin-top:2px">${esc(w.detail)}</div>`:''}</div>`).join('')}</div>`;
+  return '';
+}
 function deltaHTML(d,pct){
   if(d===undefined||d===null) return '';
   const cls = d>0?'up':d<0?'down':'';
@@ -161,13 +238,20 @@ function deltaHTML(d,pct){
         <div class="stat"><div class="k">Site health</div><div class="v">${d.grade ? d.grade.letter : '—'}</div><div class="d">${d.grade ? d.grade.score+' / 100' : ''}</div></div>
       </div>
 
-      ${(d.wins&&d.wins.length) ? `<div class="block"><h3>This month</h3>${d.wins.map(w=>`<div class="win">${esc(w)}</div>`).join('')}</div>` : ''}
+      ${rankBlock(d)}
+
+      ${workBlock(d)}
+
+      ${(d.wins&&d.wins.length) ? `<div class="block"><h3>${d.period==='biweekly'?'The last two weeks':'This month'}</h3>${d.wins.map(w=>`<div class="win">${esc(w)}</div>`).join('')}</div>` : ''}
 
       ${(d.recentWork&&d.recentWork.length) ? `<div class="block"><h3>Recently done</h3>${d.recentWork.map(w=>`<div class="win">${w.fromClientRequest?'<strong>You asked for this</strong> — ':''}${esc(w.text)} <span style="opacity:.6;font-size:.9em">— ${esc(w.date)}</span></div>`).join('')}</div>` : ''}
 
       ${(d.improvements&&d.improvements.length) ? `<div class="block"><h3>What we're working on next</h3>${d.improvements.map(s=>`<div class="sug"><div class="t">${esc(s.title)}</div><div class="w">${esc(s.why)}</div></div>`).join('')}</div>` : ''}
 
-      ${(d.clientActions&&d.clientActions.length) ? `<div class="block"><h3>A few things that would help on your end</h3>${d.clientActions.map(s=>`<div class="sug"><div class="t">${esc(s.title)}</div><div class="w">${esc(s.why)}</div></div>`).join('')}</div>` : ''}
+      ${(d.clientActions&&d.clientActions.length) ? `<div class="block"><h3>Your plan for this week</h3>${d.clientActions.map(s=>`<div class="sug"><div class="t">${esc(s.title)}</div><div class="w">${esc(s.why)}</div>${s.target?`<span class="tgt">🎯 ${esc(s.target)}</span>`:''}</div>`).join('')}<div class="rk-lbl" style="margin-top:10px">Do these and we'll show the result in your next update — it all shows up in the numbers below.</div></div>` : ''}
+
+      ${d.traffic ? `<div class="two">${barsBlock('Where your visitors come from',d.traffic.sources,'last 30 days')}${barsBlock('Your most visited pages',d.traffic.topPages,'last 30 days')}</div>
+      <div class="two">${barsBlock('What visitors did — your enquiries',d.traffic.events,'calls, bookings, form submissions and button taps')}${barsBlock('Where your enquiries came from',d.traffic.leadSources,'the channel each enquiry started from')}</div>` : ''}
 
       <div class="foot">
         Prepared by <strong>Inspiring Websites</strong><br/>

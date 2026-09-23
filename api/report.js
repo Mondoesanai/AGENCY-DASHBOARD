@@ -14,6 +14,7 @@ import { buildClientEmail, pickAngle } from '../lib/email.js';
 import { buildCardSVG, renderPNG } from '../lib/card.js';
 import { reportToken } from '../lib/token.js';
 import { store } from '../lib/store.js';
+import { summarizeRanks, readRankHistory, readPrevRanks, keywordTable } from '../lib/ranks.js';
 
 const MONTH = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
 const MK = monthKey();
@@ -70,7 +71,61 @@ function monthsSince(baseline, history) {
   return Math.max(0, (history?.length || 1) - 1);
 }
 
-async function aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins, style, dropped }) {
+async function readJson(key) {
+  const raw = await store.get(key).catch(() => null);
+  try {
+    return raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+// Everything real we know about this site's period, in one place — so the
+// report can talk about actual rankings movement and actual shipped work
+// instead of only visitor counts. The old prompt only ever saw traffic and
+// audit scores, which is why "what we're doing" read as a generic "we're
+// making it faster on mobile" no matter what had really happened.
+async function buildReportContext(site, stats, changelog, period) {
+  const cutoff = Date.now() - (period === 'biweekly' ? 16 : 35) * 864e5;
+  const shippedWork = (changelog || [])
+    .filter((c) => (Date.parse(c.date) || 0) >= cutoff)
+    .map((c) => ({ date: c.date, what: c.text, askedForByClient: c.source === 'revision' }));
+  const [cur, prev, hist, lastReport] = await Promise.all([
+    readJson(`agent:ranks:${site.slug}`),
+    readPrevRanks(site.slug),
+    readRankHistory(site.slug).catch(() => []),
+    readJson(`report:${site.slug}:latest`),
+  ]);
+  const summary = summarizeRanks(cur);
+  return {
+    period: period === 'biweekly' ? 'the last two weeks' : 'this past month',
+    rankings: summary
+      ? {
+          checkedAt: summary.checkedAt ? new Date(summary.checkedAt).toISOString().slice(0, 10) : null,
+          keywordsTracked: summary.tracked,
+          averagePosition: summary.avgRank,
+          bestPosition: summary.bestRank,
+          inTop3: summary.inTop3,
+          inTop10: summary.inTop10,
+          notInTop100Count: summary.tracked - summary.found,
+          competingPagesEstimate: summary.roughField,
+          keywords: keywordTable(cur, prev).slice(0, 12),
+          topCompetitors: (summary.competitors || []).slice(0, 4).map((c) => c.domain),
+          checksSoFar: hist.length,
+          firstAveragePosition: hist.length > 1 ? hist[0].avgRank : null,
+        }
+      : null,
+    shippedWork,
+    enquiriesByType: (stats?.events || []).slice(0, 8),
+    enquirySources: (stats?.leadSources || []).slice(0, 6),
+    deviceSplit: stats?.device || null,
+    avgSecondsOnSite: stats?.avgDwell ?? null,
+    previousClientActions: (lastReport?.clientActions || []).map((a) => a.title).slice(0, 6),
+  };
+}
+
+async function aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins, style, dropped, changelog, period }) {
+  const ctx = await buildReportContext(site, stats, changelog, period).catch(() => ({}));
   if (!process.env.ANTHROPIC_API_KEY) return { __error: 'no ANTHROPIC_API_KEY set' };
   let Anthropic;
   try {
@@ -82,25 +137,44 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
   // Sonnet 5 is the practical default here (widely available on any key, cheap
   // enough for monthly emails across dozens of sites). Set ANTHROPIC_MODEL to override.
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';
+  const biweekly = period === 'biweekly';
   const system = [
     'You are the account manager at a small web studio (Inspiring Websites) writing the',
-    'monthly performance update for a client who is NOT technical. Warm, specific, encouraging,',
-    'never hype. This month\'s tone angle is "' + angle + '" — honour it so consecutive months',
-    'do not read the same. Return ONLY minified JSON:',
-    '{"headline":string,"summary":string,"improvements":[{"title":string,"why":string}],',
-    '"client_actions":[{"title":string,"why":string}],"builder_notes":[string],',
+    (biweekly ? 'two-week check-in' : 'monthly performance update') + ' for a client who is NOT technical. Warm, specific, encouraging,',
+    'never hype, never vague. This time\'s tone angle is "' + angle + '" — honour it so consecutive',
+    'updates do not read the same. Every claim must come from the data you are given — NEVER invent',
+    'a ranking, a number, or a piece of work that is not in the data. Return ONLY minified JSON:',
+    '{"headline":string,"summary":string,"progress":string,"work_done":[{"title":string,"detail":string}],',
+    '"improvements":[{"title":string,"why":string}],',
+    '"client_actions":[{"title":string,"why":string,"target":string}],"builder_notes":[string],',
     '"email":{"subject":string,"body_text":string}}.',
     'summary = 2-3 sentences.',
-    'improvements = 2-4 things WE will do to the website, outcome-framed, no jargon.',
-    'client_actions = 3-5 things the BUSINESS OWNER can do this month that do NOT involve the',
-    'website: ask recent customers for a Google review, add the site link to their Google Business',
-    'Profile / email signature / social posts / business cards / invoices, reply to new leads fast,',
-    'share the link in local community groups.',
+    'progress = 2-4 sentences on Google ranking progress using the rankings data: average position,',
+    'how many keywords are in the top 10 / top 3, which specific keywords moved and by how much',
+    '(name them), and — if nothing ranks yet — say honestly that a new site typically takes 1-3 months of',
+    'steady work to break into the results, that we are tracking it every few days, and what the',
+    'estimated competing-pages number is doing. Reassuring but truthful; if positions dropped, say so plainly.',
+    'work_done = 3-7 items: what WE actually did for the site in this period, taken ONLY from shippedWork',
+    '(plain-English, benefit-framed: what changed and why it helps them get found), plus the fact that rankings',
+    'were re-checked. title = short outcome, detail = one plain sentence. If shippedWork is thin, list fewer',
+    'items — never pad or invent.',
+    'improvements = 2-4 things WE will do NEXT, specific to their data (name the page / keyword), no jargon.',
+    'client_actions = 3-4 things the BUSINESS OWNER can do THIS WEEK to help their site grow. They must be',
+    'SPECIFIC and MEASURABLE, built from their own numbers, and never generic. Each one has: title (the exact',
+    'action), why (one sentence tying it to THEIR data — a real page, keyword, traffic source, or enquiry count',
+    'from the data), and target (a concrete number + timeframe, e.g. "10 people tapping Book Now by Sunday").',
+    'Good: "Text your booking link to 10 past customers this week — your report will show how many tapped it',
+    'under Enquiry sources." Good: "Post your top page (/rankings) in the group where most of your visitors',
+    'come from (social: 247 visits) — aim for 25 clicks." BAD (never write these): "ask for a Google review",',
+    '"share on social media", "add the link to your email signature" with no number, no how, no tie to data.',
+    'Do NOT repeat any of previousClientActions. Prefer actions whose result we can measure in the next report.',
     'builder_notes = 2-5 blunt technical to-dos for the web developer only.',
     'email.body_text = the full email to ' + (site.client || 'the client') + ' (greet by name,',
-    'sign off "— Inspiring Websites"), 140-210 words. Structure: lead with the wins, then',
-    '"What we\'re working on next" (improvements), then "A few things that would help on your end"',
-    '(2-3 client_actions). Weave in these exact facts: ' + JSON.stringify(wins) + '.',
+    'sign off "— Inspiring Websites"), 230-320 words, plain text with short paragraphs and simple "•" bullets.',
+    'Structure: (1) one-line headline of how things are going, (2) "Where you rank in Google" — the real',
+    'numbers from progress, (3) "What we did" — 3-5 bullets from work_done, (4) "Your plan for this week" —',
+    '2-3 client_actions each with its target number, (5) one sentence on what to expect next.',
+    'Weave in these exact facts: ' + JSON.stringify(wins) + '.',
     dropped
       ? 'THIS WAS A DOWN MONTH — visitors fell. Do NOT spin it. Open by acknowledging plainly that traffic dipped this month, then pivot to "here is exactly what we are changing so next month goes the other way" (use the improvements), stay calm and confident, and end reassuring them one quiet month is not a trend.'
       : '',
@@ -122,6 +196,7 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
     rule_findings: findings.slice(0, 8),
     rule_improvements: improvements,
     rule_client_actions: actions,
+    ...ctx,
   };
   try {
     const r = await client.messages.create({
@@ -201,7 +276,7 @@ async function sendEmail({ site, subject, body, cardPng, reportUrl, to }) {
   }
 }
 
-async function buildForSite(site, { doSend, req, style, isBatch }) {
+async function buildForSite(site, { doSend, req, style, isBatch, period, sentKey }) {
   const [stats, audit, changelogRaw] = await Promise.all([
     siteStats(site.slug, site.conversionEvents || []).catch(() => null),
     runAudit(site.url, { fresh: !isBatch }).catch(() => ({ ok: false, error: 'audit failed' })),
@@ -266,7 +341,7 @@ async function buildForSite(site, { doSend, req, style, isBatch }) {
 
   let ai, aiError;
   if (skipAi) {
-    ai = { email: prevForSkip.email, headline: prevForSkip.headline, summary: prevForSkip.summary, improvements: prevForSkip.improvements, client_actions: prevForSkip.clientActions, builder_notes: prevForSkip.builderExtra };
+    ai = { email: prevForSkip.email, headline: prevForSkip.headline, summary: prevForSkip.summary, progress: prevForSkip.progress, work_done: prevForSkip.workDone, improvements: prevForSkip.improvements, client_actions: prevForSkip.clientActions, builder_notes: prevForSkip.builderExtra };
     aiError = null;
   } else {
     const aiRaw = await aiPolish({
@@ -281,6 +356,8 @@ async function buildForSite(site, { doSend, req, style, isBatch }) {
       wins: rules.wins,
       style,
       dropped: rules.dropped,
+      changelog,
+      period,
     }).catch((e) => ({ __error: 'aiPolish threw: ' + (e.message || e) }));
     aiError = aiRaw && aiRaw.__error ? aiRaw.__error : null;
     ai = aiError ? null : aiRaw;
@@ -299,6 +376,9 @@ async function buildForSite(site, { doSend, req, style, isBatch }) {
     grade,
     headline: ai?.headline || `${site.name} — ${MONTH}`,
     summary: ai?.summary || rules.wins.join(' '),
+    progress: ai?.progress || '',
+    workDone: ai?.work_done || [],
+    period: period || 'monthly',
     wins: rules.wins,
     improvements: ai?.improvements || improvements,
     clientActions: ai?.client_actions || actions,
@@ -322,7 +402,7 @@ async function buildForSite(site, { doSend, req, style, isBatch }) {
       cardPng = null;
     }
     emailResult = await sendEmail({ site, subject: email.subject, body: email.body_text, cardPng, reportUrl });
-    if (emailResult.sent) await store.set(`lastSent:${site.slug}`, MK);
+    if (emailResult.sent) await store.set(sentKey || `lastSent:${site.slug}`, MK);
   }
 
   return { ...report, emailResult, aiUsed: !!ai, aiError };
@@ -361,7 +441,7 @@ async function regenEmail(site, { style, req }) {
     signature: process.env.REPORT_SIGNATURE || 'Inspiring Websites',
     reviewUrl: site.reviewUrl, leadValue: site.leadValue || 0,
   });
-  const aiRaw = await aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins: rules.wins, style, dropped: rules.dropped }).catch((e) => ({ __error: 'aiPolish threw: ' + (e.message || e) }));
+  const aiRaw = await aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins: rules.wins, style, dropped: rules.dropped, changelog, period: prev?.period }).catch((e) => ({ __error: 'aiPolish threw: ' + (e.message || e) }));
   const aiError = aiRaw && aiRaw.__error ? aiRaw.__error : null;
   const ai = aiError ? null : aiRaw;
   const email = ai?.email || { subject: rules.subject, body_text: rules.body_text };
@@ -372,6 +452,9 @@ async function regenEmail(site, { style, req }) {
     generatedAt: Date.now(), grade,
     headline: ai?.headline || prev?.headline || `${site.name} — ${MONTH}`,
     summary: ai?.summary || prev?.summary || rules.wins.join(' '),
+    progress: ai?.progress || prev?.progress || '',
+    workDone: ai?.work_done || prev?.workDone || [],
+    period: prev?.period || 'monthly',
     wins: rules.wins,
     improvements: ai?.improvements || improvements,
     clientActions: ai?.client_actions || actions,

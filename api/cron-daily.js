@@ -149,15 +149,29 @@ export default async function handler(req, res) {
         log.push({ slug: site.slug, healthError: String(e.message || e) });
       }
 
-      const billingToday = site.billingDay && site.billingDay === today;
-      const alreadySent = (await store.get(`lastSent:${site.slug}`).catch(() => null)) === MK;
+      // Report sends. Monthly clients get one on their billing day; biweekly
+      // clients (site.reportEvery === 'biweekly') get a second one ~14 days
+      // later. "Due" means: it's the send day or up to 5 days after it and it
+      // hasn't gone out yet this month — so a missed run (the exact-day match
+      // used to silently skip a client's whole month) catches up on the next.
+      const inWindow = (day) => day && today >= day && today - day <= 5;
+      const biweekly = site.reportEvery === 'biweekly';
+      const day1 = site.billingDay || null;
+      const day2 = biweekly && day1 ? ((day1 + 13) % 28) + 1 : null;
+      const sent1 = (await store.get(`lastSent:${site.slug}`).catch(() => null)) === MK;
+      const sent2 = biweekly ? (await store.get(`lastSent2:${site.slug}`).catch(() => null)) === MK : true;
+      const canSend = site.autoSend && site.email && process.env.RESEND_API_KEY;
+      const due1 = inWindow(day1) && !sent1;
+      const due2 = biweekly && inWindow(day2) && !sent2;
 
-      if (billingToday && site.autoSend && site.email && process.env.RESEND_API_KEY && !alreadySent) {
+      if (canSend && (due1 || due2)) {
+        // if both windows overlap (billing day near the 28th wrap), send once
+        const which = due1 ? 1 : 2;
         try {
-          const r = await buildForSite(site, { doSend: true, req });
-          log.push({ slug: site.slug, action: 'billing-day send', sent: r.emailResult?.sent, reason: r.emailResult?.reason });
+          const r = await buildForSite(site, { doSend: true, req, period: biweekly ? 'biweekly' : 'monthly', sentKey: which === 2 ? `lastSent2:${site.slug}` : null });
+          log.push({ slug: site.slug, action: which === 2 ? 'biweekly send' : 'billing-day send', sent: r.emailResult?.sent, reason: r.emailResult?.reason });
         } catch (e) {
-          log.push({ slug: site.slug, action: 'billing-day send', error: String(e.message || e) });
+          log.push({ slug: site.slug, action: 'report send', error: String(e.message || e) });
         }
       } else if (isFirst) {
         try {
@@ -173,7 +187,7 @@ export default async function handler(req, res) {
       // from us more than once a month without it becoming a second report.
       // Same autoSend opt-in as the report; skips quietly if there's
       // nothing new to recap that window (see lib/winsrecap.js).
-      if (site.autoSend && site.email && process.env.RESEND_API_KEY) {
+      if (site.autoSend && site.email && process.env.RESEND_API_KEY && !biweekly) {
         const base = site.billingDay || 1;
         const recapDays = [
           [1, ((base + 10 - 1) % 28) + 1],

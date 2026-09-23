@@ -1,0 +1,38 @@
+name: SEO automation
+
+# Vercel's built-in cron never recorded a single run for this project, which is
+# why sites could sit untouched for 12 days. GitHub's scheduler is already
+# proven here (check-revisions.yml fires every 10 minutes), so the SEO agent
+# runs from it too — no dependency on Vercel cron at all.
+#
+#  - every 30 min: one bounded "tick" — the most overdue site gets an
+#    improvement cycle, stale rankings get refreshed (pacing + budget cap still
+#    decide what's actually due, so most ticks are instant no-ops)
+#  - once a day: the full daily pass — uptime/SSL checks, monthly + biweekly
+#    client reports, wins recaps, snapshots, upsell flags, health alert email
+on:
+  schedule:
+    - cron: '7,37 * * * *'
+    - cron: '20 13 * * *'
+  workflow_dispatch: {}
+
+jobs:
+  tick:
+    if: github.event.schedule != '20 13 * * *'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run one automation tick
+        run: |
+          curl -sS -m 65 -X POST "https://agency-dashboard-omega-red.vercel.app/api/admin?do=auto-tick&secret=${{ secrets.CRON_SECRET }}" \
+            -o response.json -w "\nHTTP %{http_code}\n" || true
+          cat response.json
+
+  daily:
+    if: github.event.schedule == '20 13 * * *' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Run the daily pass
+        run: |
+          curl -sS -m 65 "https://agency-dashboard-omega-red.vercel.app/api/cron-daily?secret=${{ secrets.CRON_SECRET }}" \
+            -o response.json -w "\nHTTP %{http_code}\n" || true
+          cat response.json

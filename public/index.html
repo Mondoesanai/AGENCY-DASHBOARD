@@ -1600,7 +1600,8 @@ function openDrawer(slug){
         <label class="field"><span>Billing day (1–28)</span><input id="cf_bday" value="${s.billingDay||''}" /></label>
         <label class="field"><span>Free trial until — blank = paying now</span><input id="cf_trial" type="date" value="${s.trialEnds?new Date(s.trialEnds).toISOString().slice(0,10):''}" /></label>
       </div>
-      <label class="toggle"><input type="checkbox" id="cf_auto" ${s.autoSend?'checked':''}/> Auto-send the report email on the billing day</label>
+      <label class="toggle"><input type="checkbox" id="cf_auto" ${s.autoSend?'checked':''}/> Auto-send the report email automatically</label>
+      <label class="field"><span>How often</span><select id="cf_every"><option value="monthly" ${s.reportEvery!=='biweekly'?'selected':''}>Once a month — on the billing day</option><option value="biweekly" ${s.reportEvery==='biweekly'?'selected':''}>Every two weeks — billing day, then 14 days later</option></select></label>
 
       <div style="border:1px solid var(--line);border-radius:10px;padding:11px;margin:10px 0">
         <div class="note" style="margin:0 0 8px"><strong>Automation</strong> — turns on once your API keys are connected.</div>
@@ -1620,8 +1621,7 @@ function openDrawer(slug){
                 <label class="field"><span>Hard cap ($)</span><input id="cf_cap" inputmode="decimal" value="${s.agentCap||20}" /></label>
               </div>
               <label class="field"><span>Target keywords (blank = the agent picks them on its first run)</span><input id="cf_kw" value="${esc(s.agentKeywords||'')}" placeholder="mobile detailing corinth tx, ceramic coating denton…" /></label>
-              <div class="btn-row" style="margin-top:2px"><button class="btn sm ghost" id="cf_rankrefresh" type="button">🔄 Recheck Google rankings now</button></div>
-              <p class="note" style="margin:6px 0 0">Rankings refresh on their own every ~3 days regardless of the technical-fix schedule — use this to force an immediate recheck instead of waiting.</p>
+              <p class="note" style="margin:6px 0 0">Rankings recheck themselves automatically every ~3 days, and the agent ships a small improvement to this site every couple of days — nothing to press.</p>
               <p class="note" style="margin:6px 0 0">Fixes that pass the safety check ship straight to the live site — no approval step.</p>
               <label class="toggle" style="margin:6px 0 0"><input type="checkbox" id="cf_rev" ${s.revisionsAuto!==false?'checked':''}/> Handle revision‑request emails for this client</label>
             </details>
@@ -1828,17 +1828,6 @@ function wireDrawer(s,bf){
     else if(r&&r.ok) toast(r.note||'Nothing new to tag on the homepage');
     else toast((r&&r.error)||'Could not scan this site','err');
   });
-  $('#cf_rankrefresh')?.addEventListener('click',async(e)=>{
-    const k=needKey(); if(!k) return;
-    e.target.disabled=true; e.target.textContent='Checking…';
-    const j=await fetch(`/api/admin?do=ranks-refresh-all&slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false}));
-    e.target.disabled=false; e.target.textContent='🔄 Recheck Google rankings now';
-    const r=j.ok&&j.results&&j.results[0];
-    if(r&&r.ok&&r.ranks) toast(`Checked — ${r.ranks.inTop10||0}/${r.ranks.tracked||0} keywords in the top 10`);
-    else if(r&&r.skipped) toast(r.reason||'Nothing to check yet');
-    else toast((r&&r.error)||'Could not check rankings','err');
-    await load();
-  });
   $('#cf_convai')?.addEventListener('click',async(e)=>{
     const k=needKey(); if(!k) return;
     const desc=$('#cf_convdesc').value.trim(); if(!desc) return;
@@ -2001,7 +1990,7 @@ function wireDrawer(s,bf){
       leadSource:$('#cf_leadsrc').value,leadSourceDate:$('#cf_leaddate').value,
       repo:$('#cf_repo').value,seoAgent:$('#cf_seo').checked,agentBudget:$('#cf_budget').value,agentCap:$('#cf_cap').value,revisionsAuto:$('#cf_rev').checked,
       agentKeywords:$('#cf_kw').value,
-      conversionEvents:$('#cf_conv').value,autoSend:$('#cf_auto').checked});
+      conversionEvents:$('#cf_conv').value,autoSend:$('#cf_auto').checked,reportEvery:$('#cf_every').value});
     if(j.ok){ const v=$('#cf_leadsrc').value.trim(); if(v) rememberLeadSource(v); await load(); openDrawer(j.site.slug); const d=$('.log.block'); if(d) d.open=true; } else { e.target.disabled=false; e.target.textContent='Failed'; }
   });
   $('#cfDel').addEventListener('click',async()=>{
