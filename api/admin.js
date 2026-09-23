@@ -40,8 +40,16 @@ async function runAutoTick() {
   // monthly budget cap and the concurrency lock all still apply, so calling
   // it often is safe — most calls find nothing due and return in ~1s.
   const t0 = Date.now();
+  const trace = [];
+  // checkpoints persisted as we go, so a run that gets killed still shows how far it got
+  const mark = async (step) => {
+    trace.push({ ms: Date.now() - t0, step });
+    await store.set('auto:trace', JSON.stringify({ at: t0, trace }), { ex: 86400 }).catch(() => {});
+  };
   await store.set('auto:lastTick', String(t0), { ex: 60 * 60 * 24 * 30 }).catch(() => {});
+  await mark('start');
   const sites = await listSites();
+  await mark('sites listed: ' + sites.length);
   const out = { agent: null, ranks: [] };
   const cands = [];
   for (const s of sites) {
@@ -51,13 +59,16 @@ async function runAutoTick() {
     cands.push({ s, last });
   }
   cands.sort((a, b) => a.last - b.last);
+  await mark('eligible: ' + cands.map((c) => c.s.slug).join(','));
   if (cands.length) {
     const s = cands[0].s;
+    await mark('cycle start ' + s.slug);
     try {
       // hard stop well inside Vercel's 60s limit — a function killed mid-cycle
       // leaves nothing recorded and looks like the automation silently died
       const cycle = runAgentCycle(s, { manual: false }).catch((e) => ({ ok: false, error: String(e.message || e) }));
       const r = await Promise.race([cycle, new Promise((resolve) => setTimeout(() => resolve({ __slow: true }), 45000))]);
+      await mark('cycle end ' + (r.__slow ? 'SLOW' : r.action || r.error || 'ok'));
       out.agent = r.__slow
         ? { slug: s.slug, action: 'slow', reason: 'cycle is taking longer than one tick — it keeps going and the next tick picks up after it' }
         : { slug: s.slug, action: r.action || (r.skipped ? 'skipped' : r.error ? 'error' : 'ok'), reason: r.reason || r.error || null, pr: r.pr?.prUrl || null };
@@ -65,6 +76,7 @@ async function runAutoTick() {
       out.agent = { slug: s.slug, action: 'error', reason: String(e.message || e) };
     }
   }
+  await mark('ranks phase');
   if (Date.now() - t0 < 32000) {
     const stale = sites.slice(0, 40);
     const results = await Promise.all(
@@ -88,6 +100,7 @@ async function runAutoTick() {
       out.revisions = { error: String(e.message || e) };
     }
   }
+  await mark('done');
   out.ms = Date.now() - t0;
   return { ok: true, ...out };
 }
@@ -103,17 +116,22 @@ export default async function handler(req, res) {
     return res.status(200).json({ ok: true, status: await revisionsStatus() });
   }
   if (req.query.do === 'system-health') {
-    return res.status(200).json(await systemHealth());
+    const h = await systemHealth();
+    try {
+      const t = await store.get('auto:trace');
+      h.autoTrace = t ? (typeof t === 'string' ? JSON.parse(t) : t) : null;
+    } catch { /* optional */ }
+    return res.status(200).json(h);
   }
   // GitHub throttles scheduled workflows hard (a "every 10 min" job actually
   // ran every 4-6 hours), so the automation can't depend on one scheduler.
   // This lets anything that's alive — the dashboard open in a browser, an
   // external uptime pinger — nudge it. No secret needed: it can only run the
   // same per-site-paced, budget-capped tick, and a KV lock caps it at one run
-  // per 20 minutes no matter who calls or how often.
+  // per 8 minutes no matter who calls or how often.
   if (req.query.do === 'auto-poke') {
     const last = Number(await store.get('auto:pokeAt').catch(() => 0)) || 0;
-    if (Date.now() - last < 20 * 60000) return res.status(200).json({ ok: true, skipped: 'ran recently' });
+    if (Date.now() - last < 8 * 60000) return res.status(200).json({ ok: true, skipped: 'ran recently' });
     await store.set('auto:pokeAt', String(Date.now()), { ex: 3600 }).catch(() => {});
     return res.status(200).json(await runAutoTick());
   }
