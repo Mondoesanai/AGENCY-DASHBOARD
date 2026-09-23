@@ -18,3 +18,12 @@ jobs:
           curl -sS -X POST "https://agency-dashboard-omega-red.vercel.app/api/admin?do=revisions-check&secret=${{ secrets.CRON_SECRET }}" \
             -o response.json -w "\nHTTP %{http_code}\n"
           cat response.json
+
+      # This workflow is the one GitHub is actually proven to run here, so it
+      # also drives the SEO automation tick. (seo-automation.yml is a second,
+      # independent trigger; the dashboard's own poke is a third.)
+      - name: Run one SEO automation tick
+        run: |
+          curl -sS -m 65 -X POST "https://agency-dashboard-omega-red.vercel.app/api/admin?do=auto-tick&secret=${{ secrets.CRON_SECRET }}" \
+            -o tick.json -w "\nHTTP %{http_code}\n" || true
+          cat tick.json
