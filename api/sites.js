@@ -89,6 +89,7 @@ export default async function handler(req, res) {
         source: site.source,
         repo: site.repo || '',
         seoAgent: site.seoAgent !== false,
+        blog: site.blog !== false,
         agentBudget: site.agentBudget || 18,
         agentKeywords: site.agentKeywords || '',
         agentRanks: ranks || null,

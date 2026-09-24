@@ -4,6 +4,7 @@
 // env vars the lib modules read at load time.
 process.env.ANTHROPIC_API_KEY = 'test-key';
 process.env.GITHUB_TOKEN = 'test-token';
+process.env.AGENT_BLOG = 'off'; // blog tests switch it on
 process.env.RESEND_API_KEY = 're_test';
 process.env.REPORT_FROM = 'reports@acme-agency.test';
 process.env.OWNER_EMAIL = 'owner@example.test';

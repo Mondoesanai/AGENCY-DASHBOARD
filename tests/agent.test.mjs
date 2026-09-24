@@ -314,4 +314,72 @@ await runAgentCycle(foundSite, { manual: false });
 const taskPart = foundPrompt.split('YOUR TASK THIS CYCLE')[1] || '';
 check('the first task is the sitemap (foundation), not the alt-text to-do', /sitemap\.xml/.test(taskPart) && !/alt text/.test(taskPart), taskPart.slice(0, 160));
 
+
+section('S16  WEEKLY BLOG: sets up a blog once, then one real post a week, on top of the daily work');
+process.env.AGENT_BLOG = 'on';
+const BHOME = '<!doctype html><html><head><meta charset="utf-8"><title>Blog Co</title><link rel="stylesheet" href="/css/site.css"></head><body><nav>NAV-B</nav><h1>Blog Co Detailing</h1><p>Mobile car detailing in Corinth, TX. Call 555-0100.</p><footer><a href="/contact.html">Contact</a> FOOT-B</footer></body></html>';
+addRepo('acme/blog', { 'index.html': BHOME, 'sitemap.xml': '<?xml version="1.0"?><urlset>\n<url><loc>https://blog.test/</loc></url>\n</urlset>', 'robots.txt': 'x', 'llms.txt': 'x', 'css/site.css': 'body{}' });
+W.pages['https://blog.test'] = '<html><head><script type="application/ld+json">{"@type":"LocalBusiness"}</script></head></html>';
+await saveSiteConfig('blog', { url: 'https://blog.test', name: 'Blog Co', repo: 'acme/blog', email: 'b@blog.test' });
+const blogSite = (await listSites()).find((s) => s.slug === 'blog');
+await store.set('conv:tagged:blog', '1');
+await store.set('agent:keywords:blog', JSON.stringify(['mobile detailing corinth']));
+await store.set('agent:ranks:blog', JSON.stringify({ at: Date.now(), depth: 100, results: [{ keyword: 'mobile detailing corinth', rank: null, paa: ['How often should you detail your car?'], related: [] }] }));
+await store.set('agent:playbook:blog', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
+const resetB = () => Promise.all([store.set('agent:lastCycleAt:blog', '0'), store.set('agent:lastShipAt:blog', '0')]);
+const BINDEX = '<!doctype html><html><head><title>Blog | Blog Co</title><link rel="canonical" href="https://blog.test/blog/"><link rel="stylesheet" href="/css/site.css"></head><body><nav>NAV-B</nav><h1>Blog</h1><p>Helpful advice from Blog Co Detailing in Corinth, TX.</p><div class="posts">\n<!-- NEW POSTS GO HERE -->\n</div><footer>FOOT-B</footer></body></html>' + ' '.repeat(600);
+W.anthropic.push('SUMMARY: Set up a blog section on your site\nCOMMIT: blog home\nFILE: blog/index.html\nREASON: blog home\n---BEGIN CONTENT---\n' + BINDEX + '\n---END CONTENT---\nPATCH: index.html\nREASON: link\n---FIND---\n<footer><a href="/contact.html">Contact</a>\n---REPLACE---\n<footer><a href="/blog/">Blog</a> <a href="/contact.html">Contact</a>\n---END PATCH---\nPATCH: sitemap.xml\nREASON: list\n---FIND---\n</urlset>\n---REPLACE---\n<url><loc>https://blog.test/blog/</loc></url>\n</urlset>\n---END PATCH---');
+await resetB();
+r = await runAgentCycle(blogSite, { manual: false });
+check('first cycle sets up the blog home page', r.action === 'blog-setup', JSON.stringify({ a: r.action, e: r.error }));
+check('blog/index.html is live with the post marker', W.repos['acme/blog'].files['blog/index.html']?.includes('NEW POSTS GO HERE'));
+check('homepage got a small Blog link, rest untouched', W.repos['acme/blog'].files['index.html'].includes('<a href="/blog/">Blog</a>') && W.repos['acme/blog'].files['index.html'].includes('FOOT-B'));
+check('blog home is in the sitemap', /blog\/<\/loc>/.test(W.repos['acme/blog'].files['sitemap.xml']));
+
+const POST = (extra = '') => '<!doctype html><html><head><meta charset="utf-8"><title>How Often Should You Detail Your Car? | Blog Co</title><meta name="description" content="How often to detail your car."><link rel="canonical" href="https://blog.test/blog/how-often-should-you-detail-your-car.html"><link rel="stylesheet" href="/css/site.css"></head><body><nav>NAV-B</nav><h1>How Often Should You Detail Your Car?</h1><time datetime="2026-01-01">today</time>' + Array.from({ length: 10 }, (_, i) => '<p>' + Array.from({ length: 50 }, (_, j) => 'useful' + (i * 50 + j) + '').join(' ') + '</p>').join('') + extra + '<a href="/">Home</a><footer>FOOT-B</footer></body></html>';
+const postReply = (html) => 'TOPIC: How often should you detail your car?\nSUMMARY: Published a new blog post: How often should you detail your car?\nCOMMIT: blog post\nFILE: blog/how-often-should-you-detail-your-car.html\nREASON: new post\n---BEGIN CONTENT---\n' + html + '\n---END CONTENT---\nPATCH: blog/index.html\nREASON: list\n---FIND---\n<!-- NEW POSTS GO HERE -->\n---REPLACE---\n<article><a href="/blog/how-often-should-you-detail-your-car.html">How Often Should You Detail Your Car?</a></article>\n<!-- NEW POSTS GO HERE -->\n---END PATCH---\nPATCH: sitemap.xml\nREASON: list\n---FIND---\n</urlset>\n---REPLACE---\n<url><loc>https://blog.test/blog/how-often-should-you-detail-your-car.html</loc></url>\n</urlset>\n---END PATCH---';
+
+section('S16b  a draft that INVENTS a price is rejected, nothing published');
+await resetB();
+const mergedB = W.merged.length;
+let blogPrompt = '';
+W.anthropic.push((req) => { blogPrompt = req.messages[0].content[0].text; return postReply(POST('<p>Our full detail is only $149 for everyone.</p>')); });
+r = await runAgentCycle(blogSite, { manual: false });
+check('rejected for invented numbers, no merge', r.ok === false && /numbers not found/.test(r.error || '') && W.merged.length === mergedB, JSON.stringify(r).slice(0, 220));
+check('the prompt offers real customer questions and forbids invented facts', /How often should you detail your car/.test(blogPrompt) && /NEVER invent prices/.test(blogPrompt));
+
+section('S16c  a good post ships: live page, listed on the blog, in the sitemap, on the client list, owner emailed');
+await resetB();
+await store.set('agent:blog:blog', JSON.stringify({ ...(JSON.parse(await store.get('agent:blog:blog'))), retryAt: 0 }));
+W.emails.length = 0;
+W.anthropic.push(postReply(POST()));
+r = await runAgentCycle(blogSite, { manual: false });
+check('post shipped', r.action === 'change' && !!r.blogPost, JSON.stringify({ a: r.action, e: r.error }));
+check('post page is live', !!W.repos['acme/blog'].files['blog/how-often-should-you-detail-your-car.html']);
+check('listed on the blog home, marker kept for next time', /how-often-should-you-detail-your-car\.html/.test(W.repos['acme/blog'].files['blog/index.html']) && W.repos['acme/blog'].files['blog/index.html'].includes('NEW POSTS GO HERE'));
+check('in the sitemap', /how-often-should-you-detail-your-car/.test(W.repos['acme/blog'].files['sitemap.xml']));
+check('appears on the client "what we did" list', (await readArr('changelog:blog')).some((c) => /new blog post/i.test(c.text)));
+check('owner was told about it (email, or a text when texting is on)', W.emails.some((e) => /Blog post/.test(e.subject || '')) || W.sms.some((s) => /blog post/i.test(s.body)), JSON.stringify({ e: W.emails.map((e) => e.subject), s: W.sms.map((x) => x.body).slice(-2) }));
+
+section('S16d  only ONE post a week, and the same topic is never repeated');
+await resetB();
+const before16 = JSON.stringify(Object.keys(W.repos['acme/blog'].files).sort());
+r = await runAgentCycle(blogSite, { manual: false });
+check('no second post the same week', JSON.stringify(Object.keys(W.repos['acme/blog'].files).sort()) === before16 && r.action !== 'change' || !r.blogPost, JSON.stringify({ a: r.action }));
+const stB = JSON.parse(await store.get('agent:blog:blog'));
+stB.lastAt = Date.now() - 8 * 864e5; await store.set('agent:blog:blog', JSON.stringify(stB));
+await resetB();
+let prompt2 = '';
+W.anthropic.push((req) => { prompt2 = req.messages[0].content[0].text; return 'NOOP: x'; });
+await runAgentCycle(blogSite, { manual: false });
+check('a week later it is due again and told which topic is already covered', /Topics already published[^\n]*How Often Should You Detail Your Car/.test(prompt2) && !/Search ideas[^\n]*How often should you detail your car\?/.test(prompt2), prompt2.slice(0, 300));
+
+section('S16e  blog can be turned off per site');
+await resetB();
+const stC = JSON.parse(await store.get('agent:blog:blog')); stC.lastAt = 0; stC.retryAt = 0; await store.set('agent:blog:blog', JSON.stringify(stC));
+await saveSiteConfig('blog', { blog: false });
+const blogOff = (await listSites()).find((s) => s.slug === 'blog');
+check('site.blog === false is respected', blogOff.blog === false && !(await (await import('../lib/agent.js')).blogDue(blogOff)));
+process.env.AGENT_BLOG = 'off';
+
 done();
