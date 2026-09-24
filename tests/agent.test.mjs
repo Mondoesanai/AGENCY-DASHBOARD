@@ -380,6 +380,22 @@ const stC = JSON.parse(await store.get('agent:blog:blog')); stC.lastAt = 0; stC.
 await saveSiteConfig('blog', { blog: false });
 const blogOff = (await listSites()).find((s) => s.slug === 'blog');
 check('site.blog === false is respected', blogOff.blog === false && !(await (await import('../lib/agent.js')).blogDue(blogOff)));
+
+section('S16f  manual blog-now ignores the once-a-day spacing but not the budget cap');
+process.env.AGENT_BLOG = 'on';
+await saveSiteConfig('blog', { blog: true });
+const stD = JSON.parse(await store.get('agent:blog:blog')); stD.lastAt = 0; stD.retryAt = 0; stD.unsupported = ''; await store.set('agent:blog:blog', JSON.stringify(stD));
+await store.set('agent:lastShipAt:blog', String(Date.now())); await store.set('agent:fail:blog:' + new Date().toISOString().slice(0, 10), '0');
+const blogOn2 = (await listSites()).find((s) => s.slug === 'blog');
+r = await runAgentCycle(blogOn2, { manual: true });
+check('without blogNow a just-shipped site is paced', r.skipped === true, JSON.stringify(r).slice(0, 120));
+let p3 = '';
+W.anthropic.push((req) => { p3 = req.messages[0].content[0].text; return 'NOOP: x'; });
+r = await runAgentCycle(blogOn2, { manual: true, blogNow: true });
+check('with blogNow it goes straight to the blog', /blog post/i.test(p3) && !r.skipped, JSON.stringify(r).slice(0, 300));
+await store.set('agent:spend:blog:' + MK, '99');
+r = await runAgentCycle(blogOn2, { manual: true, blogNow: true });
+check('budget cap still stops it', r.skipped === true && /budget/.test(r.reason || ''), JSON.stringify(r).slice(0, 120));
 process.env.AGENT_BLOG = 'off';
 
 done();

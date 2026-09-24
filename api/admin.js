@@ -76,7 +76,7 @@ export default async function handler(req, res) {
     case 'agent-run': {
       const site = await siteBySlug(req.query.slug);
       if (!site) return res.status(404).json({ ok: false, error: 'unknown site' });
-      const out = await runAgentCycle(site, { manual: true });
+      const out = await runAgentCycle(site, { manual: true, blogNow: req.query.blog === '1' });
       return res.status(200).json(out);
     }
     case 'todos-refresh': {
