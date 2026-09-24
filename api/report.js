@@ -598,8 +598,11 @@ export default async function handler(req, res) {
 
   const reports = [];
   for (const site of only) {
-    if (isBatch && Date.now() - t0 > HARD_LIMIT_MS) {
-      reports.push({ slug: site.slug, skipped: true, reason: 'out of time this run — press Generate all again, or it catches up in tonight’s automatic pass' });
+    // one site's report takes ~25-45s (AI + speed test), so a batch must not START a
+    // second one after ~12s — the old 55s guard let it start a second site at ~30s and
+    // the function was killed at 60s, which is why the Refresh button just failed.
+    if (isBatch && reports.length > 0 && Date.now() - t0 > 12000) {
+      reports.push({ slug: site.slug, skipped: true, reason: 'not started — the dashboard refreshes each site in its own request; this batch call only does one' });
       continue;
     }
     try {

@@ -217,4 +217,28 @@ for (let i = 0; i < 3; i++) await runAutoTick();
 const rep12 = JSON.parse(await store.get('report:two:latest'));
 check('the failed-AI report was redone and is now AI-written', rep12.aiGenerated === true && rep12.progress === 'PROGRESS NARRATIVE', JSON.stringify(rep12).slice(0, 160));
 
+
+section('P13  ranking data from before the indexed-pages check is refreshed soon, not after 3 days');
+for (const s of ['one', 'nokw']) await store.set(`agent:ranks:${s}`, JSON.stringify({ at: Date.now(), depth: 100, indexed: { count: 2 }, results: [{ keyword: 'x', rank: 9 }] }));
+for (const s of (await (await import('../lib/registry.js')).listSites()).map((x) => x.slug)) {
+  if (['one', 'nokw', 'two', 'stray-theta'].includes(s)) continue;
+  await store.set(`agent:ranks:${s}`, JSON.stringify({ at: Date.now(), depth: 100, indexed: { count: 2 }, results: [{ keyword: 'x', rank: 9 }] }));
+}
+await store.set('agent:ranks:two', JSON.stringify({ at: Date.now() - 26 * 3600000, depth: 100, results: [{ keyword: 'x', rank: 9 }] })); // no "indexed" field, 26h old
+await store.set('agent:lastCycleAt:one', String(Date.now())); await store.set('agent:lastCycleAt:two', String(Date.now()));
+const tk13 = await runAutoTick();
+const two13 = JSON.parse(await store.get('agent:ranks:two'));
+check('a 26h-old snapshot with no indexed data was refreshed (not left for 3 days)', tk13.ranks.some((x) => x.slug === 'two') && two13.indexed?.count === 3, JSON.stringify(tk13.ranks));
+
+
+section('P14  system checks name what actually blocks ranking: not indexed, free domain');
+await saveSiteConfig('vv', { url: 'https://vv-client.vercel.app', name: 'VV Client', repo: 'acme/one' });
+await store.set('agent:ranks:vv', JSON.stringify({ at: Date.now(), depth: 100, indexed: { count: 0 }, results: [{ keyword: 'x', rank: null }] }));
+await store.set('agent:ranks:one', JSON.stringify({ at: Date.now(), depth: 100, indexed: { count: 4 }, results: [{ keyword: 'x', rank: 9 }] }));
+const h14 = await systemHealth();
+check('a site Google has indexed 0 pages of is flagged with what to do', h14.issues.some((i) => i.level === 'warn' && /VV Client: Google shows none of this site's pages as indexed/.test(i.text) && /Search Console/.test(i.text)), JSON.stringify(h14.issues.map((i) => i.text.slice(0, 60))));
+check('an indexed site is NOT flagged', !h14.issues.some((i) => /One Co: Google shows none/.test(i.text)));
+check('a free vercel.app address is noted (info, not an alarm)', h14.issues.some((i) => i.level === 'info' && /VV Client.*free vercel.app address/.test(i.text)));
+check('auto-registered strays are not nagged about', !h14.issues.some((i) => /stray-theta/.test(i.text)));
+
 done();

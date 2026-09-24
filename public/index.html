@@ -61,6 +61,18 @@
   .attention{background:rgba(234,181,74,.12);border:1px solid rgba(234,181,74,.4);color:var(--warn);border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
   .attention .link{background:none;border:1px solid rgba(234,181,74,.5);color:var(--warn);border-radius:7px;padding:4px 9px;font-size:12px;white-space:nowrap;}
   .attention .link:hover{background:rgba(234,181,74,.15);}
+  .sysbtn{display:inline-flex;align-items:center;gap:7px;}
+  .sysbadge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:99px;font-size:12px;font-weight:700;line-height:1;background:rgba(119,219,170,.16);color:var(--green-br);}
+  .sysbtn.warn .sysbadge{background:#e9b949;color:#241a00;}
+  .sysbtn.crit .sysbadge{background:#e0685a;color:#2b0a06;}
+  .sysbtn.info .sysbadge{background:rgba(120,150,220,.28);color:#b9c9f0;}
+  .syspanel{position:fixed;top:64px;right:16px;width:min(440px,calc(100vw - 32px));max-height:min(70vh,560px);overflow:auto;z-index:60;background:var(--surface,#1a221e);border:1px solid var(--line);border-radius:14px;padding:12px 14px;box-shadow:0 18px 50px rgba(0,0,0,.45);}
+  .syspanel h4{margin:0 0 8px;font-size:13px;letter-spacing:.02em;}
+  .syspanel .si{display:flex;gap:10px;padding:9px 0;border-top:1px solid var(--line);font-size:13px;line-height:1.5;}
+  .syspanel .si:first-of-type{border-top:0;}
+  .syspanel .sd{flex:none;width:9px;height:9px;border-radius:50%;margin-top:6px;}
+  .syspanel .sd.crit{background:#e0685a;} .syspanel .sd.warn{background:#e9b949;} .syspanel .sd.info{background:#84aef0;}
+  .syspanel .ok{color:var(--green-br);font-size:13px;padding:6px 0;}
   .sys-health{border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:18px;}
   .sys-health.crit{background:rgba(214,84,74,.12);border:1px solid rgba(214,84,74,.4);color:#e0685a;}
   .sys-health.warn{background:rgba(234,181,74,.12);border:1px solid rgba(234,181,74,.4);color:var(--warn);}
@@ -290,6 +302,7 @@
       <div class="bt"><b>INSPIRING WEBSITES</b><span>Client portfolio &amp; monthly reports</span></div>
     </div>
     <div class="top-actions">
+      <button class="btn ghost sysbtn" id="sysBtn" type="button" aria-haspopup="true" aria-expanded="false" title="System checks"><span class="sysbadge" id="sysBadge">✓</span><span class="sysbtn-t">Checks</span></button>
       <span class="pill" id="statusPill"><span class="dot"></span><span id="statusTxt">loading</span></span>
       <span class="pill" id="monthPill">—</span>
       <button class="btn ghost" id="refreshBtn" title="Reloads instantly, then refreshes every site's report and checks the revisions inbox right now">Refresh</button>
@@ -300,6 +313,7 @@
   </header>
 
   <div id="mainView">
+  <div id="sysPanel" class="syspanel" hidden role="dialog" aria-label="System checks"></div>
   <div id="sysHealth" hidden></div>
   <div class="attention" id="attention" hidden></div>
   <div class="overview" id="overview"></div>
@@ -1028,22 +1042,48 @@ function startRevPoll(){
 /* ---------- System health — proactive self-check, no password, always visible when something's actually wrong ---------- */
 let SYS_TICK=0;
 function autoRanText(){ return SYS_TICK?`ran ${agoStr(SYS_TICK)}`:'starting…'; }
+function renderSysPanel(){
+  const panel=$('#sysPanel'); if(!panel) return;
+  const list=(SYS_LAST&&SYS_LAST.ok&&SYS_LAST.issues)||[];
+  const order={critical:0,warn:1,info:2};
+  const rows=list.slice().sort((a,b)=>(order[a.level]??3)-(order[b.level]??3)).map(i=>{
+    const cls=i.level==='critical'?'crit':i.level==='warn'?'warn':'info';
+    const lab=i.level==='critical'?'Needs attention now':i.level==='warn'?'Worth a look':'FYI';
+    return `<div class="si"><span class="sd ${cls}"></span><div><div class="label" style="font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)">${lab}</div>${esc(i.text)}</div></div>`;
+  }).join('');
+  panel.innerHTML=`<h4>System checks</h4>${rows||'<div class="ok">✓ Everything checks out.</div>'}`;
+}
+function toggleSysPanel(force){
+  const panel=$('#sysPanel'), btn=$('#sysBtn'); if(!panel) return;
+  const open=force!==undefined?force:panel.hidden;
+  if(open) renderSysPanel();
+  panel.hidden=!open;
+  btn&&btn.setAttribute('aria-expanded',String(open));
+}
+document.addEventListener('click',(e)=>{
+  if(e.target.closest('#sysBtn')){ toggleSysPanel(); return; }
+  if(!e.target.closest('#sysPanel')) toggleSysPanel(false);
+});
+document.addEventListener('keydown',(e)=>{ if(e.key==='Escape') toggleSysPanel(false); });
 async function loadSysHealth(){
   const j=await fetch(`/api/admin?do=system-health`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
   if(j&&j.tickLast) SYS_TICK=j.tickLast;
   renderSysHealth(j);
 }
+let SYS_LAST=null;
 function renderSysHealth(h){
-  const el=$('#sysHealth'); if(!el) return;
-  if(!h||!h.ok||!h.issues||!h.issues.length){ el.hidden=true; el.innerHTML=''; return; }
-  const crit=h.issues.some(i=>i.level==='critical');
-  const warn=h.issues.some(i=>i.level==='warn');
-  const cls=crit?'crit':warn?'warn':'info';
-  const icon=crit?'⛔':warn?'⚠':'ℹ';
-  el.hidden=false;
-  el.className='sys-health '+cls;
-  el.innerHTML=`<div class="sh-head">${icon} System check found ${h.issues.length} thing${h.issues.length===1?'':'s'} worth a look</div>
-    <ul>${h.issues.map(i=>`<li>${esc(i.text)}</li>`).join('')}</ul>`;
+  SYS_LAST=h;
+  const btn=$('#sysBtn'), badge=$('#sysBadge'), panel=$('#sysPanel');
+  if(btn&&badge){
+    const list=(h&&h.ok&&h.issues)||[];
+    const sev=list.some(i=>i.level==='critical')?'crit':list.some(i=>i.level==='warn')?'warn':list.length?'info':'';
+    btn.className='btn ghost sysbtn '+sev;
+    badge.textContent=list.length?String(list.length):'✓';
+    btn.title=list.length?`${list.length} system check${list.length===1?'':'s'} — click to see`:'All system checks are fine';
+    if(panel&&!panel.hidden) renderSysPanel();
+  }
+  // the old full-width banner is gone — everything lives in the header button now
+  const el0=$('#sysHealth'); if(el0){ el0.hidden=true; el0.innerHTML=''; }
 }
 setInterval(loadSysHealth,300000); // recheck every 5 min so a fixed issue clears itself without a reload
 // Nudges the SEO automation whenever this page is open. GitHub's free scheduler
@@ -2065,19 +2105,24 @@ $('#refreshBtn').addEventListener('click',async()=>{
   // also checks the revisions inbox right now — a manual backstop for GitHub
   // Actions' ~10-min cron, which can run late (or, for a brand-new workflow,
   // take a while to start firing at all).
-  const [j,rev]=await Promise.all([
-    fetch(`/api/report?secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false})),
+  // One request PER SITE, all in parallel. A single request for every site had to
+  // write every report one after another inside a 60-second limit, so it was killed
+  // partway and the button just reported a failure.
+  const sites=(STATE&&STATE.sites)||[];
+  const [results,rev]=await Promise.all([
+    Promise.all(sites.map(s=>fetch(`/api/report?slug=${encodeURIComponent(s.slug)}&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).then(j=>({slug:s.slug,ok:!!(j&&j.ok)})).catch(()=>({slug:s.slug,ok:false})))),
     fetch(`/api/admin?do=revisions-check&secret=${encodeURIComponent(k)}`,{method:'POST'}).then(r=>r.json()).catch(()=>({ok:false})),
   ]);
   b.disabled=false; b.textContent='Refresh';
-  if(j.ok){
-    const skipped=(j.reports||[]).filter(r=>r.skipped).length;
-    const revNote=rev&&rev.ok&&rev.tickets?` — ${rev.tickets} new revision${rev.tickets===1?'':'s'} found`:'';
-    toast((skipped?`Refreshed ${j.generated-skipped} of ${j.generated} sites — the rest catch up automatically`:`Refreshed all ${j.generated} sites with today's numbers`)+revNote);
-    await load();
-    await loadRevWidget();
-    await loadSysHealth();
-  } else toast(j.error||'Could not refresh reports','err');
+  const okN=results.filter(r=>r.ok).length;
+  const revNote=rev&&rev.ok&&rev.tickets?` — ${rev.tickets} new revision${rev.tickets===1?'':'s'} found`:'';
+  if(!sites.length){ toast('No sites to refresh'); }
+  else if(okN===sites.length){ toast(`Refreshed all ${okN} site report${okN===1?'':'s'} with today's numbers`+revNote); }
+  else if(okN>0){ toast(`Refreshed ${okN} of ${sites.length} reports — the rest catch up automatically`+revNote); }
+  else { toast('Could not refresh reports — check the password','err'); }
+  await load();
+  await loadRevWidget();
+  await loadSysHealth();
 });
 
 /* ---------- bulk select + remove ---------- */

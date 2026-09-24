@@ -299,4 +299,19 @@ check('a site that shipped 3 hours ago stays paced (steady drip, not a burst)', 
 await store.set('agent:lastShipAt:idle', String(Date.now() - 49 * 3600000));
 check('...and is free again after 2 days', (await agentStatus(idle)).eligible === true);
 
+
+section('S15  foundation first: a site with NO sitemap gets it before page-speed to-dos');
+addRepo('acme/found', { 'index.html': '<html><head><title>F</title><script type="application/ld+json">{"@type":"LocalBusiness"}</script></head><body>f</body></html>' });
+W.pages['https://found.test'] = '<html><head><script type="application/ld+json">{"@type":"LocalBusiness"}</script></head></html>';
+await saveSiteConfig('found', { url: 'https://found.test', name: 'Found Co', repo: 'acme/found', email: 'f@found.test' });
+const foundSite = (await listSites()).find((s) => s.slug === 'found');
+await store.set('conv:tagged:found', '1');
+await store.set('agent:keywords:found', JSON.stringify(['a b']));
+await store.set('todos:found', JSON.stringify({ generatedAt: Date.now(), items: [{ id: 'todo1', title: 'Add descriptive alt text to your gallery images', detail: 'x', category: 'SEO', source: 'ai' }] }));
+let foundPrompt = '';
+W.anthropic.push((req) => { foundPrompt = req.messages[0].content[0].text; return 'NOOP: x'; });
+await runAgentCycle(foundSite, { manual: false });
+const taskPart = foundPrompt.split('YOUR TASK THIS CYCLE')[1] || '';
+check('the first task is the sitemap (foundation), not the alt-text to-do', /sitemap\.xml/.test(taskPart) && !/alt text/.test(taskPart), taskPart.slice(0, 160));
+
 done();
