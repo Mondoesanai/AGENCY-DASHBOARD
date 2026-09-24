@@ -327,7 +327,7 @@ await store.set('agent:keywords:blog', JSON.stringify(['mobile detailing corinth
 await store.set('agent:ranks:blog', JSON.stringify({ at: Date.now(), depth: 100, results: [{ keyword: 'mobile detailing corinth', rank: null, paa: ['How often should you detail your car?'], related: [] }] }));
 await store.set('agent:playbook:blog', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
 const resetB = () => Promise.all([store.set('agent:lastCycleAt:blog', '0'), store.set('agent:lastShipAt:blog', '0')]);
-const BINDEX = '<!doctype html><html><head><title>Blog | Blog Co</title><link rel="canonical" href="https://blog.test/blog/"><link rel="stylesheet" href="/css/site.css"></head><body><nav>NAV-B</nav><h1>Blog</h1><p>Helpful advice from Blog Co Detailing in Corinth, TX.</p><div class="posts">\n<!-- NEW POSTS GO HERE -->\n</div><footer>FOOT-B</footer></body></html>' + ' '.repeat(600);
+const BINDEX = '<!doctype html><html><head><title>Blog | Blog Co</title><link rel="canonical" href="https://blog.test/blog/"><link rel="stylesheet" href="/css/site.css"></head><body><nav>NAV-B</nav><h1>Blog</h1><p>Helpful advice from Blog Co Detailing in Corinth, TX.</p><!-- BLOG-MAIN-START --><main><h1>Blog</h1><p>Helpful advice from Blog Co Detailing in Corinth, TX.</p><div class="posts">\n<!-- NEW POSTS GO HERE -->\n</div><!-- CARD-TEMPLATE: <article class="card"><a href="{{URL}}">{{TITLE}}</a><p>{{TEASER}}</p><time>{{DATE}}</time></article> --><!-- POST-SHELL: <main class="wrap"><article class="post">{{CONTENT}}</article></main> --></main><!-- BLOG-MAIN-END --><footer>FOOT-B</footer></body></html>' + ' '.repeat(600);
 W.anthropic.push('SUMMARY: Set up a blog section on your site\nCOMMIT: blog home\nFILE: blog/index.html\nREASON: blog home\n---BEGIN CONTENT---\n' + BINDEX + '\n---END CONTENT---\nPATCH: index.html\nREASON: link\n---FIND---\n<footer><a href="/contact.html">Contact</a>\n---REPLACE---\n<footer><a href="/blog/">Blog</a> <a href="/contact.html">Contact</a>\n---END PATCH---\nPATCH: sitemap.xml\nREASON: list\n---FIND---\n</urlset>\n---REPLACE---\n<url><loc>https://blog.test/blog/</loc></url>\n</urlset>\n---END PATCH---');
 await resetB();
 r = await runAgentCycle(blogSite, { manual: false });
@@ -336,8 +336,8 @@ check('blog/index.html is live with the post marker', W.repos['acme/blog'].files
 check('homepage got a small Blog link, rest untouched', W.repos['acme/blog'].files['index.html'].includes('<a href="/blog/">Blog</a>') && W.repos['acme/blog'].files['index.html'].includes('FOOT-B'));
 check('blog home is in the sitemap', /blog\/<\/loc>/.test(W.repos['acme/blog'].files['sitemap.xml']));
 
-const POST = (extra = '') => '<!doctype html><html><head><meta charset="utf-8"><title>How Often Should You Detail Your Car? | Blog Co</title><meta name="description" content="How often to detail your car."><link rel="canonical" href="https://blog.test/blog/how-often-should-you-detail-your-car.html"><link rel="stylesheet" href="/css/site.css"></head><body><nav>NAV-B</nav><h1>How Often Should You Detail Your Car?</h1><time datetime="2026-01-01">today</time>' + Array.from({ length: 10 }, (_, i) => '<p>' + Array.from({ length: 50 }, (_, j) => 'useful' + (i * 50 + j) + '').join(' ') + '</p>').join('') + extra + '<a href="/">Home</a><footer>FOOT-B</footer></body></html>';
-const postReply = (html) => 'TOPIC: How often should you detail your car?\nSUMMARY: Published a new blog post: How often should you detail your car?\nCOMMIT: blog post\nFILE: blog/how-often-should-you-detail-your-car.html\nREASON: new post\n---BEGIN CONTENT---\n' + html + '\n---END CONTENT---\nPATCH: blog/index.html\nREASON: list\n---FIND---\n<!-- NEW POSTS GO HERE -->\n---REPLACE---\n<article><a href="/blog/how-often-should-you-detail-your-car.html">How Often Should You Detail Your Car?</a></article>\n<!-- NEW POSTS GO HERE -->\n---END PATCH---\nPATCH: sitemap.xml\nREASON: list\n---FIND---\n</urlset>\n---REPLACE---\n<url><loc>https://blog.test/blog/how-often-should-you-detail-your-car.html</loc></url>\n</urlset>\n---END PATCH---';
+const POST = (extra = '') => Array.from({ length: 10 }, (_, i) => '<p>' + Array.from({ length: 50 }, (_, j) => 'useful' + (i * 50 + j)).join(' ') + '</p>').join('') + extra + '<p><a href="/contact.html">Contact us</a></p>';
+const postReply = (html) => 'TOPIC: How often should you detail your car?\nSUMMARY: Published a new blog post: How often should you detail your car?\nCOMMIT: blog post\nSLUG: how-often-should-you-detail-your-car\nTITLE: How Often Should You Detail Your Car?\nDESCRIPTION: How often to detail your car.\nTEASER: A simple schedule for keeping your car clean.\n---BEGIN CONTENT---\n' + html + '\n---END CONTENT---';
 
 section('S16b  a draft that INVENTS a price is rejected, nothing published');
 await resetB();
@@ -355,7 +355,11 @@ W.emails.length = 0;
 W.anthropic.push(postReply(POST()));
 r = await runAgentCycle(blogSite, { manual: false });
 check('post shipped', r.action === 'change' && !!r.blogPost, JSON.stringify({ a: r.action, e: r.error }));
-check('post page is live', !!W.repos['acme/blog'].files['blog/how-often-should-you-detail-your-car.html']);
+const livePost = W.repos['acme/blog'].files['blog/how-often-should-you-detail-your-car.html'] || '';
+check('post page is live', !!livePost);
+check('post reuses the site shell (nav/footer/wrapper) copied in code', /NAV-B/.test(livePost) && /FOOT-B/.test(livePost) && /<article class="post">/.test(livePost) && !/CARD-TEMPLATE|POST-SHELL|NEW POSTS GO HERE/.test(livePost));
+check('post has its own title, canonical and Article schema', /<title>How Often Should You Detail Your Car\? \| Blog Co<\/title>/.test(livePost) && /rel="canonical" href="https:\/\/blog\.test\/blog\/how-often/.test(livePost) && /"@type":"Article"/.test(livePost));
+check('blog list got a card built from the site\'s own card template', /<article class="card"><a href="\/blog\/how-often-should-you-detail-your-car\.html">How Often/.test(W.repos['acme/blog'].files['blog/index.html']));
 check('listed on the blog home, marker kept for next time', /how-often-should-you-detail-your-car\.html/.test(W.repos['acme/blog'].files['blog/index.html']) && W.repos['acme/blog'].files['blog/index.html'].includes('NEW POSTS GO HERE'));
 check('in the sitemap', /how-often-should-you-detail-your-car/.test(W.repos['acme/blog'].files['sitemap.xml']));
 check('appears on the client "what we did" list', (await readArr('changelog:blog')).some((c) => /new blog post/i.test(c.text)));
@@ -373,6 +377,25 @@ let prompt2 = '';
 W.anthropic.push((req) => { prompt2 = req.messages[0].content[0].text; return 'NOOP: x'; });
 await runAgentCycle(blogSite, { manual: false });
 check('a week later it is due again and told which topic is already covered', /Topics already published[^\n]*How Often Should You Detail Your Car/.test(prompt2) && !/Search ideas[^\n]*How often should you detail your car\?/.test(prompt2), prompt2.slice(0, 300));
+
+section('S16g  a blog home made BEFORE the shell existed still gets posts (full-page path)');
+addRepo('acme/oldblog', { 'index.html': BHOME, 'sitemap.xml': '<?xml version="1.0"?><urlset>\n</urlset>', 'robots.txt': 'x', 'llms.txt': 'x', 'css/site.css': 'body{}', 'blog/index.html': '<html><head><title>Blog</title></head><body><h1>Blog</h1><div>\n<!-- NEW POSTS GO HERE -->\n</div>' + ' '.repeat(700) + '</body></html>' });
+W.pages['https://old.test'] = '<html><head><script type="application/ld+json">{"@type":"LocalBusiness"}</script></head></html>';
+await saveSiteConfig('oldblog', { url: 'https://blog.test', name: 'Old Blog Co', repo: 'acme/oldblog', email: 'o@old.test' });
+const oldSite = (await listSites()).find((s) => s.slug === 'oldblog');
+await store.set('conv:tagged:oldblog', '1');
+await store.set('agent:keywords:oldblog', JSON.stringify(['a b']));
+await store.set('agent:playbook:oldblog', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
+const POSTL = (extra = '') => '<!doctype html><html><head><meta charset="utf-8"><title>How Often Should You Detail Your Car? | Blog Co</title><meta name="description" content="How often to detail your car."><link rel="canonical" href="https://blog.test/blog/how-often-should-you-detail-your-car.html"><link rel="stylesheet" href="/css/site.css"></head><body><nav>NAV-B</nav><h1>How Often Should You Detail Your Car?</h1><time datetime="2026-01-01">today</time>' + Array.from({ length: 10 }, (_, i) => '<p>' + Array.from({ length: 50 }, (_, j) => 'useful' + (i * 50 + j) + '').join(' ') + '</p>').join('') + extra + '<a href="/">Home</a><footer>FOOT-B</footer></body></html>';
+const postReplyL = (html) => 'TOPIC: How often should you detail your car?\nSUMMARY: Published a new blog post: How often should you detail your car?\nCOMMIT: blog post\nFILE: blog/how-often-should-you-detail-your-car.html\nREASON: new post\n---BEGIN CONTENT---\n' + html + '\n---END CONTENT---\nPATCH: blog/index.html\nREASON: list\n---FIND---\n<!-- NEW POSTS GO HERE -->\n---REPLACE---\n<article><a href="/blog/how-often-should-you-detail-your-car.html">How Often Should You Detail Your Car?</a></article>\n<!-- NEW POSTS GO HERE -->\n---END PATCH---\nPATCH: sitemap.xml\nREASON: list\n---FIND---\n</urlset>\n---REPLACE---\n<url><loc>https://blog.test/blog/how-often-should-you-detail-your-car.html</loc></url>\n</urlset>\n---END PATCH---';
+
+
+W.anthropic.push(postReplyL(POSTL()));
+await store.set('agent:lastCycleAt:oldblog', '0'); await store.set('agent:lastShipAt:oldblog', '0');
+process.env.AGENT_BLOG = 'on';
+r = await runAgentCycle(oldSite, { manual: false });
+check('legacy blog home: post still ships via the full-page path', r.action === 'change' && !!W.repos['acme/oldblog'].files['blog/how-often-should-you-detail-your-car.html'], JSON.stringify({ a: r.action, e: r.error }));
+process.env.AGENT_BLOG = 'off';
 
 section('S16e  blog can be turned off per site');
 await resetB();

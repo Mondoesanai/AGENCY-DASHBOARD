@@ -8,7 +8,7 @@ import { reportToken } from '../lib/token.js';
 import { store } from '../lib/store.js';
 import { todosState } from '../lib/todos.js';
 import { summarizeRanks, readRankHistory, projectTimeline } from '../lib/ranks.js';
-import { agentStatus } from '../lib/agent.js';
+import { agentStatus, blogSummary } from '../lib/agent.js';
 
 async function readRanks(slug) {
   const raw = await store.get(`agent:ranks:${slug}`).catch(() => null);
@@ -108,6 +108,7 @@ export default async function handler(req, res) {
               recent: (agent.lastLog || []).slice(0, 5).map((e) => ({ at: e.at, action: e.action, detail: String(e.detail || '').slice(0, 140), prUrl: e.prUrl || null })),
             }
           : null,
+        blogState: await blogSummary(site.slug).catch(() => null),
         aiTodos: todos?.current?.items || null,
         aiTodosGeneratedAt: todos?.current?.generatedAt || null,
         aiTodosNextRefresh: todos?.nextRefresh || 0,
