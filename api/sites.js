@@ -173,6 +173,9 @@ export default async function handler(req, res) {
       return v.length ? Math.round((v.reduce((a, b) => a + b, 0) / v.length) * 10) / 10 : null;
     })(),
     rankedSites: rows.filter((r) => r.rankSummary?.avgRank != null).length,
+    // total keywords found in Google's top 100 across every tracked site, out of all tracked
+    sumFound: rows.reduce((t, r) => t + (r.rankSummary?.found || 0), 0),
+    sumTracked: rows.reduce((t, r) => t + (r.rankSummary?.tracked || 0), 0),
     // no site has a real position yet — fall back to the average "field
     // size" so the tile shows a real, shrinking number instead of a blank
     // dash for however many months it takes a brand-new site to crack the

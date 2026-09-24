@@ -202,10 +202,11 @@ globalThis.fetch = async (input, init = {}) => {
   if (typeof bodyRaw === 'string') { try { body = JSON.parse(bodyRaw); } catch { body = bodyRaw; } }
   if (url.startsWith('https://api.github.com')) return github(url, method, body);
   if (url.startsWith('https://api.anthropic.com')) {
-    if (W.delayMs) {
+    const dly = W.delayFor ? W.delayFor(body) : W.delayMs;
+    if (dly) {
       // like a real network call: an aborted request (client timeout) rejects
       await new Promise((resolve, reject) => {
-        const timer = setTimeout(resolve, W.delayMs);
+        const timer = setTimeout(resolve, dly);
         init.signal?.addEventListener('abort', () => {
           clearTimeout(timer);
           reject(Object.assign(new Error('The operation was aborted'), { name: 'AbortError' }));

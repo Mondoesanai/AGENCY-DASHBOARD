@@ -136,16 +136,37 @@ check('the report records that the AI step failed instead of hiding it', !!slowR
 W.delayMs = 0;
 delete process.env.REPORT_MODEL_TIMEOUT_MS;
 
-section('R9  the report is written by two parallel smaller calls');
-const partCalls = W.anthropicCalls.filter((c) => /PART A of 2/.test(String(c.system)));
-const partB = W.anthropicCalls.filter((c) => /PART B of 2/.test(String(c.system)));
-check('every report used a part-A and a part-B call', partCalls.length > 0 && partCalls.length === partB.length, partCalls.length + '/' + partB.length);
-check('each call is capped well below the old 8000 tokens', W.anthropicCalls.filter((c) => /account manager/.test(String(c.system))).every((c) => c.max_tokens <= 3500));
+section('R9  the report is written by three small parallel calls');
+const partA = W.anthropicCalls.filter((c) => /PART A of 3/.test(String(c.system)));
+const partB = W.anthropicCalls.filter((c) => /PART B of 3/.test(String(c.system)));
+const partC = W.anthropicCalls.filter((c) => /PART C of 3/.test(String(c.system)));
+check('every report was written as three small parallel parts (A, B, C)', partA.length > 0 && partA.length === partB.length && partB.length === partC.length, partA.length + '/' + partB.length + '/' + partC.length);
+check('each call is capped far below the old 8000 tokens', W.anthropicCalls.filter((c) => /account manager/.test(String(c.system))).every((c) => c.max_tokens <= 2200));
 
 
 section('R10  the report never promises work the system will not do (image compression, colours, layout)');
 const sysText = String(callB.system);
 check('the writing prompt forbids promising image/colour/layout work', /NEVER promise image compression or resizing, colour \/ contrast \/ font \/ layout changes/.test(sysText));
 check('...and lists what it may promise instead', /search titles and descriptions, structured data, sitemap/.test(sysText));
+
+
+section('R11  a slow first attempt is retried once on the fast model, so the AI report still succeeds');
+W.delayMs = 0;
+let slowFirst = true;
+const origRouter = W.router;
+W.router = (req, flat) => origRouter(req, flat);
+const callsBefore11 = W.anthropicCalls.length;
+process.env.REPORT_MODEL_TIMEOUT_MS = '400';
+// first (primary-model) attempts are slow; fast-model retries answer instantly
+const realFetchDelay = { on: true };
+W.delayFor = (body) => (/haiku/.test(String(body?.model)) ? 0 : 900);
+await mk('retrying', { billingDay: 15, reportEvery: 'monthly' });
+setNow('2026-09-15T16:00:00Z');
+await runCron();
+const retryRep = JSON.parse(await store.get('report:retrying:latest'));
+check('report is AI-written (not the rules fallback) even though the primary model was slow', retryRep.aiGenerated === true && !retryRep.aiError, JSON.stringify({ ai: retryRep.aiGenerated, err: retryRep.aiError }));
+check('the retries used the fast model', W.anthropicCalls.slice(callsBefore11).some((c) => /haiku/.test(String(c.model))));
+delete process.env.REPORT_MODEL_TIMEOUT_MS;
+W.delayFor = null;
 
 done();

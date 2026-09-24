@@ -207,22 +207,25 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
     rule_client_actions: actions,
     ...ctx,
   };
-  // Two smaller calls IN PARALLEL instead of one big one: generation time is
-  // dominated by output length, so this roughly halves the wall time.
+  // Three small calls IN PARALLEL: generation time is dominated by output length, and
+  // two half-report calls still hit the 36s timeout on two real sites (dashboard
+  // showed "AI polish failed — using the rules version"). Each part is ~500 tokens.
+  // If a part is slow or fails, it is retried ONCE on the fast model instead of
+  // dropping the whole report to the generic fallback.
   const parts = [
-    'PART A of 2 — return ONLY these keys: headline, summary, progress, work_done, improvements, builder_notes. Leave out client_actions and email.',
-    'PART B of 2 — return ONLY these keys: client_actions and email. Leave out everything else. The email must still contain the real ranking line and the "what we did" bullets, taken from the data.',
+    'PART A of 3 — return ONLY these keys: headline, summary, progress, improvements, builder_notes. Leave out work_done, client_actions and email.',
+    'PART B of 3 — return ONLY these keys: work_done and client_actions. Leave out everything else.',
+    'PART C of 3 — return ONLY the key: email. It must contain the real ranking line and the "what we did" bullets and the weekly plan with target numbers, all taken from the data.',
   ];
-  const one = async (part) => {
+  const env = Number(process.env.REPORT_MODEL_TIMEOUT_MS);
+  const attempt = async (mdl, ms, part) => {
     try {
-      const r = await client.messages.create({
-        model,
-        max_tokens: 3500,
-        system: system + ' ' + part,
-        messages: [{ role: 'user', content: JSON.stringify(payload) }],
-      });
-      const t = (r.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('');
-      if (!t.trim()) return { __error: 'model returned no text (stop_reason: ' + (r.stop_reason || '?') + ')' };
+      const resp = await client.messages.create(
+        { model: mdl, max_tokens: 2200, system: system + ' ' + part, messages: [{ role: 'user', content: JSON.stringify(payload) }] },
+        { timeout: ms }
+      );
+      const t = (resp.content || []).filter((x) => x.type === 'text').map((x) => x.text).join('');
+      if (!t.trim()) return { __error: 'model returned no text (stop_reason: ' + (resp.stop_reason || '?') + ')' };
       // tolerate ```json fences or a preamble — grab the outermost {...}
       let raw = t.replace(/```json|```/g, '').trim();
       const i = raw.indexOf('{');
@@ -237,9 +240,15 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
       return { __error: 'model call failed: ' + (e.status ? e.status + ' ' : '') + (e.message || e) };
     }
   };
-  const [pa, pb] = await Promise.all(parts.map(one));
-  if (pa.__error || pb.__error) return { __error: pa.__error || pb.__error };
-  return { ...pa, ...pb };
+  const one = async (part) => {
+    const first = await attempt(model, env || 24000, part);
+    if (!first.__error) return first;
+    return attempt('claude-haiku-4-5-20251001', env || 12000, part);
+  };
+  const [pa, pb, pc] = await Promise.all(parts.map(one));
+  const bad = [pa, pb, pc].find((x) => x.__error);
+  if (bad) return { __error: bad.__error };
+  return { ...pa, ...pb, ...pc };
 }
 
 async function sendEmail({ site, subject, body, cardPng, reportUrl, to }) {
@@ -318,7 +327,7 @@ async function buildForSite(site, { doSend, req, style, isBatch, period, sentKey
     // A live speed test can take 15-40s by itself, and the model call comes after
     // it inside the same 60s function — so wait for a fresh one only briefly, then
     // settle for the cached scores. fast: never wait at all (background refresh).
-    auditWithin(site.url, { fresh: !isBatch && !fast, cachedOnly: !!fast, ms: 12000 }),
+    auditWithin(site.url, { fresh: !isBatch && !fast, cachedOnly: !!fast, ms: 8000 }),
     readLog(site.slug),
   ]);
   const changelog = await withAutoShipped(site.slug, changelogRaw);

@@ -76,6 +76,16 @@ check('when everything is fresh, the keyword-less site (no repo needed) gets key
 check('...and its first rank check ran', !!(await store.get('agent:ranks:nokw')));
 W.router = (req) => (/senior technical-SEO/.test(String(req.system)) ? 'NOOP: already good' : '{}');
 
+section('P3c  an auto-registered stray hostname (not a managed client) is never spent on');
+await store.sadd('registry:slugs', 'stray-theta');
+await store.set('meta:stray-theta', JSON.stringify({ slug: 'stray-theta', url: 'https://stray-theta.vercel.app', lastSeen: Date.now() }));
+W.router = (req) => (/local SEO strategist/.test(String(req.system)) ? '{"keywords":["stray a","stray b"]}' : '{}');
+const callsStray = W.anthropicCalls.length;
+for (let i = 0; i < 3; i++) await runAutoTick();
+check('no keywords were picked for it (no model spend)', !(await store.get('agent:keywords:stray-theta')) && !W.anthropicCalls.slice(callsStray).some((c) => /stray-theta/.test(JSON.stringify(c.messages))));
+check('no report was generated for it', !(await store.get('report:stray-theta:latest')));
+W.router = (req) => (/senior technical-SEO/.test(String(req.system)) ? 'NOOP: already good' : '{}');
+
 section('P4  the tick tells the owner if the automation had been offline for hours');
 await store.set('auto:lastTick', String(Date.now() - 11 * 3600000));
 W.sms.length = 0;
@@ -196,5 +206,15 @@ check('no client email was sent by that refresh', W.emails.length === emailsBefo
 const calls11 = W.anthropicCalls.filter((c) => /account manager/.test(String(c.system))).length;
 const tk11b = await runAutoTick();
 check('it does not redo the same site again this month (it moves on to a different one)', tk11b.report?.slug !== 'one' && !!(await store.get(`report:regen:one:${MK}`)), JSON.stringify(tk11b.report));
+
+
+section('P12  a report that fell back to the generic rules text (model timeout) is regenerated');
+await store.set('report:two:latest', JSON.stringify({ reportVersion: 2, aiGenerated: false, aiError: 'model call failed: Request timed out.', progress: '' }));
+await store.set(`report:regen:two:${MK}`, '0');
+await store.set('report:regen:new-test:' + MK, '9'); // keep other sites out of the way
+const before12 = W.anthropicCalls.filter((c) => /account manager/.test(String(c.system))).length;
+for (let i = 0; i < 3; i++) await runAutoTick();
+const rep12 = JSON.parse(await store.get('report:two:latest'));
+check('the failed-AI report was redone and is now AI-written', rep12.aiGenerated === true && rep12.progress === 'PROGRESS NARRATIVE', JSON.stringify(rep12).slice(0, 160));
 
 done();

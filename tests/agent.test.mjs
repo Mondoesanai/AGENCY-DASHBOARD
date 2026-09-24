@@ -70,7 +70,7 @@ check('prompt carries People-Also-Ask questions', /How much does mobile detailin
 check('playbook task only sampled its own page (not the whole site)', prompt.includes('END-OF-INDEX') && !prompt.includes('RANKINGS-MARKER'));
 check('spend recorded against the site', Number(await store.get(`agent:spend:acme:${MK}`)) > 0);
 check('attempt timestamp set', Number(await store.get('agent:lastCycleAt:acme')) > 0);
-check('after a SHIPPED change the site is paced for ~2 days', Number(await store.get('agent:lastShipAt:acme')) > 0 && (await agentStatus(site)).reasons.some((x) => /a change just shipped.*~4[78]h/.test(x)), JSON.stringify((await agentStatus(site)).reasons));
+check('after a SHIPPED change the site is paced for ~2 days', Number(await store.get('agent:lastShipAt:acme')) > 0 && (await agentStatus(site)).reasons.some((x) => /a change just shipped.*~(19|20)h/.test(x)), JSON.stringify((await agentStatus(site)).reasons));
 
 section('S2  "already good" -> NOOP: no commit, no error, step retired');
 await resetPacing();

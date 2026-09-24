@@ -559,13 +559,13 @@ function render(data){
   $('#overview').innerHTML=[
     ['visitors','Visitors · 30d',fmt(p.visitors30),'tap for every site'],
     ['conversions','Conversions · 30d',fmt(p.conversions30),'tap for every site'],
-    ['seo','Avg Google ranking',p.avgRank!=null?`#${p.avgRank}`:(p.avgRoughField!=null?`~${fmtBig(p.avgRoughField)}`:'—'),
-      p.avgRank!=null?`tap for every site · ${p.rankedSites} tracked`:(p.avgRoughField!=null?'results Google lists for your searches — not a rank, just the field':'tracking starts when a site is added')],
+    ['seo',p.avgRank!=null?'Avg Google ranking':'Keywords in Google top 100',p.avgRank!=null?`#${p.avgRank}`:(p.sumTracked?`${p.sumFound||0} / ${p.sumTracked}`:'—'),
+      p.avgRank!=null?`tap for every site · ${p.rankedSites} tracked`:(p.sumTracked?'across all sites, rechecked every few days — tap for detail':'tracking starts when a site is added')],
     ['revisions','Pending revisions',fmt(p.pendingRevisions||0),'tap to review'],
-    ['__nextseo__','Next agent push','','tap to see what each site is doing'],
+    ['__nextseo__','Automation','','tap to see what each site is doing'],
     ['todos','Open suggestions',p.openFindings,'tap for every site'],
   ].map(([kind,k,v,d])=>kind==='__nextseo__'
-    ? `<div class="stat clickable" id="nextSeoTile"><div class="k">${k}</div><div class="v ticking" id="nextSeoVal">T‑${fmtCountdown(nextCronMs())}</div><div class="d">${d}</div></div>`
+    ? `<div class="stat clickable" id="nextSeoTile"><div class="k">${k}</div><div class="v ticking" id="nextSeoVal">${autoRanText()}</div><div class="d">${d}</div></div>`
     : `<div class="stat clickable" data-drill="${kind}"><div class="k">${k}</div><div class="v">${v}</div><div class="d">${d}</div></div>`
   ).join('');
   $('#nextSeoTile').onclick=openSeoOverview;
@@ -732,6 +732,25 @@ function closeSeoOverview(){
   $('#mainView').hidden=false;
   if(openPanels.length) renderFinPanel(); // re-show whatever was still open
 }
+// when will THIS site next get an improvement, in plain words (from the live status
+// the dashboard API already carries — no secret needed)
+function nextChangeText(s){
+  const a=s.agent;
+  if(!s.repo) return 'Needs a GitHub repo linked before it can ship changes';
+  if(s.seoAgent===false) return 'Automation is turned off for this site';
+  if(!a) return '—';
+  const r=(a.reasons||[]).join(' | ');
+  const last=(a.recent||[]).find(e=>e.action==='shipped'||e.action==='PR opened');
+  const lastTxt=last?` · last change ${agoStr(last.at)}`:'';
+  if(/budget is used/.test(r)) return 'Paused — this month\'s budget is used'+lastTxt;
+  if(/paused for today/.test(r)) return 'Paused today after failed attempts — resumes tomorrow'+lastTxt;
+  const h=r.match(/Next improvement in ~(\d+)h/);
+  if(h) return `Next improvement in about ${h[1]}h`+lastTxt;
+  const m=r.match(/next attempt in ~(\d+) min/);
+  if(m) return `Working — next attempt in about ${m[1]} min`+lastTxt;
+  if(a.eligible) return 'Ready — gets its turn on the next automation pass (every few minutes)'+lastTxt;
+  return (a.reasons&&a.reasons[0])||'—';
+}
 function renderSeoOverview(){
   const rows=STATE.sites.map(s=>{
     const linked=!!s.repo, on=s.seoAgent!==false;
@@ -745,7 +764,7 @@ function renderSeoOverview(){
     return `<button type="button" class="seo-ov-row" data-slug="${s.slug}">
       <span class="agent-dot ${status.dot}"></span>
       <span class="seo-ov-name">${esc(s.name)}</span>
-      <span class="seo-ov-mid">${linked?(kw.length?`${kw.length} keywords targeted`:'Picking keywords on next run'):status.txt}</span>
+      <span class="seo-ov-mid">${esc(nextChangeText(s))}</span>
       <span class="seo-ov-rank">${linked&&on?esc(rankTxt):''}</span>
       <span class="seo-ov-go">Details ›</span>
     </button>`;
@@ -753,7 +772,7 @@ function renderSeoOverview(){
   $('#seoOverview').innerHTML=`
     <div class="seo-ov-head">
       <h2>Agent automation — every site</h2>
-      <p class="note" style="margin:2px 0 0">General SEO work rotates through sites once a day. Next pass: <span class="seo-ov-countdown">T‑${fmtCountdown(nextCronMs())}</span> · client-requested revisions run on their own faster ~10-min check and never wait on this — tap any site for the full picture.</p>
+      <p class="note" style="margin:2px 0 0">The automation runs every few minutes while this page is open (and from GitHub when it isn't). Each site gets roughly one improvement a day when it's ready — see each row. Last automation run: <span class="seo-ov-countdown">${autoRanText()}</span>. Client revisions never wait on this.</p>
     </div>
     <div class="seo-ov-list">${rows||'<div class="note">No sites yet.</div>'}</div>
     <p class="note" style="margin-top:14px">Click the logo up top to go back.</p>
@@ -1007,8 +1026,11 @@ function startRevPoll(){
 }
 
 /* ---------- System health — proactive self-check, no password, always visible when something's actually wrong ---------- */
+let SYS_TICK=0;
+function autoRanText(){ return SYS_TICK?`ran ${agoStr(SYS_TICK)}`:'starting…'; }
 async function loadSysHealth(){
   const j=await fetch(`/api/admin?do=system-health`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+  if(j&&j.tickLast) SYS_TICK=j.tickLast;
   renderSysHealth(j);
 }
 function renderSysHealth(h){
@@ -1305,8 +1327,8 @@ function siteCard(s){
   const st=s.stats||{}, g=s.grade;
   const gl=g?g.letter:'NA';
   const rk=s.rankSummary;
-  const rankLabel = rk&&rk.avgRank!=null ? `#${rk.avgRank}` : rk&&rk.roughField!=null ? `~${fmtBig(rk.roughField)}` : (s.agentKeywords?'checking…':'—');
-  const rankSub = rk&&rk.avgRank!=null ? `${rk.inTop10}/${rk.tracked} top 10` : rk&&rk.roughField!=null ? 'results listed' : '';
+  const rankLabel = rk&&rk.avgRank!=null ? `#${rk.avgRank}` : rk&&rk.roughField!=null ? `~${fmtBig(rk.roughField)}` : rk ? 'Not yet' : (s.agentKeywords?'checking…':'—');
+  const rankSub = rk&&rk.avgRank!=null ? `${rk.inTop10}/${rk.tracked} top 10` : rk&&rk.roughField!=null ? 'results listed' : rk ? `0/${rk.tracked} in top 100` : '';
   const attn=(STATE.portfolio.attention||[]).includes(s.slug);
   const trkTag = s.hasTracker ? (s.awaitingData?'<span class="tag" style="color:var(--faint);background:var(--surface2)">collecting…</span>':'')
     : '<span class="tag" style="color:var(--warn);background:#2c2a17">no tracker</span>';
@@ -1873,7 +1895,7 @@ function wireDrawer(s,bf){
     const st=agentLastStatus; if(!st||!$('#agentDot')) return;
     clearInterval(_agentTickT);
     const dot=$('#agentDot'); dot.className='agent-dot '+(st.running?'running':st.eligible?'idle':'paused');
-    const tickSummary=()=>{ const el=$('#agentSummary'); if(el) el.textContent=`Idle — next run in T‑${fmtCountdown(nextCronMs())}`; };
+    const tickSummary=()=>{ const el=$('#agentSummary'); if(el) el.textContent='Ready — gets its turn on the next automation pass'; };
     if(st.running){
       $('#agentSummary').textContent = `Running — ${st.runningTask||'working'}${st.runningSince?` (${Math.max(1,Math.round((Date.now()-st.runningSince)/1000))}s)`:''}`;
     } else if(st.eligible){
@@ -1888,7 +1910,7 @@ function wireDrawer(s,bf){
     const last=(st.lastLog||[])[0];
     const rows=[
       ['now', st.running?(st.runningTask||'working'):'idle'],
-      ['next run', st.eligible?`T‑${fmtCountdown(nextCronMs())} (daily, budget-permitting)`:'—'],
+      ['next run', st.eligible?'on the next automation pass (every few minutes)':'—'],
       ['plan', st.eligible?(st.nextStep||'—'):(st.reasons[0]||'—')],
       ['last', last?`${new Date(last.at).toLocaleDateString()} — ${last.action}: ${last.detail||''}`:'nothing yet'],
       ['budget', `$${(st.spentThisMonth||0).toFixed(2)} / $${st.cap} this month`],
@@ -2223,7 +2245,7 @@ $('#htPrint').addEventListener('click',()=>{
 
 // ticks the "Next SEO update" overview tile and (if open) the SEO overview page
 setInterval(()=>{
-  const val='T‑'+fmtCountdown(nextCronMs());
+  const val=autoRanText();
   const t=$('#nextSeoVal'); if(t) t.textContent=val;
   $$('.seo-ov-countdown').forEach(el=>el.textContent=val);
   const revVal='T‑'+fmtCountdown(nextRevisionCheckMs());
