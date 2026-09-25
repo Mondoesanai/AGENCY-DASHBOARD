@@ -178,6 +178,7 @@ const t7 = (await readArr('revisions:all')).find((x) => x.id === clientMail);
 check('an email with a .docx attached becomes a ticket', !!t7 && t7.hasAttachment === true, JSON.stringify(t7 || r7).slice(0, 200));
 check('the attachment text was saved with the ticket', /Leadership Lab at Frisco Library/.test((await store.get('revisions:attach:' + clientMail)) || '') && /Women & AI Summit/.test((await store.get('revisions:attach:' + clientMail)) || ''));
 check('the agent prompt contains the client email body AND the events from the file', /please update the events page, list attached/.test(planPrompt7) && /Leadership Lab at Frisco Library/.test(planPrompt7) && /Sat Nov 8/.test(planPrompt7), planPrompt7.slice(0, 200));
+check('client-content rules reach the agent (complete, ordered, own descriptions, reuse markup)', /CONTENT REQUESTS/.test(planPrompt7) && /OWN description/.test(planPrompt7) && /chronological order/.test(planPrompt7) && /REUSE THE SITE'S OWN MARKUP/.test(planPrompt7));
 W.router = prevRouter;
 
 section('I7b  a spreadsheet is read too');
