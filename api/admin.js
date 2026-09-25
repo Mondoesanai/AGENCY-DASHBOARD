@@ -101,6 +101,11 @@ export default async function handler(req, res) {
       const out = await checkRevisionInbox({ rescan: { q, days: Number(req.query.days) || 14 } });
       return res.status(200).json(out);
     }
+    case 'revisions-content': {
+      // the full text the agent works from for a ticket (client email + attachment text)
+      const txt = await store.get('revisions:attach:' + String(req.query.id || '')).catch(() => null);
+      return res.status(200).json({ ok: true, content: txt || null });
+    }
     case 'revisions-check': {
       const out = await checkRevisionInbox();
       return res.status(200).json(out);
