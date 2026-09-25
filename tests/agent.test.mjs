@@ -1,7 +1,7 @@
 import { W, addRepo, check, section, done } from './world.mjs';
 import { store } from '../lib/store.js';
 import { saveSiteConfig, listSites } from '../lib/registry.js';
-import { runAgentCycle, agentStatus } from '../lib/agent.js';
+import { runAgentCycle, agentStatus, looksSpammy } from '../lib/agent.js';
 import { addRevisionTodo, todosState } from '../lib/todos.js';
 import { handleInbound } from '../lib/sms-actions.js';
 import { saveRanks } from '../lib/ranks.js';
@@ -422,5 +422,11 @@ await store.set('agent:spend:blog:' + MK, '99');
 r = await runAgentCycle(blogOn2, { manual: true, blogNow: true });
 check('budget cap still stops it', r.skipped === true && /budget/.test(r.reason || ''), JSON.stringify(r).slice(0, 120));
 process.env.AGENT_BLOG = 'off';
+
+
+section('S17  REGRESSION (live): a normal title/description rewrite with social-preview tags was rejected as "keyword stuffing"');
+const SOCIAL = '<title>Dallas Bookkeeping Services | Above Par Bookkeeping</title>\n<meta name="description" content="Monthly bookkeeping, QuickBooks support, catch-up cleanup and remote service for Dallas–Fort Worth small businesses.">\n<meta property="og:title" content="Dallas Bookkeeping Services | Above Par Bookkeeping">\n<meta property="og:description" content="Monthly bookkeeping, QuickBooks support, catch-up cleanup and remote service for Dallas–Fort Worth small businesses.">\n<meta name="twitter:title" content="Dallas Bookkeeping Services | Above Par Bookkeeping">\n<meta name="twitter:description" content="Monthly bookkeeping, QuickBooks support, catch-up cleanup and remote service for Dallas–Fort Worth small businesses.">';
+check('title + description + og + twitter tags are NOT spam', looksSpammy(SOCIAL) === false);
+check('real keyword stuffing still IS spam', looksSpammy('best bookkeeping bookkeeping bookkeeping services bookkeeping dallas bookkeeping bookkeeper bookkeeping cheap bookkeeping near me bookkeeping ' + 'we do bookkeeping and more bookkeeping for you and bookkeeping '.repeat(4)) === true);
 
 done();

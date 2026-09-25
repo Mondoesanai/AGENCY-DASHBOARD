@@ -76,6 +76,8 @@ export default async function handler(req, res) {
     case 'agent-run': {
       const site = await siteBySlug(req.query.slug);
       if (!site) return res.status(404).json({ ok: false, error: 'unknown site' });
+      // reset=1: forget today's failure count (used after a real bug is fixed, so the site isn't stuck waiting until tomorrow)
+      if (req.query.reset === '1') await store.set('agent:fail:' + site.slug + ':' + new Date().toISOString().slice(0, 10), '0', { ex: 60 * 60 * 30 }).catch(() => {});
       const out = await runAgentCycle(site, { manual: true, blogNow: req.query.blog === '1' });
       return res.status(200).json(out);
     }
