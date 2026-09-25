@@ -6,7 +6,7 @@
     "api/sites.js": { "maxDuration": 60 },
     "api/finances.js": { "maxDuration": 60 },
     "api/cron-daily.js": { "maxDuration": 60 },
-    "api/admin.js": { "maxDuration": 60 },
+    "api/admin.js": { "maxDuration": 300 },
     "api/site.js": { "maxDuration": 60 },
     "api/card.js": { "maxDuration": 30 }
   },
