@@ -95,6 +95,12 @@ export default async function handler(req, res) {
       }
       return res.status(200).json({ ok: true, state, draft: draftUpsell(site, state) });
     }
+    case 'revisions-rescan': {
+      // put wrongly-dropped mail back in the queue (default: anything with an attachment or "revision" in the subject, last 14 days) and re-read it
+      const q = req.query.q || 'has:attachment OR subject:(revision OR revisions OR update OR change)';
+      const out = await checkRevisionInbox({ rescan: { q, days: Number(req.query.days) || 14 } });
+      return res.status(200).json(out);
+    }
     case 'revisions-check': {
       const out = await checkRevisionInbox();
       return res.status(200).json(out);

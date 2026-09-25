@@ -45,7 +45,7 @@ export function addRepo(name, files) {
 export function addMail(m) {
   const id = m.id || 'm' + (W.gmail.inbox.length + 1);
   const threadId = m.threadId || 't' + id;
-  W.gmail.inbox.push({ id, threadId, from: m.from, subject: m.subject, body: m.body, snippet: m.body.slice(0, 80), labels: ['INBOX'] });
+  W.gmail.inbox.push({ id, threadId, from: m.from, subject: m.subject, body: m.body, snippet: m.body.slice(0, 80), labels: ['INBOX'], attachments: m.attachments || [] });
   W.gmail.threads[threadId] = m.threadHasSent ? ['INBOX', 'SENT'] : ['INBOX'];
   return id;
 }
@@ -157,15 +157,29 @@ function gmail(url, method, body) {
   const u = new URL(url);
   const p = u.pathname;
   if (p.endsWith('/users/me/messages') && method === 'GET') {
-    const unlabelled = W.gmail.inbox.filter((m) => !m.labels.includes('iw-processed'));
-    return json({ messages: unlabelled.map((m) => ({ id: m.id })) });
+    const wantsProcessed = /label:iw-processed/.test(u.searchParams.get('q') || '') && !/-label:iw-processed/.test(u.searchParams.get('q') || '');
+    const set = W.gmail.inbox.filter((m) => (wantsProcessed ? m.labels.includes('iw-processed') : !m.labels.includes('iw-processed')));
+    return json({ messages: set.map((m) => ({ id: m.id })) });
+  }
+  {
+    const am = p.match(/\/users\/me\/messages\/([^/]+)\/attachments\/(.+)$/);
+    if (am) {
+      const m = W.gmail.inbox.find((x) => x.id === am[1]);
+      const a = m && m.attachments[Number(am[2].split('-').pop())];
+      return a ? json({ data: b64url(a.data.toString('binary')).length ? a.data.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '') : '' }) : json({ error: { message: 'nf' } }, 404);
+    }
   }
   if (/\/users\/me\/messages\/[^/]+$/.test(p) && method === 'GET') {
     const m = W.gmail.inbox.find((x) => x.id === p.split('/').pop());
     if (!m) return json({ error: { message: 'nf' } }, 404);
     return json({
       id: m.id, threadId: m.threadId, snippet: m.snippet,
-      payload: { mimeType: 'text/plain', headers: [{ name: 'From', value: m.from }, { name: 'Subject', value: m.subject }, { name: 'Message-ID', value: `<${m.id}@mail.test>` }], body: { data: b64url(m.body) } },
+      payload: {
+        mimeType: m.attachments && m.attachments.length ? 'multipart/mixed' : 'text/plain',
+        headers: [{ name: 'From', value: m.from }, { name: 'Subject', value: m.subject }, { name: 'Message-ID', value: `<${m.id}@mail.test>` }],
+        body: m.attachments && m.attachments.length ? {} : { data: b64url(m.body) },
+        parts: m.attachments && m.attachments.length ? [{ mimeType: 'text/plain', body: { data: b64url(m.body) } }, ...m.attachments.map((a, i) => ({ filename: a.filename, mimeType: a.mimeType || 'application/octet-stream', body: { attachmentId: `att-${m.id}-${i}`, size: a.data.length } }))] : undefined,
+      },
     });
   }
   if (/\/threads\/[^/]+$/.test(p)) {
@@ -176,7 +190,8 @@ function gmail(url, method, body) {
   if (p.endsWith('/modify')) {
     const id = p.split('/').slice(-2)[0];
     const m = W.gmail.inbox.find((x) => x.id === id);
-    if (m) m.labels.push('iw-processed');
+    if (m && body && !body.addLabelIds && Array.isArray(body.removeLabelIds) && body.removeLabelIds.length) m.labels = m.labels.filter((l) => l !== 'iw-processed');
+    else if (m) m.labels.push('iw-processed');
     W.gmail.modified.push(id);
     return json({});
   }

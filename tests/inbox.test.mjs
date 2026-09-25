@@ -1,8 +1,25 @@
 import { W, addRepo, addMail, check, section, done } from './world.mjs';
+import zlib from 'node:zlib';
 import { store } from '../lib/store.js';
 import { saveSiteConfig, listSites } from '../lib/registry.js';
 import { checkRevisionInbox, revisionsStatus } from '../lib/revisions.js';
 import { handleInbound } from '../lib/sms-actions.js';
+
+
+function makeZip(entries) {
+  const crc = (buf) => { let c, crcv = 0xffffffff; for (let i = 0; i < buf.length; i++) { c = (crcv ^ buf[i]) & 0xff; for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1; crcv = (crcv >>> 8) ^ c; } return (crcv ^ 0xffffffff) >>> 0; };
+  const locals = []; const centrals = []; let offset = 0;
+  for (const [name, text] of Object.entries(entries)) {
+    const raw = Buffer.from(text, 'utf8'); const data = zlib.deflateRawSync(raw); const nm = Buffer.from(name);
+    const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(8, 8); lh.writeUInt32LE(crc(raw), 14); lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(raw.length, 22); lh.writeUInt16LE(nm.length, 26);
+    const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(8, 10); ch.writeUInt32LE(crc(raw), 16); ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(raw.length, 24); ch.writeUInt16LE(nm.length, 28); ch.writeUInt32LE(offset, 42);
+    locals.push(lh, nm, data); centrals.push(ch, nm); offset += 30 + nm.length + data.length;
+  }
+  const cd = Buffer.concat(centrals); const end = Buffer.alloc(22); end.writeUInt32LE(0x06054b50, 0); end.writeUInt16LE(Object.keys(entries).length, 8); end.writeUInt16LE(Object.keys(entries).length, 10); end.writeUInt32LE(cd.length, 12); end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...locals, cd, end]);
+}
+const DOCX = makeZip({ 'word/document.xml': '<w:document><w:body><w:p><w:r><w:t>Events 2026</w:t></w:r></w:p><w:p><w:r><w:t>Sat Oct 4 - Leadership Lab at Frisco Library, 10am</w:t></w:r></w:p><w:p><w:r><w:t>Sat Nov 8 - Women &amp; AI Summit, Dallas, 1pm</w:t></w:r></w:p></w:body></w:document>' });
+const XLSX = makeZip({ 'xl/sharedStrings.xml': '<sst><si><t>Date</t></si><si><t>Event</t></si><si><t>Sat Oct 4</t></si><si><t>Leadership Lab</t></si></sst>', 'xl/worksheets/sheet1.xml': '<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2" t="s"><v>3</v></c></row></sheetData></worksheet>' });
 
 const MK = new Date().toISOString().slice(0, 7);
 const OWNER = '+15551234567';
@@ -27,6 +44,8 @@ W.router = (req, flat) => {
     if (/MARKER_CLIENT_REQ/.test(flat)) return JSON.stringify({ isRevision: true, slug: 'acme', confident: true, summary: 'Change the hours to 9-5' });
     if (/MARKER_STRANGER_REQ/.test(flat)) return JSON.stringify({ isRevision: true, slug: 'acme', confident: true, summary: 'Add a new menu item to the Acme site' });
     if (/MARKER_THANKS/.test(flat)) return JSON.stringify({ isRevision: true, slug: 'acme', confident: true, summary: 'Website will be updated' }); // a deliberately over-eager classifier
+    if (/MARKER_EVENTS/.test(flat) && /Sat Oct 4/.test(flat)) return JSON.stringify({ isRevision: true, slug: /AGENCY OWNER/.test(flat) ? 'acme' : (verified ? verified[1] : 'acme'), confident: true, summary: 'Update the events page with the attached list' });
+    if (/MARKER_ORPHAN/.test(flat)) return JSON.stringify({ isRevision: true, slug: null, confident: true, summary: 'update the events' });
     if (/MARKER_NOMATCH/.test(flat)) return JSON.stringify({ isRevision: true, slug: null, confident: true, summary: 'change something' });
     return JSON.stringify({ isRevision: false, slug: null, confident: true, summary: '' });
   }
@@ -72,7 +91,7 @@ check('"thanks for sending the site" reply: no ticket', !byId('th'));
 check('"thanks for sending the site" reply: NO reply email', sentTo('jo@othercorp.test').length === 0);
 check('meeting bot: classifier never even called for it', !W.anthropicCalls.some((c) => /executiveassistant/.test(JSON.stringify(c.messages))));
 check('newsletter ignored', !byId('nl'));
-check('unmatched stranger mail dropped (no ticket, no reply, no ask)', !byId('nm') && sentTo('someone@nowhere.test').length === 0 && !W.sms.some((s) => /someone@nowhere/.test(s.body)));
+check('unmatched stranger request: held for the owner to assign (never silently dropped) and NO reply to them', byId('nm')?.status === 'needs attention' && !byId('nm')?.slug && sentTo('someone@nowhere.test').length === 0);
 check('every message was labelled processed (never re-read)', ['c1', 's1', 'th', 'bot', 'nl', 'nm', 'dom'].every((id) => W.gmail.inbox.find((m) => m.id === id).labels.includes('iw-processed')));
 const clientPrompt = W.anthropicCalls.find((c) => /MARKER_CLIENT_REQ/.test(JSON.stringify(c.messages)) && /owner@acme/.test(JSON.stringify(c.messages)) && /Classify/.test(String(c.system)));
 check('classifier is told a verified client is a verified client', /IS a verified client of acme \(address on file\)/.test(JSON.stringify(clientPrompt?.messages)));
@@ -145,5 +164,49 @@ section('I6  cost guard: every text is plain ASCII and short');
 check('no non-ASCII in any text sent', W.sms.every((s) => !/[^\x20-\x7E\n]/.test(s.body)));
 check('no text over 320 chars (max 2 segments)', W.sms.every((s) => s.body.length <= 320), String(Math.max(...W.sms.map((s) => s.body.length))));
 console.log('  texts sent in this whole scenario:', W.sms.length);
+
+
+section('I7  attachments: the events list in a Word file / spreadsheet is read and reaches the agent');
+process.env.OWNER_EMAIL = 'owner@example.test';
+await store.set('revisions:lastCheck', String(Math.floor(Date.now() / 1000)));
+const clientMail = addMail({ from: 'Sam <owner@acme.test>', subject: 'Please update the events', body: 'MARKER_EVENTS please update the events page, list attached.', attachments: [{ filename: 'events.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: DOCX }] });
+let planPrompt7 = '';
+const prevRouter = W.router;
+W.router = (req, flat) => { if (/senior technical-SEO/.test(String(req.system || ''))) planPrompt7 = flat; return prevRouter(req, flat); };
+let r7 = await checkRevisionInbox({ maxMs: 40000 });
+const t7 = (await readArr('revisions:all')).find((x) => x.id === clientMail);
+check('an email with a .docx attached becomes a ticket', !!t7 && t7.hasAttachment === true, JSON.stringify(t7 || r7).slice(0, 200));
+check('the attachment text was saved with the ticket', /Leadership Lab at Frisco Library/.test((await store.get('revisions:attach:' + clientMail)) || '') && /Women & AI Summit/.test((await store.get('revisions:attach:' + clientMail)) || ''));
+check('the agent prompt contains the events from the file', /Leadership Lab at Frisco Library/.test(planPrompt7) && /Sat Nov 8/.test(planPrompt7), planPrompt7.slice(0, 200));
+W.router = prevRouter;
+
+section('I7b  a spreadsheet is read too');
+const { extractAttachmentText } = await import('../lib/attachments.js');
+const xr = await extractAttachmentText([{ filename: 'events.xlsx', mimeType: '', size: XLSX.length, fetch: async () => XLSX }, { filename: 'old.doc', mimeType: '', size: 10, fetch: async () => Buffer.from('x') }]);
+check('xlsx rows come out as readable lines', /Date \| Event/.test(xr.text) && /Sat Oct 4 \| Leadership Lab/.test(xr.text), xr.text);
+check('an old .doc is reported honestly, not silently ignored', xr.notes.some((n) => /old\.doc.*old Office format/.test(n)), JSON.stringify(xr.notes));
+
+section('I8  the OWNER re-sending a client request from his personal address is trusted');
+const ownerMail = addMail({ from: 'Mondo <owner@example.test>', subject: 'website revisions', body: 'MARKER_EVENTS here are the events Isha wants on the site', attachments: [{ filename: 'events.docx', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', data: DOCX }], threadHasSent: true });
+const msgBefore8 = W.gmail.sent.length;
+await checkRevisionInbox({ maxMs: 40000 });
+const t8 = (await readArr('revisions:all')).find((x) => x.id === ownerMail);
+check('owner email (even inside a thread we replied in) is accepted and queued for the agent, not held', !!t8 && !!t8.todoId && t8.lowConfidence === false && t8.slug === 'acme', JSON.stringify({ s: t8?.status, l: t8?.lowConfidence, t: t8?.todoId }));
+check('no "first time we have seen this sender" guess email went to the owner', !W.gmail.sent.slice(msgBefore8).some((raw) => /confirm|first time|guess/i.test(raw) && /owner@example\.test/.test(raw)));
+
+section('I9  a real request that matches NO site is not silently dropped any more');
+const orphanMail = addMail({ from: 'Unknown Person <someone@newco.test>', subject: 'events', body: 'MARKER_ORPHAN please update the events', attachments: [] });
+W.sms.length = 0; W.emails.length = 0;
+await checkRevisionInbox({ maxMs: 40000 });
+const t9 = (await readArr('revisions:all')).find((x) => x.id === orphanMail);
+check('logged as a needs-attention ticket', !!t9 && t9.status === 'needs attention' && t9.slug === null, JSON.stringify(t9 || {}).slice(0, 160));
+check('owner was told to assign it, nothing sent to the sender', (W.sms.some((s) => /could not be matched/.test(s.body)) || W.emails.some((e) => /needs a site/i.test(e.subject || ''))) && !W.gmail.sent.some((raw) => /someone@newco\.test/.test(raw)));
+
+section('I10  rescan puts wrongly-dropped mail back in the queue');
+const lost = addMail({ from: 'Sam <owner@acme.test>', subject: 'events again', body: 'MARKER_EVENTS Sat Oct 4 events attached', attachments: [{ filename: 'events.docx', mimeType: '', data: DOCX }] });
+// simulate the old behaviour: it was labelled processed without a ticket
+W.gmail.inbox.find((m) => m.id === lost).labels.push('iw-processed');
+const rs = await checkRevisionInbox({ maxMs: 40000, rescan: { q: 'has:attachment', days: 14 } });
+check('the dropped message was re-queued and now has a ticket', rs.requeued >= 1 && (await readArr('revisions:all')).some((x) => x.id === lost), JSON.stringify({ rq: rs.requeued }));
 
 done();
