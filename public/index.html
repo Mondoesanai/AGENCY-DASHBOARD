@@ -935,7 +935,15 @@ function revisionsHTML(st){
   return `
     <p class="note" style="margin:0 0 4px">${st.configured?`Watching Info@ · last checked ${st.lastCheck?agoStr(st.lastCheck*1000):'never yet'} · checks automatically, next check in <b class="rev-next-ct">T‑${fmtCountdown(nextRevisionCheckMs())}</b>`:'<span style="color:var(--warn)">Google not connected — add GOOGLE_CLIENT_ID/SECRET/REFRESH_TOKEN in Vercel.</span>'}</p>
     ${checkStale?`<p class="note" style="margin:0 0 10px;color:var(--warn)">Running later than usual — tap "Check inbox now" below and it'll catch up instantly.</p>`:''}
-    <div class="btn-row" style="margin-bottom:12px"><button class="btn sm" id="revCheck" type="button" ${st.configured?'':'disabled'}>↻ Check inbox now</button></div>
+    <div class="btn-row" style="margin-bottom:12px"><button class="btn sm" id="revCheck" type="button" ${st.configured?'':'disabled'}>↻ Check inbox now</button><button class="btn sm ghost" id="revPasteBtn" type="button">${revPasteOpen?'✕ Cancel':'✎ Paste a revision'}</button></div>
+    ${revPasteOpen?`<div class="fin-card" style="margin:0 0 14px;padding:12px 14px;background:var(--panel-2,rgba(255,255,255,.03))">
+      <p class="note" style="margin:0 0 8px">Type what a client wants, or paste their whole email — it goes straight into the same queue as one that came in automatically.</p>
+      <div class="btn-row" style="margin-bottom:8px">
+        <select id="revPasteSite" style="flex:1"><option value="">Which site?</option>${(STATE&&STATE.sites||[]).map(s=>`<option value="${esc(s.slug)}">${esc(s.name)}</option>`).join('')}</select>
+      </div>
+      <textarea id="revPasteText" rows="5" placeholder="e.g. Debbie wants the phone number on the contact page changed to 555-0199 — or paste her whole email here" style="width:100%;resize:vertical"></textarea>
+      <div class="btn-row" style="margin-top:8px"><button class="btn sm" id="revPasteSubmit" type="button">Submit</button></div>
+    </div>`:''}
     ${open.length?open.map(t=>ticketCardHTML(t,tickets)).join('') : '<p class="note">Nothing waiting — you\'re all caught up.</p>'}
     ${doneCount?`<div class="btn-row" style="margin-top:6px"><button class="link" id="revHistory">View past revisions (${doneCount}) ›</button></div>`:''}
   `;
@@ -944,6 +952,7 @@ function revisionsHTML(st){
 /* ---------- Revisions widget — always on, no password, collapsible (not a stackable panel) ---------- */
 let revData=null;
 let revWidgetOpen=false; // always starts collapsed on a fresh page load — press Open to expand
+let revPasteOpen=false;
 async function loadRevWidget(){
   const j=await fetch(`/api/admin?do=revisions-status`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
   if(j&&j.ok) revData=j.status;
@@ -989,6 +998,19 @@ function wireRevWidget(){
     if(j.ok) toast(`Checked ${j.checked} email${j.checked===1?'':'s'} — ${j.tickets} new revision${j.tickets===1?'':'s'}`);
     else toast(j.error||'Could not check inbox','err');
     await loadRevWidget();
+  });
+  $('#revPasteBtn')?.addEventListener('click',()=>{ revPasteOpen=!revPasteOpen; renderRevWidget(); });
+  $('#revPasteSubmit')?.addEventListener('click',async(e)=>{
+    const k=needKey(); if(!k) return;
+    const slug=$('#revPasteSite')?.value;
+    const text=$('#revPasteText')?.value?.trim();
+    if(!slug){ toast('Pick which site this is for','err'); return; }
+    if(!text){ toast('Paste the request first','err'); return; }
+    e.target.disabled=true; e.target.textContent='Submitting…';
+    const j=await fetch(`/api/admin?do=revisions-submit&secret=${encodeURIComponent(k)}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slug,text})}).then(r=>r.json()).catch(()=>({ok:false,error:'network'}));
+    e.target.disabled=false; e.target.textContent='Submit';
+    if(j.ok){ toast('Queued — the agent will work it and confirm it against the live site before marking it done'); revPasteOpen=false; await loadRevWidget(); }
+    else toast(j.error||'Could not submit','err');
   });
   $$('#revWidget [data-done]').forEach(b=>b.onclick=async()=>{
     const k=needKey(); if(!k) return;

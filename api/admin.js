@@ -10,7 +10,7 @@ import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
-import { revisionsStatus, checkRevisionInbox, recheckTicket, markTicketDone, cancelTicket, assignTicketToSite, retryTicket } from '../lib/revisions.js';
+import { revisionsStatus, checkRevisionInbox, recheckTicket, submitManualRevision, markTicketDone, cancelTicket, assignTicketToSite, retryTicket } from '../lib/revisions.js';
 import { systemHealth } from '../lib/health.js';
 import { autoTagConversions } from '../lib/conversions-setup.js';
 import { markAiMonth } from '../lib/aicost.js';
@@ -101,6 +101,11 @@ export default async function handler(req, res) {
       // put wrongly-dropped mail back in the queue (default: anything with an attachment or "revision" in the subject, last 14 days) and re-read it
       const q = req.query.q || 'has:attachment OR subject:(revision OR revisions OR update OR change)';
       const out = await checkRevisionInbox({ rescan: { q, days: Number(req.query.days) || 14 } });
+      return res.status(200).json(out);
+    }
+    case 'revisions-submit': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await submitManualRevision({ slug: body.slug || req.query.slug, text: body.text || req.query.text, subject: body.subject || req.query.subject });
       return res.status(200).json(out);
     }
     case 'revisions-recheck': {

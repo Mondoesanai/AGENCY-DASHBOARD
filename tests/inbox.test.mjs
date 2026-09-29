@@ -210,4 +210,28 @@ W.gmail.inbox.find((m) => m.id === lost).labels.push('iw-processed');
 const rs = await checkRevisionInbox({ maxMs: 40000, rescan: { q: 'has:attachment', days: 14 } });
 check('the dropped message was re-queued and now has a ticket', rs.requeued >= 1 && (await readArr('revisions:all')).some((x) => x.id === lost), JSON.stringify({ rq: rs.requeued }));
 
+
+section('I11  "paste a revision" box: goes straight into the same pipeline as a real email');
+const { submitManualRevision } = await import('../lib/revisions.js');
+const { runAgentCycle } = await import('../lib/agent.js');
+let manualPrompt = '';
+W.anthropic.push((req) => { manualPrompt = req.messages[0].content[0].text; return 'MANUAL: The hours on the homepage need to say 9-5 instead of 8-6.'; });
+const long = 'Hi Mondo, ' + 'please update the homepage hours to 9 to 5 instead of 8 to 6, thanks so much for all your help with this, '.repeat(3) + 'talk soon.';
+const rSubmit = await submitManualRevision({ slug: 'acme', text: long, subject: 'hours' });
+check('a manual ticket is created and scheduled', rSubmit.ok && rSubmit.ticket.status === 'scheduled' && !!rSubmit.ticket.todoId, JSON.stringify(rSubmit).slice(0, 200));
+check('a long paste gets summarized (not the raw 250+ chars)', rSubmit.ticket.summary.length < long.length && rSubmit.ticket.summary.length > 0, rSubmit.ticket.summary);
+check('the FULL pasted text (not just the summary) is what the agent will see', /talk soon/.test((await store.get('revisions:attach:' + rSubmit.ticket.id)) || ''));
+const acmeSite = (await listSites()).find((s) => s.slug === 'acme');
+let r = await runAgentCycle(acmeSite, { manual: false });
+check('the agent actually worked this ticket next (it iss queued exactly like an email-derived one)', r.todoId === rSubmit.ticket.todoId, JSON.stringify({ t: r.todoId, w: rSubmit.ticket.todoId }));
+
+section('I11b  a short one-liner is used as-is (no pointless model call)');
+const before11b = W.anthropicCalls.length;
+const rShort = await submitManualRevision({ slug: 'acme', text: 'Change the phone number to 555-0199.' });
+check('short text needs no summarizing call', W.anthropicCalls.length === before11b && rShort.ticket.summary === 'Change the phone number to 555-0199.');
+
+section('I11c  unknown site is rejected cleanly');
+const rBad = await submitManualRevision({ slug: 'not-a-real-site', text: 'do something' });
+check('unknown slug fails with a clear error, no ticket created', rBad.ok === false && /unknown site/.test(rBad.error));
+
 done();
