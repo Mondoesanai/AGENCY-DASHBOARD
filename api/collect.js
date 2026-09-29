@@ -148,5 +148,38 @@ export default async function handler(req, res) {
   } catch {
     /* never break the client site over analytics */
   }
+
+  // A client's on-page star-rating widget can submit the actual rating/name/
+  // text here (name === "submit-review") so it's kept somewhere real, not just
+  // counted as a click. No client site did this before — the widget existed
+  // but never sent its content anywhere.
+  if (type === 'ev' && String(d.n || '') === 'submit-review' && d.rt) {
+    const rating = Math.max(1, Math.min(5, Math.round(Number(d.rt)) || 0));
+    if (rating) {
+      const review = {
+        rating,
+        name: String(d.rn || '').replace(/[<>]/g, '').trim().slice(0, 60),
+        text: String(d.rx || '').replace(/[<>]/g, '').trim().slice(0, 600),
+        path,
+        at: Date.now(),
+      };
+      try {
+        const raw = await store.get(`reviews:${slug}`);
+        const list = (() => {
+          try {
+            const a = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [];
+            return Array.isArray(a) ? a : [];
+          } catch {
+            return [];
+          }
+        })();
+        list.push(review);
+        await store.set(`reviews:${slug}`, JSON.stringify(list.slice(-200)));
+      } catch {
+        /* never break the client site over review storage */
+      }
+    }
+  }
+
   res.status(200).json({ ok: true });
 }

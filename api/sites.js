@@ -10,6 +10,20 @@ import { todosState } from '../lib/todos.js';
 import { summarizeRanks, readRankHistory, projectTimeline } from '../lib/ranks.js';
 import { agentStatus, blogSummary } from '../lib/agent.js';
 
+async function readReviews(slug) {
+  const raw = await store.get(`reviews:${slug}`).catch(() => null);
+  let list = [];
+  try {
+    const a = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : [];
+    list = Array.isArray(a) ? a : [];
+  } catch {
+    list = [];
+  }
+  const count = list.length;
+  const avg = count ? +(list.reduce((t, r) => t + (r.rating || 0), 0) / count).toFixed(1) : null;
+  return { count, avg, recent: list.slice(-10).reverse() };
+}
+
 async function readRanks(slug) {
   const raw = await store.get(`agent:ranks:${slug}`).catch(() => null);
   try {
@@ -109,6 +123,7 @@ export default async function handler(req, res) {
             }
           : null,
         blogState: await blogSummary(site.slug).catch(() => null),
+        reviews: await readReviews(site.slug).catch(() => null),
         aiTodos: todos?.current?.items || null,
         aiTodosGeneratedAt: todos?.current?.generatedAt || null,
         aiTodosNextRefresh: todos?.nextRefresh || 0,
