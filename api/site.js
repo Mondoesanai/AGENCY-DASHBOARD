@@ -5,7 +5,7 @@ import {
   saveSiteConfig, deleteSiteConfig, getSiteConfig, slugify, listSites,
   hostKey, slugForHost, rememberHost, matchExistingSite,
 } from '../lib/registry.js';
-import { fetchHomepageCandidates, patchHtml, autoTagConversions } from '../lib/conversions-setup.js';
+import { fetchHomepageCandidates, patchHtml, autoTagConversions, ensureTrackerSnippet } from '../lib/conversions-setup.js';
 import { initKeywordTracking } from '../lib/agent.js';
 import { commitChangeset } from '../lib/github.js';
 import { markAiMonth } from '../lib/aicost.js';
@@ -278,9 +278,11 @@ export default async function handler(req, res) {
       // homepage + DataForSEO), so it runs for every brand-new site.
       let convSetup = null;
       let rankSetup = null;
+      let trackerSetup = null;
       const repoNow = patch.repo || repoMatch;
       if (!before) {
         const convKey = `conv:tagged:${slug}`;
+        const trackerKey = `tracker:installed:${slug}`;
         const jobs = [];
         if (repoNow) {
           jobs.push(
@@ -297,6 +299,22 @@ export default async function handler(req, res) {
                 }
               })
           );
+          // no AI call, no shared budget — runs alongside conversion tagging so a
+          // new site starts showing real traffic without anyone pasting SNIPPET.md by hand
+          jobs.push(
+            store
+              .get(trackerKey)
+              .catch(() => null)
+              .then(async (already) => {
+                if (already) return;
+                await store.set(trackerKey, String(Date.now()), { ex: 60 * 60 * 24 * 365 }).catch(() => {});
+                try {
+                  trackerSetup = await ensureTrackerSnippet(cfg);
+                } catch (e) {
+                  trackerSetup = { ok: false, error: String(e.message || e) };
+                }
+              })
+          );
         }
         jobs.push(
           initKeywordTracking(cfg)
@@ -306,7 +324,7 @@ export default async function handler(req, res) {
         await Promise.all(jobs);
       }
 
-      return res.status(200).json({ ok: true, site: cfg, repoMatch, convSetup, rankSetup });
+      return res.status(200).json({ ok: true, site: cfg, repoMatch, convSetup, rankSetup, trackerSetup });
     }
 
     if (action === 'delete') {

@@ -24,7 +24,7 @@ W.pages['https://acme.test'] = INDEX;
 
 await saveSiteConfig('acme', { url: 'https://acme.test', name: 'Acme Detailing', repo: 'acme/site', email: 'owner@acme.test', client: 'Sam' });
 const site = (await listSites()).find((s) => s.slug === 'acme');
-await store.set('conv:tagged:acme', '1');
+await store.set('conv:tagged:acme', '1'); await store.set('tracker:installed:acme', '1');
 await store.set('agent:keywords:acme', JSON.stringify(['mobile car detailing corinth tx', 'ceramic coating denton', 'car wash near me']));
 await store.set('agent:ranks:acme', JSON.stringify({ at: Date.now() - 4 * 864e5, depth: 100, results: [
   { keyword: 'mobile car detailing corinth tx', rank: 27, topTitles: [{ rank: 1, domain: 'bigcompetitor.com', title: 'Best mobile car detailing corinth tx - BigCompetitor' }], paa: ['How much does mobile detailing cost?'], related: ['detailing near me', 'ceramic coat prices'] },
@@ -171,7 +171,7 @@ check('image/color/LCP tasks are filtered, alt-text is not', items.map((x) => RE
 section('S9  BUDGET CAP HOLDS: an over-budget site with a given-up revision must not keep shipping (live bug: $23.81 of $20, 5 commits in 40 min)');
 await saveSiteConfig('capped', { url: 'https://capped.test', name: 'Capped Co', repo: 'acme/site', email: 'c@capped.test' });
 const capped = (await listSites()).find((s) => s.slug === 'capped');
-await store.set('conv:tagged:capped', '1');
+await store.set('conv:tagged:capped', '1'); await store.set('tracker:installed:capped', '1');
 await store.set('agent:keywords:capped', JSON.stringify(['a b']));
 await store.set(`agent:spend:capped:${MK}`, '23.81');
 await addRevisionTodo('capped', { title: 'Impossible live-data change', detail: 'x', ticketId: 'TG' });
@@ -204,7 +204,7 @@ addRepo('acme/np', {
 W.pages['https://np.test'] = '<html><head><script type="application/ld+json">{"@type":"LocalBusiness"}</script></head></html>';
 await saveSiteConfig('np', { url: 'https://np.test', name: 'NP Detailing', repo: 'acme/np', email: 'np@np.test' });
 const npSite = (await listSites()).find((s) => s.slug === 'np');
-await store.set('conv:tagged:np', '1');
+await store.set('conv:tagged:np', '1'); await store.set('tracker:installed:np', '1');
 await store.set('agent:keywords:np', JSON.stringify(['ceramic coating denton tx', 'mobile detailing corinth']));
 await store.set('agent:ranks:np', JSON.stringify({ at: Date.now(), depth: 100, results: [
   { keyword: 'ceramic coating denton tx', rank: 27, topTitles: [{ rank: 1, domain: 'rival.com', title: 'Ceramic Coating in Denton TX - Rival Auto' }], paa: ['How long does ceramic coating last?'], related: ['ceramic coating cost'] },
@@ -287,7 +287,7 @@ check('a keyword that did not drop is not touched', !/other kw/.test(recPrompt.s
 section('S14  REGRESSION (live): four of six sites idle behind attempts that produced nothing');
 await saveSiteConfig('idle', { url: 'https://idle.test', name: 'Idle Co', repo: 'acme/site', email: 'i@idle.test' });
 const idle = (await listSites()).find((s) => s.slug === 'idle');
-await store.set('conv:tagged:idle', '1');
+await store.set('conv:tagged:idle', '1'); await store.set('tracker:installed:idle', '1');
 await store.set('agent:keywords:idle', JSON.stringify(['a b']));
 await store.set('agent:lastCycleAt:idle', String(Date.now() - 45 * 60000)); // a setup/failed attempt 45 minutes ago (old rule: locked out for 2 days)
 check('a site whose last attempt shipped nothing is eligible again after 30 minutes', (await agentStatus(idle)).eligible === true, JSON.stringify((await agentStatus(idle)).reasons));
@@ -305,7 +305,7 @@ addRepo('acme/found', { 'index.html': '<html><head><title>F</title><script type=
 W.pages['https://found.test'] = '<html><head><script type="application/ld+json">{"@type":"LocalBusiness"}</script></head></html>';
 await saveSiteConfig('found', { url: 'https://found.test', name: 'Found Co', repo: 'acme/found', email: 'f@found.test' });
 const foundSite = (await listSites()).find((s) => s.slug === 'found');
-await store.set('conv:tagged:found', '1');
+await store.set('conv:tagged:found', '1'); await store.set('tracker:installed:found', '1');
 await store.set('agent:keywords:found', JSON.stringify(['a b']));
 await store.set('todos:found', JSON.stringify({ generatedAt: Date.now(), items: [{ id: 'todo1', title: 'Add descriptive alt text to your gallery images', detail: 'x', category: 'SEO', source: 'ai' }] }));
 let foundPrompt = '';
@@ -322,7 +322,7 @@ addRepo('acme/blog', { 'index.html': BHOME, 'sitemap.xml': '<?xml version="1.0"?
 W.pages['https://blog.test'] = '<html><head><script type="application/ld+json">{"@type":"LocalBusiness"}</script></head></html>';
 await saveSiteConfig('blog', { url: 'https://blog.test', name: 'Blog Co', repo: 'acme/blog', email: 'b@blog.test' });
 const blogSite = (await listSites()).find((s) => s.slug === 'blog');
-await store.set('conv:tagged:blog', '1');
+await store.set('conv:tagged:blog', '1'); await store.set('tracker:installed:blog', '1');
 await store.set('agent:keywords:blog', JSON.stringify(['mobile detailing corinth']));
 await store.set('agent:ranks:blog', JSON.stringify({ at: Date.now(), depth: 100, results: [{ keyword: 'mobile detailing corinth', rank: null, paa: ['How often should you detail your car?'], related: [] }] }));
 await store.set('agent:playbook:blog', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
@@ -384,7 +384,7 @@ addRepo('acme/oldblog', { 'index.html': BHOME, 'sitemap.xml': '<?xml version="1.
 W.pages['https://old.test'] = '<html><head><script type="application/ld+json">{"@type":"LocalBusiness"}</script></head></html>';
 await saveSiteConfig('oldblog', { url: 'https://blog.test', name: 'Old Blog Co', repo: 'acme/oldblog', email: 'o@old.test' });
 const oldSite = (await listSites()).find((s) => s.slug === 'oldblog');
-await store.set('conv:tagged:oldblog', '1');
+await store.set('conv:tagged:oldblog', '1'); await store.set('tracker:installed:oldblog', '1');
 await store.set('agent:keywords:oldblog', JSON.stringify(['a b']));
 await store.set('agent:blog:oldblog', JSON.stringify({ posts: [{ topic: 'earlier', title: 'Earlier post', path: 'blog/earlier.html', at: 1 }], lastAt: 1, retryAt: 0 }));
 await store.set('agent:playbook:oldblog', JSON.stringify(['sitemap', 'robots', 'llms', 'schema:home', `kw:${MK}`]));
@@ -428,5 +428,26 @@ section('S17  REGRESSION (live): a normal title/description rewrite with social-
 const SOCIAL = '<title>Dallas Bookkeeping Services | Above Par Bookkeeping</title>\n<meta name="description" content="Monthly bookkeeping, QuickBooks support, catch-up cleanup and remote service for Dallas–Fort Worth small businesses.">\n<meta property="og:title" content="Dallas Bookkeeping Services | Above Par Bookkeeping">\n<meta property="og:description" content="Monthly bookkeeping, QuickBooks support, catch-up cleanup and remote service for Dallas–Fort Worth small businesses.">\n<meta name="twitter:title" content="Dallas Bookkeeping Services | Above Par Bookkeeping">\n<meta name="twitter:description" content="Monthly bookkeeping, QuickBooks support, catch-up cleanup and remote service for Dallas–Fort Worth small businesses.">';
 check('title + description + og + twitter tags are NOT spam', looksSpammy(SOCIAL) === false);
 check('real keyword stuffing still IS spam', looksSpammy('best bookkeeping bookkeeping bookkeeping services bookkeeping dallas bookkeeping bookkeeper bookkeeping cheap bookkeeping near me bookkeeping ' + 'we do bookkeeping and more bookkeeping for you and bookkeeping '.repeat(4)) === true);
+
+section('S18  first cycle installs the tracking snippet automatically — no manual "paste this in <head>" step');
+const TRK_HOME = '<!doctype html><html><head><title>Trk Co</title></head><body><h1>Trk</h1></body></html>';
+const TRK_ABOUT = '<!doctype html><html><head><title>About</title></head><body>About us<script defer src="https://agency-dashboard-omega-red.vercel.app/t.js"></script></body></html>'; // already has it, just not in <head>... but no </head> at all here either
+addRepo('acme/trk', { 'index.html': TRK_HOME, 'about.html': '<html><head><title>About</title></head><body>About us</body></html>', 'sitemap.xml': 'x', 'robots.txt': 'x', 'llms.txt': 'x' });
+W.pages['https://trk.test'] = TRK_HOME;
+await saveSiteConfig('trk', { url: 'https://trk.test', name: 'Trk Co', repo: 'acme/trk', email: 'trk@trk.test' });
+const trkSite = (await listSites()).find((s) => s.slug === 'trk');
+W.anthropic.push(JSON.stringify({ keywords: ['trk co repair'] }));
+r = await runAgentCycle(trkSite, { manual: false }); // first cycle: picks target keywords
+check('first cycle is the normal keyword step', r.action === 'keywords');
+await store.set('agent:lastCycleAt:trk', '0'); await store.set('agent:lastShipAt:trk', '0');
+r = await runAgentCycle(trkSite, { manual: false }); // second cycle: installs the snippet
+check('snippet gets installed on an early cycle, with no AI cost', r.action === 'tracker-setup' && r.result.ok && r.result.added === 2, JSON.stringify({ a: r.action, res: r.result }));
+check('index.html has it', /\/t\.js/.test(W.repos['acme/trk'].files['index.html']));
+check('about.html has it too', /\/t\.js/.test(W.repos['acme/trk'].files['about.html']));
+check('shows up on the client "what we did" list', (await readArr('changelog:trk')).some((c) => /Connected your site/i.test(c.text)));
+await store.set('agent:lastCycleAt:trk', '0'); await store.set('agent:lastShipAt:trk', '0'); // third cycle: moves on
+const before18 = W.merged.length;
+r = await runAgentCycle(trkSite, { manual: false });
+check('second cycle moves on (does not reinstall)', r.action !== 'tracker-setup' && W.merged.length === before18, JSON.stringify({ a: r.action }));
 
 done();
