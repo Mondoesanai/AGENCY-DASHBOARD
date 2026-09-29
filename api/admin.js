@@ -13,6 +13,7 @@ import { todosState, refreshTodos } from '../lib/todos.js';
 import { revisionsStatus, checkRevisionInbox, recheckTicket, submitManualRevision, markTicketDone, cancelTicket, assignTicketToSite, retryTicket } from '../lib/revisions.js';
 import { systemHealth } from '../lib/health.js';
 import { autoTagConversions } from '../lib/conversions-setup.js';
+import { sendClientEmail } from '../lib/winsrecap.js';
 import { markAiMonth } from '../lib/aicost.js';
 import { store } from '../lib/store.js';
 import { runAutoTick } from '../lib/tick.js';
@@ -101,6 +102,13 @@ export default async function handler(req, res) {
       // put wrongly-dropped mail back in the queue (default: anything with an attachment or "revision" in the subject, last 14 days) and re-read it
       const q = req.query.q || 'has:attachment OR subject:(revision OR revisions OR update OR change)';
       const out = await checkRevisionInbox({ rescan: { q, days: Number(req.query.days) || 14 } });
+      return res.status(200).json(out);
+    }
+    case 'email-client': {
+      const site = await siteBySlug(req.query.slug);
+      if (!site) return res.status(404).json({ ok: false, error: 'unknown site' });
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await sendClientEmail(site, { subject: body.subject || req.query.subject, body: body.body || req.query.body });
       return res.status(200).json(out);
     }
     case 'revisions-submit': {
