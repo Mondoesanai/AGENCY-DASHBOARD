@@ -74,6 +74,10 @@ addMail({ id: 's1', from: 'Random Guy <random@gmail.com>', subject: 'Update', bo
 addMail({ id: 'th', from: 'Jo <jo@othercorp.test>', subject: 'Re: your website', body: 'MARKER_THANKS Hey thank you for sending me the website, will be updated shortly', threadHasSent: true });
 addMail({ id: 'bot', from: 'Read Assistant <executiveassistant@e.read.ai>', subject: 'Meeting report', body: 'MARKER_CLIENT_REQ notes about the website' });
 addMail({ id: 'nl', from: 'News <hello@newsletter.test>', subject: 'Deals', body: 'weekly deals' });
+// REGRESSION (live): an owner-notification email (sent FROM our own REPORT_FROM
+// address, e.g. a blocked-revision alert) landed back in this same inbox and
+// was read as a real client asking for a website redesign.
+addMail({ id: 'self', from: 'Inspiring Websites <reports@acme-agency.test>', subject: 'omtservices.com: blocked', body: "MARKER_CLIENT_REQ Cannot complete website redesign task involving three separate quizzes — please review" });
 addMail({ id: 'nm', from: 'Someone <someone@nowhere.test>', subject: 'hi', body: 'MARKER_NOMATCH can you change something' });
 addMail({ id: 'dom', from: 'Sam N <sam.new@acme.test>', subject: 'more', body: 'MARKER_CLIENT_REQ another hours tweak' });
 // REGRESSION (live): a verified client replying in a thread we'd already sent a
@@ -86,7 +90,7 @@ addMail({ id: 'thx2', from: 'Sam <owner@acme.test>', subject: 'Re: hours', body:
 const r1 = await checkRevisionInbox({ maxMs: 40000 });
 const st1 = await revisionsStatus();
 const byId = (id) => st1.tickets.find((t) => t.id === id);
-check('inbox run succeeded and read all 9 mails', r1.ok && r1.checked === 9, JSON.stringify(r1));
+check('inbox run succeeded and read all 10 mails', r1.ok && r1.checked === 10, JSON.stringify(r1));
 check('client request became a ticket and was queued for the agent (already shipped + closed in the same run)', ['scheduled', 'done'].includes(byId('c1')?.status) && !!byId('c1')?.todoId, JSON.stringify(byId('c1')));
 check('client got the in-thread reply', sentTo('owner@acme.test').length >= 1);
 check('calendar hold created for the client request', W.calendar.length >= 1);
@@ -103,7 +107,9 @@ check('unmatched stranger request: held for the owner to assign (never silently 
 check('a real, specific request replying in an old thread is NOT dropped any more', byId('reply')?.status === 'scheduled' && !!byId('reply')?.todoId, JSON.stringify(byId('reply')));
 check('...and it still gets the in-thread reply', sentTo('debbie@abovepar.test').some((raw) => /Increase the price/.test(raw)));
 check('a genuine "just saying thanks" reply from a verified client in-thread is still caught (no ticket)', !byId('thx2'));
-check('every message was labelled processed (never re-read)', ['c1', 's1', 'th', 'bot', 'nl', 'nm', 'dom', 'reply', 'thx2'].every((id) => W.gmail.inbox.find((m) => m.id === id).labels.includes('iw-processed')));
+check('our own outgoing notification email (same address as REPORT_FROM) never becomes a ticket', !byId('self'));
+check('...classifier never even called for it either', !W.anthropicCalls.some((c) => /Cannot complete website redesign/.test(JSON.stringify(c.messages))));
+check('every message was labelled processed (never re-read)', ['c1', 's1', 'th', 'bot', 'nl', 'nm', 'dom', 'reply', 'thx2', 'self'].every((id) => W.gmail.inbox.find((m) => m.id === id).labels.includes('iw-processed')));
 const clientPrompt = W.anthropicCalls.find((c) => /MARKER_CLIENT_REQ/.test(JSON.stringify(c.messages)) && /owner@acme/.test(JSON.stringify(c.messages)) && /Classify/.test(String(c.system)));
 check('classifier is told a verified client is a verified client', /IS a verified client of acme \(address on file\)/.test(JSON.stringify(clientPrompt?.messages)));
 const strangerPrompt = W.anthropicCalls.find((c) => /MARKER_STRANGER_REQ/.test(JSON.stringify(c.messages)));
