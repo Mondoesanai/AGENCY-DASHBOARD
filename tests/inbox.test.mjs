@@ -44,6 +44,7 @@ W.router = (req, flat) => {
     if (/MARKER_CLIENT_REQ/.test(flat)) return JSON.stringify({ isRevision: true, slug: 'acme', confident: true, summary: 'Change the hours to 9-5' });
     if (/MARKER_STRANGER_REQ/.test(flat)) return JSON.stringify({ isRevision: true, slug: 'acme', confident: true, summary: 'Add a new menu item to the Acme site' });
     if (/MARKER_THANKS/.test(flat)) return JSON.stringify({ isRevision: true, slug: 'acme', confident: true, summary: 'Website will be updated' }); // a deliberately over-eager classifier
+    if (/MARKER_REPLY_REQUEST/.test(flat)) return JSON.stringify({ isRevision: true, slug: 'abovepar', confident: true, summary: 'Increase the price shown on the site to $297' });
     if (/MARKER_EVENTS/.test(flat) && /Sat Oct 4/.test(flat)) return JSON.stringify({ isRevision: true, slug: /AGENCY OWNER/.test(flat) ? 'acme' : (verified ? verified[1] : 'acme'), confident: true, summary: 'Update the events page with the attached list' });
     if (/MARKER_ORPHAN/.test(flat)) return JSON.stringify({ isRevision: true, slug: null, confident: true, summary: 'update the events' });
     if (/MARKER_NOMATCH/.test(flat)) return JSON.stringify({ isRevision: true, slug: null, confident: true, summary: 'change something' });
@@ -75,10 +76,17 @@ addMail({ id: 'bot', from: 'Read Assistant <executiveassistant@e.read.ai>', subj
 addMail({ id: 'nl', from: 'News <hello@newsletter.test>', subject: 'Deals', body: 'weekly deals' });
 addMail({ id: 'nm', from: 'Someone <someone@nowhere.test>', subject: 'hi', body: 'MARKER_NOMATCH can you change something' });
 addMail({ id: 'dom', from: 'Sam N <sam.new@acme.test>', subject: 'more', body: 'MARKER_CLIENT_REQ another hours tweak' });
+// REGRESSION (live): a verified client replying in a thread we'd already sent a
+// message in had every request after their first ever silently dropped — even
+// a clear, specific, dollar-amount instruction — because the old check fired on
+// thread history alone, with no look at what the reply actually said.
+addMail({ id: 'reply', from: 'Debbie <debbie@abovepar.test>', subject: 'Re: pricing', body: 'MARKER_REPLY_REQUEST Thanks for the last update! Also can you increase the price shown on the site to $297?', threadHasSent: true });
+// a real "just saying thanks" reply from a VERIFIED client must still be caught
+addMail({ id: 'thx2', from: 'Sam <owner@acme.test>', subject: 'Re: hours', body: 'MARKER_THANKS Thanks so much, appreciate it!', threadHasSent: true });
 const r1 = await checkRevisionInbox({ maxMs: 40000 });
 const st1 = await revisionsStatus();
 const byId = (id) => st1.tickets.find((t) => t.id === id);
-check('inbox run succeeded and read all 7 mails', r1.ok && r1.checked === 7, JSON.stringify(r1));
+check('inbox run succeeded and read all 9 mails', r1.ok && r1.checked === 9, JSON.stringify(r1));
 check('client request became a ticket and was queued for the agent (already shipped + closed in the same run)', ['scheduled', 'done'].includes(byId('c1')?.status) && !!byId('c1')?.todoId, JSON.stringify(byId('c1')));
 check('client got the in-thread reply', sentTo('owner@acme.test').length >= 1);
 check('calendar hold created for the client request', W.calendar.length >= 1);
@@ -92,7 +100,10 @@ check('"thanks for sending the site" reply: NO reply email', sentTo('jo@othercor
 check('meeting bot: classifier never even called for it', !W.anthropicCalls.some((c) => /executiveassistant/.test(JSON.stringify(c.messages))));
 check('newsletter ignored', !byId('nl'));
 check('unmatched stranger request: held for the owner to assign (never silently dropped) and NO reply to them', byId('nm')?.status === 'needs attention' && !byId('nm')?.slug && sentTo('someone@nowhere.test').length === 0);
-check('every message was labelled processed (never re-read)', ['c1', 's1', 'th', 'bot', 'nl', 'nm', 'dom'].every((id) => W.gmail.inbox.find((m) => m.id === id).labels.includes('iw-processed')));
+check('a real, specific request replying in an old thread is NOT dropped any more', byId('reply')?.status === 'scheduled' && !!byId('reply')?.todoId, JSON.stringify(byId('reply')));
+check('...and it still gets the in-thread reply', sentTo('debbie@abovepar.test').some((raw) => /Increase the price/.test(raw)));
+check('a genuine "just saying thanks" reply from a verified client in-thread is still caught (no ticket)', !byId('thx2'));
+check('every message was labelled processed (never re-read)', ['c1', 's1', 'th', 'bot', 'nl', 'nm', 'dom', 'reply', 'thx2'].every((id) => W.gmail.inbox.find((m) => m.id === id).labels.includes('iw-processed')));
 const clientPrompt = W.anthropicCalls.find((c) => /MARKER_CLIENT_REQ/.test(JSON.stringify(c.messages)) && /owner@acme/.test(JSON.stringify(c.messages)) && /Classify/.test(String(c.system)));
 check('classifier is told a verified client is a verified client', /IS a verified client of acme \(address on file\)/.test(JSON.stringify(clientPrompt?.messages)));
 const strangerPrompt = W.anthropicCalls.find((c) => /MARKER_STRANGER_REQ/.test(JSON.stringify(c.messages)));
@@ -219,6 +230,7 @@ W.anthropic.push((req) => { manualPrompt = req.messages[0].content[0].text; retu
 const long = 'Hi Mondo, ' + 'please update the homepage hours to 9 to 5 instead of 8 to 6, thanks so much for all your help with this, '.repeat(3) + 'talk soon.';
 const rSubmit = await submitManualRevision({ slug: 'acme', text: long, subject: 'hours' });
 check('a manual ticket is created and scheduled', rSubmit.ok && rSubmit.ticket.status === 'scheduled' && !!rSubmit.ticket.todoId, JSON.stringify(rSubmit).slice(0, 200));
+check('it is marked manual (no reply was ever attempted, and the UI must not say one failed)', rSubmit.ticket.manual === true && rSubmit.ticket.repliedAt === null);
 check('a long paste gets summarized (not the raw 250+ chars)', rSubmit.ticket.summary.length < long.length && rSubmit.ticket.summary.length > 0, rSubmit.ticket.summary);
 check('the FULL pasted text (not just the summary) is what the agent will see', /talk soon/.test((await store.get('revisions:attach:' + rSubmit.ticket.id)) || ''));
 const acmeSite = (await listSites()).find((s) => s.slug === 'acme');
