@@ -150,6 +150,20 @@ export function renderIntake(state) {
       <label>Email<input id="m_email" /></label>
       <label>Phone<input id="m_phone" /></label>
     </div>
+    <label class="acq-inline">How do you know them?
+      <select id="m_rel">
+        <option value="none">We have not met</option>
+        <option value="met_in_person">I met them in person</option>
+        <option value="same_networking_group">Same networking group</option>
+        <option value="referred">Referred to me</option>
+      </select>
+    </label>
+    <label class="acq-block">Where you met / what you talked about
+      <textarea id="m_notes" rows="3" placeholder="Chamber breakfast — wants a quote for a new site"></textarea>
+    </label>
+    <p class="note faint">Notes are stored against the contact and are what a warm follow-up draws on.
+      Saying you met someone you have not met is the one thing this will not do, so the relationship
+      above is recorded exactly as you set it.</p>
     <div class="btn-row"><button class="btn" id="acqManualSave">Add contact</button></div>
   </div>`;
 }

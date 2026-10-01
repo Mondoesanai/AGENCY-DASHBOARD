@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1065 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1105 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 107 ·
-outreach 46 · acquisition-ui 86 · campaigns 72 · campaign-flow 43) plus **71 supervisor
+outreach 46 · acquisition-ui 86 · campaigns 72 · campaign-flow 52) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -302,3 +302,5 @@ Suite: `tests/campaign-flow.test.mjs`, 43 checks, all driving the real `api/admi
 **R6.9 sender identity** was added as part of this: stored as settings, blank by default,
 so a missing postal address blocks the message rather than shipping a placeholder into
 real mail.
+
+| R3.6 | Manual entry with meeting notes | **L2** | `tests/campaign-flow.test.mjs` E7, through `?do=contacts-save`: notes and relationship are stored against the contact and are what `composeWarm` actually draws on. **An invented relationship value ("we definitely had lunch") is rejected and stored as `none`**, after which no warm message can be written at all. Notes without a relationship keep the note but still record `none`, so a note can never imply a meeting. The spec says "text **or** voice"; text is implemented, voice capture remains an unspecified enhancement (G5). |

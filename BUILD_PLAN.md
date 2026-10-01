@@ -139,7 +139,7 @@ and never display a mocked integration as connected (R4.4).
 | R3.3 | Never invent a detail; flag ambiguous characters | `[x]` no email synthesised from name + domain |
 | R3.4 | Per-field confidence; source image stored | `[x]` over-confident unparseable email downgraded to needs-review |
 | R3.5 | CSV import, column mapping, no-write preview matching commit | `[x]` — **caught a real bug**: an invalid-email row created an unreachable ghost contact, invisible to dedup, duplicated on every re-import |
-| R3.6 | Manual entry + meeting notes | `[b]` text notes built. **Voice capture = gap G5, unspecified** |
+| R3.6 | Manual entry + meeting notes | `[x]` manual-entry form with relationship + meeting notes, verified end to end through `?do=contacts-save`. The spec says "text **or** voice" and text is implemented; voice capture stays an unspecified enhancement (G5), not a gap in this requirement |
 | R3.7 | Provenance: source, date, group/event, notes, website, owner | `[x]` |
 | R3.8 | Messaging state: eligibility, SMS consent scope/source/time, suppression | `[x]` |
 | R3.9 | Dedup on normalised email, phone, domain | `[x]` — **caught a real bug**: dedup compared business names, flagging every colleague as their coworker's duplicate |
@@ -290,8 +290,8 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 57 |
-| `[b]` built, not verified | 10 |
+| `[x]` built **and** verified | 58 |
+| `[b]` built, not verified | 9 |
 | `[~]` in progress | 5 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
 | `[ ]` not started | 47 |

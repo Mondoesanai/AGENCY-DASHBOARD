@@ -148,4 +148,47 @@ check('and they never become due again', r.body.due.length === 0 && !(r.body.hel
 r = await api('campaign-add-prospects', { campaignId: camp.id, prospectIds: [ID(901)] });
 check('nor can they be re-added after opting out', r.body.enrolled === 0, JSON.stringify(r.body.refused));
 
+// ---------------------------------------------------------------------------
+section('E7  R3.6 — manual entry with meeting notes, through the API');
+const { field } = await import('../lib/contacts.js');
+const F = (v) => field(v, { confidence: 1, source: 'manual' });
+
+r = await api('contacts-save', {
+  contact: {
+    source: 'manual',
+    name: F('Angie May'),
+    businessName: F('OMT Services'),
+    email: F('angie@omtservices.test'),
+    relationship: 'met_in_person',
+    event: 'Plano chamber breakfast',
+    meetingNotes: 'Plano chamber breakfast — wants a quote for a new site',
+  },
+});
+check('a manually entered contact is saved', r.body.ok === true && !!r.body.contact, JSON.stringify(r.body).slice(0, 160));
+let saved = r.body.contact;
+check('the meeting notes are stored against the contact', /wants a quote for a new site/.test(saved.meetingNotes || ''), String(saved.meetingNotes));
+check('the relationship is stored exactly as given', saved.relationship === 'met_in_person', saved.relationship);
+
+// the notes are what a warm follow-up actually draws on
+const { composeWarm } = await import('../lib/campaigns.js');
+let warm = await composeWarm(saved, { owner: { name: 'Mondo Davis', business: 'Inspiring Websites LLC', postalAddress: '123 Example St, Plano TX 75024' } });
+check('a warm message can be built from the stored record', warm.ok === true, warm.reason);
+check('and it uses the recorded meeting', /Plano chamber breakfast/.test(warm.body), warm.body.slice(0, 160));
+
+// the refusal that matters: an unknown relationship cannot become a claimed meeting
+r = await api('contacts-save', {
+  contact: { source: 'manual', name: F('Stranger Pat'), email: F('pat@stranger.test'), relationship: 'we definitely had lunch' },
+});
+saved = r.body.contact;
+check('an invented relationship value is rejected, not stored', saved.relationship === 'none', saved.relationship);
+warm = await composeWarm(saved, { owner: { name: 'M', business: 'B', postalAddress: 'A' } });
+check('and no warm message can be written for them', warm.ok === false && /nothing truthful/.test(warm.reason), warm.reason);
+
+// notes alone, with no relationship, must not imply a meeting
+r = await api('contacts-save', {
+  contact: { source: 'manual', name: F('Note Only'), email: F('note@only.test'), meetingNotes: 'saw their van on the highway' },
+});
+check('notes without a relationship still record relationship "none"', r.body.contact.relationship === 'none');
+check('but the note itself is kept', /saw their van/.test(r.body.contact.meetingNotes || ''));
+
 done();
