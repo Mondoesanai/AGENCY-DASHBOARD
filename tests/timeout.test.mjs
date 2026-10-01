@@ -108,4 +108,67 @@ check('the real field still comes through', bad.name.value === 'Pat Lee');
 const good = normaliseCard({ side: 'back', name: { value: 'Jo', confidence: 0.9 }, otherText: 'fine' });
 check('a valid side passes through', good.side === 'back');
 
+// ---------------------------------------------------------------------------
+section('Z8  the reconciliation is CALLED by the real send path');
+// The reviewer's point: these functions were defined and nothing invoked them.
+// sendProspectEmail is the single declared exit, so it is where they belong.
+const { sendProspectEmail } = await import('../lib/outreach-email.js');
+const { upsertContact, field } = await import('../lib/contacts.js');
+const { saveSettings } = await import('../lib/settings.js');
+const { store } = await import('../lib/store.js');
+const E = (v) => field(v, { confidence: 1, source: 'manual' });
+
+await saveSettings({ pricing: { buildPrice: '2500', monthlyFee: '197' }, targeting: { status: 'confirmed' } });
+const raw = JSON.parse(await store.get('settings:business'));
+await store.set('settings:business', JSON.stringify({ ...raw, outreach: { ...raw.outreach, active: true } }));
+const envOK = { INSTANTLY_API_KEY: 'k', OUTREACH_FROM_DOMAIN: 'outreach.test' };
+
+const person = (await upsertContact({ source: 'discovery', name: E('Timeout Test'), businessName: E('TT Co'), email: E('tt@timeout.test') })).contact;
+
+// 1. a send that TIMES OUT is recorded as ambiguous, not as a failure
+let calls = 0;
+let out = await sendProspectEmail({
+  contact: person, campaignId: 'camp-timeout', message: {}, env: envOK,
+  fetchImpl: async () => { calls++; throw new Error('socket hang up'); },
+});
+check('the timeout does not report a send', out.sent === false, JSON.stringify(out));
+check('it is marked ambiguous, not a plain failure', out.ambiguous === true, JSON.stringify(out));
+check('and says it will be reconciled before any retry', /reconciled with the provider before any retry/.test(out.reason), out.reason);
+const rec = await getSendAttempt('camp-timeout:' + person.id);
+check('the attempt is on record as ambiguous', rec.state === SEND_OUTCOME.AMBIGUOUS, rec.state);
+
+// 2. the RETRY does not blindly resend — with no lookup it parks
+const before = calls;
+out = await sendProspectEmail({
+  contact: person, campaignId: 'camp-timeout', message: {}, env: envOK,
+  fetchImpl: async () => { calls++; return { ok: true, status: 200, text: async () => '{}' }; },
+});
+check('the retry does NOT call the provider', calls === before, `${before} -> ${calls}`);
+check('it parks for a person instead', out.code === 'needs-reconciliation', JSON.stringify(out));
+check('and says a duplicate is the risk', /duplicate/.test(out.reason), out.reason);
+
+// 3. with a lookup saying the provider HAS it, the retry is skipped as delivered
+out = await sendProspectEmail({
+  contact: person, campaignId: 'camp-timeout', message: {}, env: envOK,
+  fetchImpl: async () => { calls++; return { ok: true, status: 200, text: async () => '{}' }; },
+  lookup: async () => ({ exists: true, id: 'msg_live_1' }),
+});
+check('it is recognised as already delivered', out.alreadySent === true, JSON.stringify(out));
+check('the provider was still not called again', calls === before, `${before} -> ${calls}`);
+check('and the provider id is carried through', out.providerId === 'msg_live_1');
+
+// 4. a clean send records CONFIRMED
+const person2 = (await upsertContact({ source: 'discovery', name: E('Clean Send'), businessName: E('CS Co'), email: E('cs@timeout.test') })).contact;
+out = await sendProspectEmail({
+  contact: person2, campaignId: 'camp-clean', message: {}, env: envOK,
+  fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ id: 'msg_clean' }) }),
+});
+check('a clean send succeeds', out.sent === true, JSON.stringify(out));
+const rec2 = await getSendAttempt('camp-clean:' + person2.id);
+check('and is recorded as confirmed', rec2.state === SEND_OUTCOME.CONFIRMED, rec2.state);
+
+// put outreach back to off so nothing inherits an active state
+const raw2 = JSON.parse(await store.get('settings:business'));
+await store.set('settings:business', JSON.stringify({ ...raw2, outreach: { active: false, reason: 'returned to off by the test suite' } }));
+
 done();

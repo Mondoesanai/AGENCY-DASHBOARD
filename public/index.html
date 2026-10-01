@@ -1038,7 +1038,12 @@ let revPasteOpen=false;
 async function loadRevWidget(){
   const j=await fetch(`/api/admin?do=revisions-status`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
   if(j&&j.ok) revData=j.status;
+  // share the same tickets with each client's own card (R2.2) — one fetch, two
+  // views, so the global queue and the per-client list can never disagree
+  REV_TICKETS=(revData&&revData.tickets)||[];
+  REV_CONFIGURED=revData?revData.configured!==false:true;
   renderRevWidget();
+  if(typeof STATE!=='undefined'&&STATE) render(STATE);
 }
 function renderRevWidget(){
   const el=$('#revWidget'); if(!el) return;
@@ -1655,6 +1660,7 @@ function openDrawer(slug){
       <button data-pane="overview">Overview</button>
       <button data-pane="traffic">Traffic</button>
       <button data-pane="todos">To-dos${(()=>{const n=(s.aiTodos&&s.aiTodos.length)?s.aiTodos.length:bf.filter(f=>f.severity!=='good').length; return n?` <span class="tabnum">${n}</span>`:'';})()}</button>
+      <button data-pane="revisions">Requests${(()=>{const r=REVSUM(s.slug); return r.stuck?` <span class="tabnum">${r.stuck}</span>`:(r.open?` <span class="tabnum">${r.open}</span>`:'');})()}</button>
       <button data-pane="report">Report &amp; email</button>
       <button data-pane="settings">Settings</button>
     </nav>
@@ -1705,6 +1711,10 @@ function openDrawer(slug){
       ${improv.map(x=>`<div class="finding"><span class="sev good">→</span><div><div class="ft">${esc(x.title)}</div><div class="fd">${esc(x.why||'')}</div></div></div>`).join('')||'<div class="note">Generate a report to build these.</div>'}
     </div>
     </div><!-- /todos -->
+
+    <div class="tabpane" data-pane="revisions" hidden>
+      ${RENDER_REVISIONS(s.slug)}
+    </div>
 
     <div class="tabpane" data-pane="report" hidden>
     <div id="upsellBox" hidden></div>
@@ -2402,6 +2412,25 @@ setInterval(()=>{
   const revVal='T‑'+fmtCountdown(nextRevisionCheckMs());
   $$('.rev-next-ct').forEach(el=>el.textContent=revVal);
 },1000);
+
+/* ---------- R2.2 per-client revisions on the client's own card ---------- */
+// The global queue stays — it is the right view for "what needs doing today" —
+// but a client's own requests now live with their analytics and settings, so
+// answering "what is outstanding for this client?" does not mean scanning a
+// shared list by eye.
+let CW = null;            // the client-workspace module, once loaded
+let REV_TICKETS = [];     // last known tickets, refreshed with the revisions widget
+import('/client-workspace.js').then((m)=>{ CW = m; }).catch(()=>{ CW = null; });
+
+function REVSUM(slug){
+  if(!CW) return { count:0, open:0, stuck:0, text:'' };
+  return CW.revisionSummary(REV_TICKETS, slug);
+}
+function RENDER_REVISIONS(slug){
+  if(!CW) return '<div class="loading">Loading…</div>';
+  return CW.renderClientRevisions({ tickets: REV_TICKETS, slug, revisionsConfigured: REV_CONFIGURED });
+}
+let REV_CONFIGURED = true;
 
 /* ---------- R2.3 Acquisition section ---------- */
 // Screens over backends that already existed but had no way in: card OCR, CSV
