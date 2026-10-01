@@ -111,6 +111,9 @@
   .acq-table td{padding:8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:top;}
   .acq-table tr:hover td{background:rgba(255,255,255,.03);}
   .acq-card{border:1px solid var(--line);border-radius:11px;padding:12px;margin:10px 0;background:var(--surface2);}
+  .acq-draft{border-top:1px solid var(--line);margin-top:10px;padding-top:10px;}
+  .acq-pre{white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px;margin:6px 0;overflow-x:auto;}
+  .acq-pre.quoted{border-left:3px solid var(--green);color:var(--muted);}
   .acq-card-h{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
   .acq-blockers{margin:8px 0 0 18px;color:var(--muted);font-size:13px;line-height:1.7;}
   .pill.sm{font-size:11px;padding:2px 7px;}
@@ -2422,6 +2425,7 @@ async function renderAcq(){
   body.innerHTML=acqMod.renderBody(ACQ.tab, {...ACQ, loading:true});
   if(ACQ.tab==='contacts'){ const j=await acqApi('contacts-list'); ACQ.contacts=j.contacts||[]; }
   if(ACQ.tab==='prospects'){ const j=await acqApi('prospects-list'); ACQ.prospects=j.prospects||[]; ACQ.attribution=j.attribution; const s=await acqApi('settings-get'); ACQ.targetingStatus=s.settings?.targeting?.status; const c=await acqApi('campaigns-list'); ACQ.campaigns=c.campaigns||[]; }
+  if(ACQ.tab==='inbox'){ const j=await acqApi('replies-list'); ACQ.replies=j.replies||[]; const m=await acqApi('reply-mode'); ACQ.replyMode=m.mode; }
   if(ACQ.tab==='campaigns'){ const c=await acqApi('campaigns-list'); ACQ.campaigns=c.campaigns||[]; const r=await acqApi('outreach-readiness'); ACQ.readiness=r.readiness; }
   if(ACQ.tab==='settings'){ const j=await acqApi('settings-get'); ACQ.settings=j.settings; ACQ.pricingBlocker=j.pricingBlocker; const r=await acqApi('outreach-readiness'); ACQ.readiness=r.readiness; }
   body.innerHTML=acqMod.renderBody(ACQ.tab, {...ACQ, loading:false});
@@ -2486,6 +2490,20 @@ function wireAcq(){
   };
   $('#acqSaveTargeting')?.addEventListener('click',()=>saveTargeting('draft'));
   $('#acqConfirmTargeting')?.addEventListener('click',()=>saveTargeting('confirmed'));
+
+  // --- replies ---
+  $('#rp_mode')?.addEventListener('click', async (e)=>{
+    const j=await acqApi('reply-mode&set='+encodeURIComponent(e.target.dataset.mode));
+    toast('Reply mode: '+j.mode); renderAcq();
+  });
+  document.querySelectorAll('[data-send]').forEach(b=>b.addEventListener('click', async ()=>{
+    const j=await acqApi('reply-send&id='+encodeURIComponent(b.dataset.send));
+    toast(j.sent?'Sent.':(j.reason||'Not sent.'),j.sent?'':'err'); renderAcq();
+  }));
+  document.querySelectorAll('[data-takeover]').forEach(b=>b.addEventListener('click', async ()=>{
+    const j=await acqApi('reply-takeover&contactId='+encodeURIComponent(b.dataset.takeover));
+    toast(j.ok?'You have the thread. Nothing automatic will go out.':'Could not take over.',j.ok?'':'err'); renderAcq();
+  }));
 
   // --- campaigns ---
   $('#cp_create')?.addEventListener('click', async ()=>{

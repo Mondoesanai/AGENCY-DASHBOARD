@@ -17,8 +17,25 @@ export const TABS = Object.freeze([
   { id: 'intake', label: 'Add contacts' },
   { id: 'prospects', label: 'Prospects' },
   { id: 'campaigns', label: 'Campaigns' },
+  { id: 'inbox', label: 'Replies' },
   { id: 'settings', label: 'Targeting & pricing' },
 ]);
+
+export const KIND_LABEL = Object.freeze({
+  interested: 'Interested',
+  'wants-details': 'Wants details',
+  'wants-preview': 'Wants a preview',
+  'wants-call': 'Wants a call',
+  'not-now': 'Not now',
+  'not-interested': 'Not interested',
+  'opt-out': 'Opted out',
+  'auto-reply': 'Auto-reply',
+  'delivery-failure': 'Bounced',
+  ambiguous: 'Needs reading',
+});
+
+/** Kinds that deserve the owner's attention first. */
+export const NEEDS_ATTENTION = new Set(['interested', 'wants-call', 'wants-preview', 'wants-details', 'ambiguous']);
 
 export const CAMPAIGN_TYPE_LABEL = Object.freeze({
   'cold-no-site-found': 'Cold — no website found',
@@ -379,7 +396,75 @@ export function renderCampaigns(state) {
     ${previewBlock}`;
 }
 
+// ---------------------------------------------------------------------------
+// Replies (R7.7)
+// ---------------------------------------------------------------------------
+
+const DRAFT_STATUS_LABEL = Object.freeze({
+  'awaiting-review': 'draft ready for you',
+  'needs-a-person': 'needs you to write it',
+  withheld: 'draft withheld',
+  'no-reply-appropriate': 'no reply needed',
+  sent: 'sent',
+});
+
+export function renderInbox(state) {
+  if (state.loading) return '<div class="loading">Loading replies…</div>';
+  const rows = state.replies || [];
+  const mode = state.replyMode || 'draft-only';
+
+  const modeBar = `<div class="note ${mode === 'automatic' ? 'warn' : ''}" style="line-height:1.7">
+      Reply mode: <b>${esc(mode)}</b>.
+      ${mode === 'draft-only'
+        ? 'Nothing is sent until you press send on a draft. This is the default.'
+        : '<b>Replies can go out without you reading them first.</b> Every guard still applies — approved answers only, loop brakes, and the claims check.'}
+      <button class="btn sm ghost" id="rp_mode" data-mode="${mode === 'automatic' ? 'draft-only' : 'automatic'}">
+        Switch to ${mode === 'automatic' ? 'draft-only' : 'automatic'}</button>
+    </div>`;
+
+  if (!rows.length) {
+    return `${modeBar}<div class="note"><b>No replies yet.</b> This fills as people answer. A reply
+      pauses that contact's follow-ups the moment it arrives, before anything else happens.</div>`;
+  }
+
+  const attention = rows.filter((r) => !r.handled && NEEDS_ATTENTION.has(r.kind));
+  const head = attention.length
+    ? `<div class="note warn"><b>${attention.length} reply(ies) worth your time</b> — ${attention.map((r) => esc(KIND_LABEL[r.kind] || r.kind)).join(', ')}.</div>`
+    : '<div class="note">Nothing needs you right now.</div>';
+
+  const body = rows
+    .map((r) => {
+      const d = r.draft || {};
+      const statusPill = r.handled
+        ? '<span class="pill sm">handled</span>'
+        : `<span class="pill sm ${NEEDS_ATTENTION.has(r.kind) ? 'warn' : ''}">${esc(KIND_LABEL[r.kind] || r.kind)}</span>`;
+      const draftBlock = d.body
+        ? `<div class="acq-draft"><div class="faint">${esc(DRAFT_STATUS_LABEL[d.status] || d.status)}${d.brake ? ` — held by the ${esc(d.brake)} brake` : ''}</div>
+             <pre class="acq-pre">${esc(d.body)}</pre>
+             ${d.respectedInformationFirst ? '<div class="faint">They asked for information first, so no booking link was offered.</div>' : ''}
+             ${d.status === 'sent' ? `<div class="faint">Sent${d.approvedBy ? ` — approved by ${esc(d.approvedBy)}` : ''}.</div>`
+               : `<div class="btn-row"><button class="btn sm" data-send="${esc(r.id)}">Send this</button>
+                  <button class="btn sm ghost" data-takeover="${esc(r.contactId)}">I'll handle it</button></div>`}
+           </div>`
+        : `<div class="acq-draft"><div class="faint">${esc(DRAFT_STATUS_LABEL[d.status] || 'no draft')}${d.reason ? ` — ${esc(d.reason)}` : ''}</div>
+             ${(d.withheldBecause || []).length ? `<div class="note warn">Withheld because the draft ${(d.withheldBecause || []).map(esc).join(', ')}.</div>` : ''}
+             <div class="btn-row"><button class="btn sm ghost" data-takeover="${esc(r.contactId)}">I'll handle it</button></div>
+           </div>`;
+
+      return `<div class="acq-card">
+        <div class="acq-card-h"><b>${esc(r.fromName || r.contactId)}</b> ${statusPill}
+          <span class="faint" style="margin-left:auto">${new Date(r.at).toLocaleString()}</span></div>
+        <pre class="acq-pre quoted">${esc(String(r.text || '').slice(0, 600))}</pre>
+        ${draftBlock}
+      </div>`;
+    })
+    .join('');
+
+  return `${modeBar}${head}${body}`;
+}
+
 export function renderBody(tab, state) {
+  if (tab === 'inbox') return renderInbox(state);
   if (tab === 'contacts') return renderContacts(state);
   if (tab === 'intake') return renderIntake(state);
   if (tab === 'prospects') return renderProspects(state);

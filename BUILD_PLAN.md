@@ -207,7 +207,7 @@ and never display a mocked integration as connected (R4.4).
 | R7.4 | Never invent availability, discounts, terms, capabilities, or a preview | `[x]` `containsUnapprovedClaim()` guards every draft — discounts, guarantees, invented availability, contract terms and promised rankings are all caught |
 | R7.5 | Never reply conversationally to bounces or automated mail | `[x]` auto-replies and bounces are classified non-human and never pause or trigger a response |
 | R7.6 | Loop prevention: max turns, cooldown, dedup, escalation | `[x]` four brakes — max turns, cooldown, duplicate text, handover — each escalating to a person rather than stopping silently; wired into ingestion |
-| R7.7 | Unified inbox · AI history · manual takeover · draft-only vs automatic · notifications | `[ ]` |
+| R7.7 | Unified inbox · AI history · manual takeover · draft-only vs automatic · notifications | `[x]` Replies screen + `sendDraft`/`takeOver`/`conversationFor`; draft-only is the default and the send path is the one place a turn is counted |
 | R7.8 | Booking via verified webhook or supported API — **a link click is not a booking** | `[ ]` |
 | R7.9 | Cancellations and reschedules; attribution survives both | `[ ]` |
 | R7.10 | Attribution to contact, source, campaign, variant, recorded at booking time | `[ ]` |
@@ -290,11 +290,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 68 |
+| `[x]` built **and** verified | 69 |
 | `[b]` built, not verified | 6 |
 | `[~]` in progress | 5 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 40 |
+| `[ ]` not started | 39 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -345,4 +345,5 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 - Also fixed the supervisor's diff slicing, which had caused two "cannot verify the integration" flags: the patch was emitted in git's order, so large test files consumed the reviewer's budget before the call sites. Call sites and implementation now come first and tests are what gets dropped.
 - **2026-10-01** — R7.6 loop prevention. Two machines can talk to each other forever, and an auto-responder on the other end will do it at full speed. Four independent brakes, because any one of them can be defeated by a sufficiently odd correspondent: a small automatic-turn budget, a 30-minute cooldown, duplicate-text detection (whitespace-insensitive, so a reformatted repeat still counts), and explicit handover. Every brake **escalates** rather than stopping — the draft is kept and handed to a person with the reason, because silently abandoning a live prospect mid-conversation is its own failure. A human taking over sets the automatic budget to zero and records who owns the thread. A negative control that unwires the brakes from ingestion fails exactly the two checks that depend on them.
 - Also widened the supervisor's reviewer budget and made it **trim** rather than drop: a 9.5k implementation file had pushed the total barely over the cap and vanished entirely, so the reviewer could see the call sites but not the logic they called.
+- **2026-10-01** — R7.7, and a gap the reviewer was right about. It noticed `recordAutoReply()` was exported but called only from tests — so in production the turn counter would stay at zero and the max-turns and cooldown brakes could **never fire**. The cause was that no send path existed yet: drafting checked the brakes, nothing recorded a turn. `sendDraft` is now the single exit, and it is the one place a turn is counted. A negative control that removes that line fails five checks, including "a second send straight after is stopped by the cooldown" — exactly the silent failure predicted. Two reply modes and only two: draft-only (the default; a person must approve) and automatic. Both re-check the loop brakes **and** the claims guard at send time, not just at drafting, because a person can edit a draft in between — an edited draft offering a discount is refused even in automatic mode. A failed transport does **not** count a turn. Takeover zeroes the automatic budget and records who owns the thread. The screen leads with the mode, counts what is worth the owner's time, shows the prospect's own words, and surfaces when a draft was withheld and why.
 - **NEXT:** R2.4 Overview = what needs attention only, then R4.1/R4.3 discovery settings + source adapter.

@@ -17,6 +17,7 @@ import { sendReadiness } from '../lib/outreach-email.js';
 import { listOpportunities, resolveOpportunity, runRecheckSweep } from '../lib/recheck.js';
 import { recordReply, listReplies, markHandled, REPLY_KINDS } from '../lib/replies.js';
 import { getKnowledge, saveKnowledge, draftAnswer, containsUnapprovedClaim } from '../lib/knowledge.js';
+import { getReplyMode, setReplyMode, sendDraft, takeOver, conversationFor } from '../lib/replies.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
@@ -199,6 +200,19 @@ export default async function handler(req, res) {
       const d = await draftAnswer({ kind: body.kind, text: body.text || '', bookingUrl: body.bookingUrl || null });
       const guard = d.ok ? containsUnapprovedClaim(d.body) : { clean: true, findings: [] };
       return res.status(200).json({ ok: true, draft: d, guard, note: 'This is a draft for you to read. Nothing is sent from here.' });
+    }
+    case 'reply-mode':
+      return res.status(200).json({ ok: true, mode: req.query.set ? await setReplyMode(req.query.set) : await getReplyMode() });
+    case 'reply-send': {
+      const out = await sendDraft(req.query.id, { approvedBy: req.query.by || 'owner' });
+      return res.status(200).json(out);
+    }
+    case 'reply-takeover': {
+      const out = await takeOver(req.query.contactId, req.query.by || 'owner');
+      return res.status(200).json({ ok: true, ...out });
+    }
+    case 'conversation': {
+      return res.status(200).json({ ok: true, conversation: await conversationFor(req.query.contactId) });
     }
     case 'outreach-readiness':
       return res.status(200).json({ ok: true, readiness: await sendReadiness({}) });

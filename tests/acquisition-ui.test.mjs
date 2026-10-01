@@ -11,9 +11,9 @@ import {
 const has = (html, s) => String(html).includes(s);
 
 // ---------------------------------------------------------------------------
-section('A1  the section has the five workflows, not a placeholder');
-check('five tabs', TABS.length === 5, String(TABS.length));
-check('contacts, intake, prospects, campaigns and settings', TABS.map((t) => t.id).join(',') === 'contacts,intake,prospects,campaigns,settings', TABS.map((t) => t.id).join(','));
+section('A1  the section has the six workflows, not a placeholder');
+check('six tabs', TABS.length === 6, String(TABS.length));
+check('contacts, intake, prospects, campaigns, inbox and settings', TABS.map((t) => t.id).join(',') === 'contacts,intake,prospects,campaigns,inbox,settings', TABS.map((t) => t.id).join(','));
 const shell = renderShell('contacts');
 check('the shell marks the active tab', /data-acq="contacts" class="on"/.test(shell), shell.slice(0, 200));
 check('and leaves a body to fill', has(shell, 'id="acqBody"'));
@@ -179,5 +179,50 @@ check('each prospect offers a message preview', /data-preview="p1"/.test(html));
 
 html = renderProspects({ prospects: [{ id: 'p1', name: 'X', qualification: {}, web: {}, evidence: {} }], campaigns: [] });
 check('with no campaigns it says to create one first', /Create a campaign first/.test(html));
+
+// ---------------------------------------------------------------------------
+section('A12  the replies screen leads with the mode, then what needs you');
+const { renderInbox, KIND_LABEL, NEEDS_ATTENTION } = await import('../public/acquisition.js');
+
+let inbox = renderInbox({ replies: [], replyMode: 'draft-only' });
+check('the mode is stated first', /Reply mode: <b>draft-only<\/b>/.test(inbox), inbox.slice(0, 200));
+check('draft-only explains that nothing goes without you', /Nothing is sent until you press send/.test(inbox));
+check('empty says what will fill it', /No replies yet/.test(inbox));
+check('and restates the pause guarantee', /pauses that contact's follow-ups the moment it arrives/.test(inbox));
+
+inbox = renderInbox({ replies: [], replyMode: 'automatic' });
+check('automatic mode is called out as the riskier one', /can go out without you reading them first/.test(inbox));
+check('while stating the guards still apply', /Every guard still applies/.test(inbox));
+check('and offers to switch back', /data-mode="draft-only"/.test(inbox));
+
+const replies = [
+  { id: 'r1', contactId: 'c1', fromName: 'Maple Co', kind: 'wants-call', at: Date.now(), text: 'call me', handled: false,
+    draft: { body: 'Happy to talk.', status: 'awaiting-review', respectedInformationFirst: false } },
+  { id: 'r2', contactId: 'c2', fromName: 'Nettle Co', kind: 'wants-details', at: Date.now(), text: 'send info first, how much', handled: false,
+    draft: { body: "It's $2,500 to build.", status: 'awaiting-review', respectedInformationFirst: true } },
+  { id: 'r3', contactId: 'c3', fromName: 'Olive Co', kind: 'ambiguous', at: Date.now(), text: 'who is this', handled: false,
+    draft: { body: null, status: 'needs-a-person', reason: 'nothing in the approved knowledge base answers this' } },
+  { id: 'r4', contactId: 'c4', fromName: 'Privet Co', kind: 'interested', at: Date.now(), text: 'yes', handled: false,
+    draft: { body: null, status: 'withheld', withheldBecause: ['offers a discount'] } },
+  { id: 'r5', contactId: 'c5', fromName: 'Auto Co', kind: 'auto-reply', at: Date.now(), text: 'out of office', handled: true, draft: {} },
+];
+inbox = renderInbox({ replies, replyMode: 'draft-only' });
+check('it counts what is worth the owner\'s time', /4 reply\(ies\) worth your time/.test(inbox), inbox.match(/\d+ reply\(ies\) worth your time/)?.[0]);
+check('an auto-reply is not counted as needing attention', !NEEDS_ATTENTION.has('auto-reply'));
+check('each reply shows the prospect\'s own words', /call me/.test(inbox) && /who is this/.test(inbox));
+check('a ready draft is shown in full', /Happy to talk\./.test(inbox));
+check('and offers to send it', /data-send="r1"/.test(inbox));
+check('"information first" is surfaced to the owner', /asked for information first, so no booking link/.test(inbox));
+check('a draft that needs writing says so with the reason', /needs you to write it/.test(inbox) && /approved knowledge base/.test(inbox));
+check('a withheld draft says what it contained', /Withheld because the draft offers a discount/.test(inbox), inbox.match(/Withheld[^<]*/)?.[0]);
+check('every reply offers manual takeover', (inbox.match(/data-takeover=/g) || []).length === 5, String((inbox.match(/data-takeover=/g) || []).length));
+check('a handled reply is marked handled', /handled<\/span>/.test(inbox));
+check('kinds are shown in words, not codes', /Wants a call/.test(inbox) && KIND_LABEL['wants-call'] === 'Wants a call');
+
+// a sent draft shows who approved it and offers no send button
+inbox = renderInbox({ replies: [{ id: 'r6', contactId: 'c6', fromName: 'Sent Co', kind: 'interested', at: Date.now(), text: 'yes',
+  draft: { body: 'thanks', status: 'sent', approvedBy: 'owner' } }], replyMode: 'draft-only' });
+check('a sent draft records who approved it', /approved by owner/.test(inbox));
+check('and cannot be sent again from the screen', !/data-send=/.test(inbox));
 
 done();
