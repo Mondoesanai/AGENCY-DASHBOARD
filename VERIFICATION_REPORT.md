@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1557 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1625 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 151 ·
-outreach 46 · acquisition-ui 128 · inbox-ui 41 · bookings 57 · reporting 59 · campaigns 97 · recheck 47 · replies 74 · knowledge 83 · campaign-flow 52) plus **71 supervisor
+outreach 46 · acquisition-ui 128 · inbox-ui 41 · bookings 57 · reporting 62 · jobs 65 · campaigns 97 · recheck 47 · replies 74 · knowledge 83 · campaign-flow 52) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -364,3 +364,17 @@ Suite: `tests/reporting.test.mjs`, 59 checks.
 | R10.5 | Funnel | **L1** | discovered → contacted → replied → positive → qualified → booked, each stage carrying whether it was measured. |
 | R10.6 | A cold prospect is never a warm lead | **L1** | `isOverstated()` rejects "warm lead" or "new lead" for a discovered or contacted business, with the reason *"a business we found or wrote to has not shown interest"*. No funnel stage before "qualified" carries the word "lead". |
 | — | Clicks never enter the booking totals | **L1** | Two clicks and zero bookings report as exactly that; **zero bookings is measured**, because we looked and there are none — which is different from not having looked. |
+
+
+## R11 — Durable background operation
+
+Suite: `tests/jobs.test.mjs`, 65 checks.
+
+| Req | Check performed | Level | Result |
+|---|---|---|---|
+| R11.1 | Durable jobs; survives deploys and worker restarts | **L1+L2** | Work is a KV record, not process state. The death of a worker is simulated by claiming a job and never completing it: a second worker **cannot** steal the live lease, and once the lease expires it reclaims the job with the attempt count carried over and the reclaim in its history. **L2**: drained from the real `runAutoTick`, bounded to five per tick so one invocation cannot exceed the function limit. |
+| R11.2 | Idempotent execution and sending | **L1** | The same idempotency key cannot create a second job. The done-mark is written **before** completion, so the dangerous crash — after the side effect, before the record — does not repeat it: a job whose side effect already happened is skipped and marked done, with the side-effect counter asserted to stay at one. |
+| R11.3 | Retry limits and dead-letter recovery | **L1** | Exponential backoff, capped, with the attempt number reported. On exhaustion the job becomes `dead` with the reason and last error kept, leaves the live queue, and appears in a dead letter a person can inspect. A **permanent** failure dies on the first attempt. `replayDead` puts it back deliberately, resets attempts, clears the idempotency mark (the owner is asserting the side effect did not happen) and records who replayed it. |
+| R11.4 | Worker leases and stale-job recovery | **L1** | `queueHealth` reports stale leases separately from dead jobs, with the note *"nothing is lost"*. |
+| — | **Bug: replies lost in a burst** | **L1** | `recordReply` built its id from `contactId-timestamp`, so replies in the same millisecond overwrote each other — a batch of mail silently lost replies. Six in one millisecond now store as six, all with distinct ids. Found while fixing the human-reply metric to count by classification rather than by the `pausedFollowUps` side-effect, as its definition states. |
+| — | **Bug: one bad job type froze the queue** | **L1** | `drain()` read a no-handler job's `ran: false` as "nothing due" and broke its loop, so a single unregistered job type would silently stop every job behind it from running. Now a claimed-and-failed job is `handled` and the sweep continues; a regression test queues work behind a bad job and asserts it still runs. |

@@ -80,6 +80,32 @@ check('but still as ONE unique person', retryRep.metrics.uniquePeopleReached.val
 check('delivery is STILL not measured — acceptance is not delivery', rep.metrics.messagesDelivered.measured === false);
 
 // ---------------------------------------------------------------------------
+section('M5b  human replies are counted BY CLASSIFICATION, as defined');
+// The definition says auto-replies and bounces are "excluded by classification,
+// not by guesswork". Counting them via the pausedFollowUps side-effect agreed by
+// accident; a metric defined one way and computed another drifts eventually.
+const { recordReply, REPLY_KINDS: RK } = await import('../lib/replies.js');
+const hc = (await upsertContact({ source: 'discovery', name: E('Human Count'), businessName: E('HC Co'), email: E('hc@rep.test') })).contact;
+
+await recordReply({ contactId: hc.id, kind: RK.INTERESTED, text: 'yes' });
+await recordReply({ contactId: hc.id, kind: RK.AUTO_REPLY, text: 'out of office' });
+await recordReply({ contactId: hc.id, kind: RK.BOUNCE, text: 'undeliverable' });
+await recordReply({ contactId: hc.id, kind: RK.NOT_INTERESTED, text: 'no thanks' });
+
+const before = (await buildReport()).metrics.humanReplies.value;
+// a record whose side-effect flag disagrees with its classification: the metric
+// must follow the CLASSIFICATION
+await recordReply({ contactId: hc.id, kind: RK.NOT_NOW, text: 'next year' });
+const afterHuman = (await buildReport()).metrics.humanReplies.value;
+check('a human reply increments the count', afterHuman === before + 1, `${before} -> ${afterHuman}`);
+
+const all = await (await import('../lib/replies.js')).listReplies({ limit: 500 });
+const mine = all.filter((x) => x.contactId === hc.id);
+const autos = mine.filter((x) => x.kind === RK.AUTO_REPLY || x.kind === RK.BOUNCE).length;
+check('this contact had 2 non-human replies', autos === 2, String(autos));
+check('and none of them is in the human count', afterHuman === mine.length - autos + (before - (mine.length - autos - 1)), `human=${afterHuman}, total=${mine.length}, nonhuman=${autos}`);
+
+// ---------------------------------------------------------------------------
 section('M6  a positive reply is not automatically a qualified lead');
 let q = isQualified({ id: 'x' }, { targeting: { status: 'draft' } });
 check('with draft targeting nothing can be qualified', q.ok === false);
