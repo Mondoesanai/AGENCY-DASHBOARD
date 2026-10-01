@@ -6,6 +6,7 @@
 import { coachHandler } from '../lib/coach.js';
 import { receiptsHandler } from '../lib/receipts.js';
 import { reposHandler } from '../lib/repos.js';
+import { runRepoAudit, lastRepoAudit } from '../lib/repo-audit.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
@@ -69,6 +70,14 @@ export default async function handler(req, res) {
       return receiptsHandler(req, res);
     case 'repos':
       return reposHandler(req, res);
+    // R1.7 — client↔repo mapping audit. `fix=1` applies only the unambiguous
+    // fixes (a name GitHub itself just confirmed, a stale cached block);
+    // collisions, missing repos and permission faults are reported for the
+    // owner to decide, never auto-changed.
+    case 'repo-audit': {
+      const out = req.query.cached === '1' ? await lastRepoAudit() : await runRepoAudit({ applyFixes: req.query.fix === '1' });
+      return res.status(200).json({ ok: true, report: out });
+    }
     case 'agent-status': {
       const site = await siteBySlug(req.query.slug);
       if (!site) return res.status(404).json({ ok: false, error: 'unknown site' });

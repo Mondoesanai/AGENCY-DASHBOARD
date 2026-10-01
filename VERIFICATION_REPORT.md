@@ -14,9 +14,9 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **468 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **562 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
-platform 59 · reports 31) plus **48 supervisor isolation checks, 0 failing**.
+platform 59 · reports 31 · repo-audit 94) plus **48 supervisor isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
 > part — the per-suite figures were right and summed to 468. Recorded here rather than
@@ -35,7 +35,12 @@ platform 59 · reports 31) plus **48 supervisor isolation checks, 0 failing**.
 | R1.4 | Permanent vs transient classification; bounded backoff | L1 | Permanent causes block after one attempt (5 cause types checked). Transient retries are exponential, capped at 6h, then block. Content failures get fewer retries than network blips. |
 | R1.5 | Actionable recovery text | L1 | Each permanent cause yields a named action (`link-repo`, `reconnect-github`, `check-repo`, `fix-permissions`, `enable-agent`, `add-ai-key`) with owner-readable wording. |
 | R1.6 | Request preserved through block → fix → resume | **L2** | `tests/inbox.test.mjs` I12/I12b: six automation passes on a repo-less site leave it blocked with the request text intact, zero AI spend; after linking a repo and pressing Retry, the saved request is worked and the change lands in the repo. |
-| R1.7 | Repo-mapping audit | — | **Not yet implemented.** |
+| R1.7 | Repo-mapping audit: identity, owner, branch, permissions, stale cached state | **L1+L2** | `lib/repo-audit.js`, 94 checks in `tests/repo-audit.test.mjs`. Detects: unusable repo strings (a bare name with no owner is **rejected, never guessed** at an owner), 404 vs 401 vs 403 as distinct causes, **rename via GitHub's redirect**, read-only token, archived repo, empty repo, and **two clients mapped to one repository**. Each fault maps to a cause the state machine classifies as permanent, proven by driving `transition()` four times and asserting BLOCKED + `isDue() === false`. L2: driven through the real registry, store and `agentStatus` against the faked GitHub — a stale name blocks the cycle, applying the safe fix repoints the client and unblocks it. |
+| R1.7a | A transient fault is not treated as a broken mapping | L1 | A thrown socket error, a 502, and a missing GitHub connection are all warnings marked `transient`/`unchecked` and produce **no** block reason — treating a blip as "repo missing" would block a healthy client. |
+| R1.7b | A suspicious repo↔domain match is uncertain, not a fault | L1 | Reported as a warning flagged `uncertain`, with wording that admits it is a guess from the name. A matching repo `homepage` clears it. |
+| R1.7c | Auto-fix is limited to the unambiguous | L1 | Only a name GitHub itself just confirmed, a case difference, and a stale cached block auto-apply. Collisions, missing repos, permission faults and suspicious matches are reported for the owner; a 403 audit provably does **not** repoint the client. |
+| R1.7d | Stale cached integration state | **L1+L2** | **Real bug found and fixed.** `agent:blocked:<slug>` held a repo failure for 12h and was cleared only by a later *successful* cycle, so repointing a client at the correct repo left the old repo's error in place — the site stayed ineligible for up to half a day after the problem was gone. `saveSiteConfig` now drops it when the repo changes; the audit's own verdict key carries no TTL, so it cannot lie in either direction. |
+| R1.7e | The module is actually wired in, not an orphan | **L2** | Negative control: removing the two wiring edits fails exactly the 4 wiring tests (`agentStatus` refusing the cycle, the reason naming the fault, the block clearing on repoint, the site no longer held back) and nothing else. Consumers: `agentStatus`, `saveSiteConfig`, `runAutoTick` (6-hourly), `api/admin.js?do=repo-audit`. |
 | R1.8 | Existing flow verification | partial | Revisions, automations/scheduling, agent cycles and reporting are covered by the existing suites. Clients CRUD, analytics ranges/empty states, authz isolation, integration connect/disconnect and settings persistence are **not yet systematically verified**. |
 | R1.9 | Shipped work never shows as failed | L1+L2 | State machine test R6; plus a real bug found and fixed during wiring — `resolveCompletedTickets` guarded on the legacy status string and would never have closed out a shipped-but-unverified ticket. |
 
@@ -107,6 +112,7 @@ platform 59 · reports 31) plus **48 supervisor isolation checks, 0 failing**.
 
 Everything below is **unimplemented or unverified**. No claim is made about it.
 
+- R1.7 UI: the audit report is exposed at `?do=repo-audit` and persisted, but **nothing renders it in the dashboard yet** — that is R2.5
 - R2 (all) — dashboard reorganisation
 - R4 (all) — discovery and qualification
 - R5 (all) — campaign workflows

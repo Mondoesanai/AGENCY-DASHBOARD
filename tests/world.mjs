@@ -34,14 +34,25 @@ export const W = {
   calendar: [],
   dfs: { ranks: {}, calls: 0 }, // keyword -> our rank (null = not found)
   pages: {}, // url -> html served for live-site fetches
+  repoAliases: {}, // old 'owner/name' -> current 'owner/name' (rename redirect)
+  repoDeny: {}, // 'owner/name' -> http status to answer with
 };
 
 const b64 = (s) => Buffer.from(s, 'utf8').toString('base64');
 const b64url = (s) => b64(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const json = (obj, status = 200) => new Response(JSON.stringify(obj), { status, headers: { 'content-type': 'application/json' } });
 
-export function addRepo(name, files) {
-  W.repos[name] = { files: { ...files }, n: 1, blobs: {}, sha: 'base1' };
+export function addRepo(name, files, meta = {}) {
+  W.repos[name] = { files: { ...files }, n: 1, blobs: {}, sha: 'base1', meta };
+}
+// Rename redirect: GitHub serves an old name and answers with the NEW
+// full_name, which is exactly how a stale mapping hides. `status` lets a test
+// force 401/403 for permission cases.
+export function renameRepo(oldName, newName) {
+  W.repoAliases[oldName] = newName;
+}
+export function denyRepo(name, status = 403) {
+  W.repoDeny[name] = status;
 }
 export function addMail(m) {
   const id = m.id || 'm' + (W.gmail.inbox.length + 1);
@@ -53,15 +64,33 @@ export function addMail(m) {
 
 function repoOf(url) {
   const m = url.match(/\/repos\/([^/]+\/[^/]+)/);
-  return m ? { name: m[1], repo: W.repos[m[1]] } : { name: null, repo: null };
+  if (!m) return { name: null, repo: null };
+  const asked = m[1];
+  const canonical = W.repoAliases[asked] || asked;
+  return { name: canonical, asked, repo: W.repos[canonical] };
 }
 
 async function github(url, method, body) {
   const u = new URL(url);
   const p = u.pathname;
-  const { repo, name } = repoOf(url);
+  const { repo, name, asked } = repoOf(url);
+  if (asked && W.repoDeny[asked]) {
+    const st = W.repoDeny[asked];
+    return json({ message: st === 404 ? 'Not Found' : 'Forbidden' }, st);
+  }
   if (!repo) return json({ message: 'Not Found' }, 404);
-  if (/^\/repos\/[^/]+\/[^/]+$/.test(p)) return json({ default_branch: 'main', private: false });
+  if (/^\/repos\/[^/]+\/[^/]+$/.test(p)) {
+    const meta = repo.meta || {};
+    return json({
+      full_name: name,
+      default_branch: meta.default_branch || 'main',
+      private: meta.private ?? false,
+      archived: !!meta.archived,
+      homepage: meta.homepage || '',
+      size: meta.size ?? Object.keys(repo.files).length,
+      permissions: meta.permissions || { push: true, pull: true, admin: true },
+    });
+  }
   if (p.endsWith('/git/ref/heads/main')) return json({ object: { sha: repo.sha } });
   if (/\/git\/trees\/[^/]+$/.test(p) && method === 'GET') {
     return json({ tree: Object.keys(repo.files).map((path) => ({ path, type: 'blob' })), truncated: false });
