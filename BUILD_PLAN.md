@@ -67,8 +67,8 @@ Last updated: 2026-10-01
 
 ## PART 3 — Contacts & business-card intake
 - [x] Contact data model + KV indexes (email/phone/domain normalized dedup) — `lib/contacts.js`, 54 tests — 2026-10-01
-- [ ] Card OCR: multi-card photos, front/back, confidence per field, ambiguous-char flagging
-- [ ] CSV import with column mapping + preview; manual entry; meeting notes
+- [x] Card OCR: multi-card photos, front/back merge, confidence per field, ambiguous-char flagging — `lib/card-intake.js`, 50 tests — 2026-10-01
+- [x] CSV import: RFC4180 parser, header auto-mapping, no-write preview that matches commit behaviour, meeting notes — 2026-10-01
 - [x] Consent model: scope, source, timestamp, wording version, withdrawal — append-only, withdrawal always wins — 2026-10-01
 - [x] Merge review for uncertain duplicates (exact=merge, same-phone/same-person=review, same-business=separate) — 2026-10-01
 - [x] "Met in person" vs "in my networking group" distinction (relationship rank, stronger claim wins on merge) — 2026-10-01
@@ -151,4 +151,5 @@ The owner personal/unrelated mail is never labelled. `iw-processed` stays hidden
 - **2026-10-01** — Part 3 data model: `lib/contacts.js` (normalisation, confidence-tagged fields, append-only consent, eligibility gate, dedup/merge, opt-out suppression that survives deletion + re-import). Added `store.del/srem/reserve`; `reserve` is the concurrency-safe budget primitive for Part 8. Test caught a real bug: dedup compared BUSINESS names, which flags every colleague as their coworker — now compares person names.
 - **2026-10-01** — Part 8 budget ledger: cents-based (no float drift), UTC period keys, reserve→run→reconcile with atomic INCR so 25 concurrent workers cannot overspend one allowance, double-reconcile guard for retried workers, crash-safe release, conversation reserve, essential bypass, pause.
 - **2026-10-01** — Gmail auto-filing: nested business labels applied during the existing inbox pass (parent + child, because clicking a Gmail parent does not show children-only mail). 12 new tests.
+- **2026-10-01** — Part 3 intake complete. Test caught a real bug: a CSV row with an invalid email (truthy but unusable) created a contact with no reachable address — invisible to dedup, so every re-import added another copy. Preview flagged it, import did not; they now share one rule.
 - **2026-10-01** — Suite: revision-state 46, inbox 73, agent 101, platform 59, reports 31 — all green.
