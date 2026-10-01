@@ -4,6 +4,7 @@
 //   /api/admin?do=receipts          -> ledger / receipts / tax (?one=, ?format=csv)
 //   /api/admin?do=repos             -> GitHub repo list + match (?match=<url>)
 import { coachHandler } from '../lib/coach.js';
+import { authed, authError } from '../lib/auth.js';
 import { receiptsHandler } from '../lib/receipts.js';
 import { reposHandler } from '../lib/repos.js';
 import { runRepoAudit, lastRepoAudit } from '../lib/repo-audit.js';
@@ -20,12 +21,6 @@ import { store } from '../lib/store.js';
 import { runAutoTick } from '../lib/tick.js';
 import { handleInbound } from '../lib/sms-actions.js';
 
-function authed(req) {
-  const s = process.env.CRON_SECRET;
-  if (!s) return true;
-  const h = req.headers.authorization || '';
-  return h === `Bearer ${s}` || req.query.secret === s;
-}
 
 async function siteBySlug(slug) {
   return (await listSites()).find((s) => s.slug === slug) || null;
@@ -62,7 +57,7 @@ export default async function handler(req, res) {
     await store.set('auto:pokeAt', String(Date.now()), { ex: 3600 }).catch(() => {});
     return res.status(200).json(await runAutoTick());
   }
-  if (!authed(req)) return res.status(401).json({ ok: false, error: 'bad password' });
+  if (!authed(req)) return res.status(401).json({ ok: false, error: authError() });
   switch (req.query.do) {
     case 'coach':
       return coachHandler(req, res);

@@ -73,6 +73,20 @@ function repoOf(url) {
 async function github(url, method, body) {
   const u = new URL(url);
   const p = u.pathname;
+  // the token's own repo list, used by findRepoForUrl() and the picker
+  if (p === '/user/repos') {
+    return json(
+      Object.entries(W.repos).map(([full_name, r]) => ({
+        full_name,
+        name: full_name.split('/')[1],
+        private: !!(r.meta || {}).private,
+        pushed_at: new Date().toISOString(),
+        description: '',
+        default_branch: (r.meta || {}).default_branch || 'main',
+        homepage: (r.meta || {}).homepage || '',
+      }))
+    );
+  }
   const { repo, name, asked } = repoOf(url);
   if (asked && W.repoDeny[asked]) {
     const st = W.repoDeny[asked];

@@ -1,6 +1,7 @@
 // Admin-only. Lifetime sales, expenses, net profit, former clients.
 // Kept out of /api/sites so the financial data is never in a public response.
 import { listSites } from '../lib/registry.js';
+import { authed, authError } from '../lib/auth.js';
 import { siteStats } from '../lib/stats.js';
 import { runAudit } from '../lib/audit.js';
 import { store } from '../lib/store.js';
@@ -8,12 +9,6 @@ import { allAiCost } from '../lib/aicost.js';
 
 const THIS_MONTH = new Date().toISOString().slice(0, 7);
 
-function authed(req) {
-  const s = process.env.CRON_SECRET;
-  if (!s) return true;
-  const h = req.headers.authorization || '';
-  return h === `Bearer ${s}` || req.query.secret === s;
-}
 
 const monthsBetween = (from) => (from ? Math.max(1, Math.round((Date.now() - from) / (30 * 864e5))) : 1);
 
@@ -35,7 +30,7 @@ async function readArr(key) {
 }
 
 export default async function handler(req, res) {
-  if (!authed(req)) return res.status(401).json({ ok: false, error: 'bad secret' });
+  if (!authed(req)) return res.status(401).json({ ok: false, error: authError() });
 
   const sites = await listSites();
   const perSite = [];

@@ -162,6 +162,7 @@ in the verification report) · **blocked** (needs something external) · **open*
 | R8.6 | Part of the budget reserved for replies and live conversations | Configurable share |
 | R8.7 | Provider charges the app cannot cap are explained plainly | No guaranteed hard total is advertised; provider-side limits recommended |
 | R8.8 | Show period, spent, reserved, remaining, next reset; no weekly/monthly double counting; explicit rollover | Weekly and monthly are two windows over the same money |
+| R8.9 | A retried worker cannot charge the same reservation twice | **Added 2026-10-01, not in the owner's original list.** Found while building R8.4: a worker that crashes after reconciling and is retried would book the cost again. Reconciling the same reservation id a second time is ignored. |
 
 ## R9 — Controlled campaign improvement
 
@@ -172,7 +173,7 @@ in the verification report) · **blocked** (needs something external) · **open*
 | R9.3 | Secondary outcomes | Delivery, bounces, complaints, opt-outs, filtered clicks |
 | R9.4 | Do not optimise primarily for opens or raw clicks | Scanner activity and privacy-related tracking limits handled explicitly |
 | R9.5 | Adequate sample size and stated uncertainty | A winner is never declared from two replies |
-| R9.6 | Keep a baseline or holdout | Always |
+| R9.6 | Keep a baseline or holdout | A holdout group is always retained, is never reassigned to a variant mid-experiment, and its results are reported alongside every variant |
 | R9.7 | Changes are bounded by owner-approved settings, logged, and reversible | Full change log and rollback |
 | R9.8 | Optimisation may never alter consent rules, suppression, prices, contractual promises, sender identity or budget limits | Hard prohibition |
 | R9.9 | Auto-pause when deliverability or negative-response indicators exceed configurable thresholds | Thresholds editable |
@@ -184,7 +185,7 @@ in the verification report) · **blocked** (needs something external) · **open*
 | R10.1 | Real metrics with clear definitions | Contacts discovered/imported · qualified and eligible · emails attempted/accepted/delivered/bounced · SMS attempted/delivered · unique contacts reached · human replies · positive replies · qualified leads · verified bookings/cancellations/attended · opt-outs and complaints · spend · cost per qualified reply and per booking |
 | R10.2 | Totals distinguished from unique people | Both shown where they differ |
 | R10.3 | Unknown is distinguished from zero; incomplete tracking is marked | Never silently rounded to 0 |
-| R10.4 | Filters | Period, source, campaign, industry, geography, channel, message version |
+| R10.4 | Every report can be filtered without losing its definitions | Filters for period, source, campaign, industry, geography, channel and message version; a filtered view states the same metric definitions as the unfiltered one, and an empty filter result reads as empty rather than zero |
 | R10.5 | Funnel reporting and source attribution | End to end |
 | R10.6 | An unqualified cold prospect is never described as a warm lead | Language enforced |
 
@@ -194,10 +195,10 @@ in the verification report) · **blocked** (needs something external) · **open*
 |---|---|---|
 | R11.1 | Durable jobs and persisted state; scheduled work runs with the browser closed and survives deploys and worker restarts | Demonstrated |
 | R11.2 | Idempotent execution and sending | No duplicate sends |
-| R11.3 | Retry limits and dead-letter recovery | Bounded |
+| R11.3 | Retry limits and dead-letter recovery | Every job type has a maximum attempt count; a job that exhausts it moves to a dead-letter list that is visible in the dashboard and replayable, never silently dropped |
 | R11.4 | Worker leases and stale-job recovery | A dead worker's job is reclaimed safely |
 | R11.5 | Verified webhook signatures and replay protection | Duplicate and out-of-order webhooks handled |
-| R11.6 | Rate-limit handling | Backoff |
+| R11.6 | Rate-limit handling | A 429 or provider rate-limit response backs off exponentially, respects a Retry-After header when one is given, and never counts against the job's failure budget |
 | R11.7 | Server-side secrets; authorization on every client/contact/job endpoint; safe logging | No credential leaks in logs |
 | R11.8 | Retention and deletion controls | Right to be forgotten supported |
 | R11.9 | SSRF protection for website analysis | Malicious URLs cannot reach internal services |

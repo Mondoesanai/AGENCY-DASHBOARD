@@ -6,6 +6,7 @@
 // Always: snapshots this month's numbers, builds a rotating client email, and
 // (on send) attaches a branded PNG report card + links the shareable report page.
 import { listSites } from '../lib/registry.js';
+import { authed, authError } from '../lib/auth.js';
 import { runAudit } from '../lib/audit.js';
 import { siteStats } from '../lib/stats.js';
 import { buildFindings, clientActions, improvementsForClient, overallGrade } from '../lib/suggestions.js';
@@ -19,12 +20,6 @@ import { summarizeRanks, readRankHistory, readPrevRanks, keywordTable } from '..
 const MONTH = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
 const MK = monthKey();
 
-function authed(req) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
-  const h = req.headers.authorization || '';
-  return h === `Bearer ${secret}` || req.query.secret === secret;
-}
 
 function baseUrl(req) {
   if (process.env.PUBLIC_BASE_URL) return process.env.PUBLIC_BASE_URL.replace(/\/$/, '');
@@ -580,7 +575,7 @@ async function sendLatest(site, { req }) {
 }
 
 export default async function handler(req, res) {
-  if (!authed(req)) return res.status(401).json({ ok: false, error: 'bad secret' });
+  if (!authed(req)) return res.status(401).json({ ok: false, error: authError() });
 
   const t0 = Date.now();
   const all = await listSites();

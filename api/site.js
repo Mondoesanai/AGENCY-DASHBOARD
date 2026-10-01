@@ -1,6 +1,7 @@
 // Create / update / delete a client site, plus builder notes and the
 // "what we did this month" changelog. All writes require CRON_SECRET.
 import { store } from '../lib/store.js';
+import { authed, authError } from '../lib/auth.js';
 import {
   saveSiteConfig, deleteSiteConfig, getSiteConfig, slugify, listSites,
   hostKey, slugForHost, rememberHost, matchExistingSite,
@@ -168,12 +169,6 @@ async function analyzeConversion({ site, description }) {
   }
 }
 
-function authed(req) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
-  const h = req.headers.authorization || '';
-  return h === `Bearer ${secret}` || req.query.secret === secret || (req.body && req.body.secret === secret);
-}
 
 async function readNotes(slug) {
   const n = await store.get(`notes:${slug}`).catch(() => null);
@@ -191,7 +186,7 @@ async function readLog(slug) {
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ ok: false });
-  if (!authed(req)) return res.status(401).json({ ok: false, error: 'bad secret' });
+  if (!authed(req)) return res.status(401).json({ ok: false, error: authError() });
 
   let body = {};
   try {
@@ -203,6 +198,12 @@ export default async function handler(req, res) {
 
   try {
     if (action === 'save') {
+      // slugify() always returns something — it falls back to the literal
+      // 'site' — so the old `if (!slug)` guard could never fire. Saving the
+      // form empty created a phantom client called "site" at https://site.
+      // Check the INPUT, not the derived slug.
+      if (!body.slug && !String(body.url || '').trim() && !String(body.name || '').trim())
+        return res.status(400).json({ ok: false, error: 'need a url or name' });
       let slug = (body.slug || slugify(body.url || body.name || '')).trim();
       if (!slug) return res.status(400).json({ ok: false, error: 'need a url or name' });
       // if this exact site already exists (added before, OR auto-registered by
@@ -432,8 +433,14 @@ export default async function handler(req, res) {
     }
 
     if (action === 'changelog-del') {
+      // without these guards a call with no slug wrote an empty array to the
+      // key `changelog:undefined` and reported success, and a bad index
+      // reported a deletion that never happened.
+      if (!body.slug) return res.status(400).json({ ok: false, error: 'need slug' });
       const log = await readLog(body.slug);
-      if (Number.isInteger(body.index) && body.index >= 0 && body.index < log.length) log.splice(body.index, 1);
+      if (!Number.isInteger(body.index) || body.index < 0 || body.index >= log.length)
+        return res.status(400).json({ ok: false, error: 'need a valid index' });
+      log.splice(body.index, 1);
       await store.set(`changelog:${body.slug}`, JSON.stringify(log));
       return res.status(200).json({ ok: true, changelog: log });
     }

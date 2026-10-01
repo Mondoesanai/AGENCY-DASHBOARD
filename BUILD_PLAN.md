@@ -85,7 +85,7 @@ and never display a mocked integration as connected (R4.4).
 | R1.5 | Actionable recovery messages (`blockedBy.label/hint`, `stateLabel`) | `[x]` logic verified — **UI rendering is R2.5** |
 | R1.6 | Request preserved through block → fix → resume | `[x]` L2 end-to-end |
 | R1.7 | Repo-mapping audit: identity, owner, branch, permissions, stale cached state | `[x]` `lib/repo-audit.js`, 94 checks — wired into `agentStatus`, `saveSiteConfig`, the 6-hourly tick and `?do=repo-audit` |
-| R1.8 | End-to-end verification of existing flows | `[~]` revisions/automations/agent/reporting covered; **clients CRUD, analytics ranges + empty states, authz isolation, integration connect/disconnect, settings persistence NOT yet verified** |
+| R1.8 | End-to-end verification of existing flows | `[x]` `tests/flows.test.mjs`, 96 checks through the real API handlers — clients CRUD, settings persistence, site/repo association, analytics ranges + empty states, authorization + isolation, integration connect/disconnect, deployment/uptime status |
 | R1.9 | Shipped work never displays as failed | `[x]` — caught my own regression in `resolveCompletedTickets` while wiring it |
 | R1.10 | No dependency upgrades without a demonstrated need | `[x]` none made |
 
@@ -205,7 +205,7 @@ and never display a mocked integration as connected (R4.4).
 | R8.6 | Configurable share reserved for replies and live conversations | `[x]` default 20% |
 | R8.7 | Uncappable provider charges explained plainly | `[x]` `uncappableNote()` in the status payload |
 | R8.8 | Period / spent / reserved / remaining / next reset; no weekly-monthly double counting; explicit rollover | `[x]` logic verified — **UI rendering is R2.5** |
-| — | Double-charge protection (not in the original spec; **added** because a retried worker could charge twice) | `[x]` reconciling the same reservation twice is ignored |
+| R8.9 | Double-charge protection — **added** requirement, a retried worker could charge twice | `[x]` reconciling the same reservation twice is ignored |
 
 ## PART 9 — Controlled experimentation
 
@@ -242,7 +242,7 @@ and never display a mocked integration as connected (R4.4).
 | R11.4 | Worker leases + stale-job recovery | `[b]` `revisions:lock` pattern exists; not generalised |
 | R11.5 | Verified webhook signatures + replay protection | `[ ]` |
 | R11.6 | Rate-limit handling with backoff | `[b]` GitHub path only |
-| R11.7 | Server-side secrets; authorization on every endpoint; safe logging | `[~]` existing auth inherited, **not systematically audited** |
+| R11.7 | Server-side secrets; authorization on every endpoint; safe logging | `[~]` **authorization now enforced and mechanically checked** (one shared gate, fails closed when deployed, every `api/` file either guarded or on a reviewed public allowlist — `tests/governance.test.mjs`). **Safe logging is still not audited**, so this stays open |
 | R11.8 | Retention and deletion controls | `[b]` contact deletion exists and correctly keeps suppression; no retention policy |
 | R11.9 | SSRF protection for website analysis | `[ ]` |
 | R11.10 | Scraped pages / card text / inbound messages are **data, never instructions** | `[~]` card OCR treats text as data; needs a stated, tested rule across all three paths |
@@ -271,14 +271,16 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 30 |
+| `[x]` built **and** verified | 32 |
 | `[b]` built, not verified | 10 |
-| `[~]` in progress | 6 |
+| `[~]` in progress | 5 |
 | `[!]` externally blocked | 4 (R4.2 · R6.1 · R6.2 · R6.4 — all gaps G2/G3) |
-| `[ ]` not started | 70 |
-| **Total tracked** | **120** = all 119 spec requirements + 1 added (double-charge protection) |
+| `[ ]` not started | 69 |
+| **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
-Coverage cross-check, run against `PROJECT_SPEC.md`: **119 of 119 spec requirements appear
+Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
+
+Coverage cross-check, run against `PROJECT_SPEC.md`: **120 of 120 spec requirements appear
 here, 0 missing, 0 in this plan that are absent from the spec.** That check is what makes
 "no requirement was silently dropped" a measured statement rather than a promise.
 
@@ -310,4 +312,5 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 - **2026-10-01** — Suite: revision-state 46, contacts 54, card-intake 50, budget 42, inbox 85, agent 101, platform 59, reports 31 = **450 checks, 0 failing**.
 - **2026-10-01** — `PROJECT_SPEC.md` written (R1–R12, 120 requirements with acceptance criteria, gaps G1–G5) and `VERIFICATION_REPORT.md` opened with L0–L4 evidence levels. **This file reconciled against the spec**: every task now carries its requirement ID, `[b]` was introduced to stop "built" being mistaken for "verified", and 11 previously-implied-complete items were honestly downgraded. Tally: 33 verified, 11 built-unverified, 6 in progress, 4 externally blocked, 67 not started.
 - **2026-10-01** — R1.7 repo-mapping audit (`lib/repo-audit.js`, 94 checks; suite now 562). Found that `cfg.repo` was never validated against GitHub at all: a renamed repo, a read-only token, an archived or empty repo, and **two clients sharing one repository** all surfaced at commit time as a generic "could not read repo" that the pipeline then retried. The rename case is the dangerous one — GitHub serves a renamed repo through a redirect, so a stale name works silently until someone reuses the old name, at which point a client's changes would land in a stranger's repository. Two new permanent causes added to the state-machine classifier (`repo-renamed`, `repo-collision`) so these block instead of looping. Transient faults are deliberately NOT blocks: a timeout is not evidence of a broken mapping. A suspicious repo/domain mismatch is reported as *uncertain*, never as a fault. Only unambiguous fixes auto-apply (a name GitHub itself just confirmed, a stale cached block); collisions, missing repos and permission faults are reported for the owner. **Also fixed a real stale-state bug:** `agent:blocked:<slug>` held a repo failure for 12h and was cleared only by a later *successful* cycle, so repointing a client at the correct repo left the old repo's error in place and the site stayed ineligible for up to half a day. Verified by a negative control — removing the wiring fails exactly the 4 wiring tests.
-- **NEXT:** R1.8 end-to-end verification of the existing flows, then R4.3 the discovery source adapter.
+- **2026-10-01** — R1.8 end-to-end flow verification (`tests/flows.test.mjs`, 96 checks) + `tests/governance.test.mjs` (28 checks). Found and fixed **a serious data exposure**: `/api/sites` had no authorization at all and returns every client's email, phone, monthly price, setup fee, expenses, private notes and changelog — anyone with the deployment URL could read the whole client book. It is now password-gated, and the dashboard sends the stored password and shows the unlock prompt on a 401. Also found **five copies of an auth gate that failed OPEN**: each endpoint did `if (!CRON_SECRET) return true`, so a missing secret on a deployment would silently authorise every admin request including finances. Replaced with one shared gate in `lib/auth.js` that fails CLOSED when deployed, uses a timing-safe comparison, and explains the locked state instead of saying 'wrong password'. Two smaller real bugs: an empty Add-site form created a phantom client called 'site' (the `if (!slug)` guard could never fire because `slugify()` falls back to the literal 'site'), and `changelog-del` with no arguments wrote an empty array to `changelog:undefined` and reported success. The governance suite then caught **four drifts in my own documents** — 11 items ticked with no traceable evidence, three acceptance criteria worn down to single words ('Always', 'Bounded', 'Backoff'), R10.4 reduced to 'Filters', and a tally that disagreed with the file. All repaired by strengthening, never by deleting.
+- **NEXT:** R4.3 the discovery source adapter (R4.1 settings first), then R2 so the repo audit and budget actually render.

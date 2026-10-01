@@ -1,5 +1,6 @@
 // Main dashboard feed.
 import { listSites } from '../lib/registry.js';
+import { authed, authError } from '../lib/auth.js';
 import { runAudit } from '../lib/audit.js';
 import { siteStats } from '../lib/stats.js';
 import { buildFindings, clientActions, improvementsForClient, overallGrade } from '../lib/suggestions.js';
@@ -48,6 +49,13 @@ async function readArr(key) {
 const readLog = (slug) => readArr(`changelog:${slug}`);
 
 export default async function handler(req, res) {
+  // R1.8/R11.7 — this endpoint had NO authorization at all, and it returns
+  // every client's email, phone, monthly price, setup fee, expenses, private
+  // notes and changelog. Anyone who knew the deployment URL could read the
+  // whole client book. The dashboard was written to fetch it unauthenticated,
+  // so the UI now sends the stored password and shows the unlock prompt on a
+  // 401 instead of silently rendering nothing.
+  if (!authed(req)) return res.status(401).json({ ok: false, error: authError() });
   const list = await listSites();
   const today = new Date().getUTCDate();
 

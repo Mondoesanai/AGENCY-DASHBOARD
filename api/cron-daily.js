@@ -5,6 +5,7 @@
 //     email + Resend configured: generate + SEND this month's report
 //     (deduped via lastSent:<slug>)
 import tls from 'node:tls';
+import { authed, authError } from '../lib/auth.js';
 import { listSites } from '../lib/registry.js';
 import { store } from '../lib/store.js';
 import { monthKey } from '../lib/history.js';
@@ -67,12 +68,6 @@ async function snapshotCompany(sites) {
   return snap;
 }
 
-function authed(req) {
-  const secret = process.env.CRON_SECRET;
-  if (!secret) return true;
-  const h = req.headers.authorization || '';
-  return h === `Bearer ${secret}` || req.query.secret === secret;
-}
 
 async function checkHealth(url, { skipSsl } = {}) {
   const out = { url, up: false, status: 0, ms: null, sslDaysLeft: null, checkedAt: Date.now() };

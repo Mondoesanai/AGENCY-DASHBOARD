@@ -497,7 +497,7 @@ function toast(msg,kind){ let el=$('#toast'); if(!el){ el=document.createElement
 
 /* ---------- admin key (persisted) ---------- */
 function key(){ try{ return localStorage.getItem('iw_secret')||''; }catch{ return ''; } }
-function setKey(v){ try{ v?localStorage.setItem('iw_secret',v):localStorage.removeItem('iw_secret'); }catch{} renderUnlock(); }
+function setKey(v,reload){ try{ v?localStorage.setItem('iw_secret',v):localStorage.removeItem('iw_secret'); }catch{} renderUnlock(); if(reload&&typeof load==='function') load(); }
 function needKey(){
   const k=key();
   if(k) return k;
@@ -516,8 +516,8 @@ function renderUnlock(){
     el.innerHTML=`🔒 Locked — enter your password once to manage sites, notes &amp; reports
       <input id="ukInput" type="password" placeholder="Password" />
       <button class="btn sm" id="ukBtn">Unlock</button>`;
-    $('#ukBtn').onclick=()=>{ const v=$('#ukInput').value.trim(); if(v) setKey(v); };
-    $('#ukInput').onkeydown=(e)=>{ if(e.key==='Enter'){ const v=e.target.value.trim(); if(v) setKey(v); } };
+    $('#ukBtn').onclick=()=>{ const v=$('#ukInput').value.trim(); if(v) setKey(v,true); };
+    $('#ukInput').onkeydown=(e)=>{ if(e.key==='Enter'){ const v=e.target.value.trim(); if(v) setKey(v,true); } };
   }
 }
 
@@ -553,7 +553,16 @@ async function load(){
   $('#sites').innerHTML='<div class="loading">Loading portfolio…</div>';
   let data;
   try{
-    const r=await fetch('/api/sites?t='+Date.now(),{cache:'no-store'});
+    // the feed carries client contact details, prices and private notes, so it
+    // is password-gated now — send the stored key and ask for it on a 401
+    const r=await fetch('/api/sites?t='+Date.now()+'&secret='+encodeURIComponent(key()),{cache:'no-store'});
+    if(r.status===401){
+      const j=await r.json().catch(()=>({}));
+      $('#sites').innerHTML='<div class="loading">'+(key()?'That password was not accepted. ':'')+(j.error&&/CRON_SECRET/.test(j.error)?j.error:'Enter your password above to load the portfolio.')+'</div>';
+      if(key()) setKey('');
+      renderUnlock();
+      return;
+    }
     data=await r.json();
     if(!data.sites) throw 0;
   }catch{
@@ -691,7 +700,7 @@ async function loadFinTab(tab){
     }
   } else if(!finData){
     const j=await fetch(`/api/finances?secret=${encodeURIComponent(finKey)}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false}));
-    if(!j.ok){ finKey=null; openPanels=[]; $('#finPanel').hidden=true; $('#finPanel').innerHTML=''; toast(j.error==='bad secret'?'Wrong password.':'Could not load.','err'); return; }
+    if(!j.ok){ finKey=null; openPanels=[]; $('#finPanel').hidden=true; $('#finPanel').innerHTML=''; toast(/bad (secret|password)/.test(j.error||'')?'Wrong password.':(j.error||'Could not load.'),'err'); return; }
     finData=j;
   }
   renderFinPanel();
