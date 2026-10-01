@@ -252,4 +252,50 @@ section('I11c  unknown site is rejected cleanly');
 const rBad = await submitManualRevision({ slug: 'not-a-real-site', text: 'do something' });
 check('unknown slug fails with a clear error, no ticket created', rBad.ok === false && /unknown site/.test(rBad.error));
 
+
+section('I12  END-TO-END REGRESSION (live): a real request for a site with NO linked repo');
+// This is Renewity's actual ticket. Every automation tick produced
+// "not eligible yet — no GitHub repo set (Settings → Automation)" and wrote
+// another attempt line. Nothing blocked, nothing escalated, no recovery action
+// was ever shown — it would have retried forever while the client waited.
+const { submitManualRevision: submitRev, revisionsStatus: revStatus } = await import('../lib/revisions.js');
+const { runAgentCycle: cycle } = await import('../lib/agent.js');
+await saveSiteConfig('norepo', { url: 'https://norepo.test', name: 'No Repo Co', email: 'owner@norepo.test' });
+W.pages['https://norepo.test'] = '<html><body>hi</body></html>';
+const noRepoSite = (await listSites()).find((s) => s.slug === 'norepo');
+check('the site really has no repo linked', !noRepoSite.repo);
+const rNo = await submitRev({ slug: 'norepo', text: 'Please add a testimonials button to the homepage.' });
+check('the request is accepted and queued (never lost)', rNo.ok && rNo.ticket.state === 'queued', JSON.stringify(rNo).slice(0, 160));
+
+// run the automation repeatedly, exactly like the real tick does
+const callsBefore = W.anthropicCalls.length;
+for (let i = 0; i < 6; i++) {
+  const res = await cycle(noRepoSite, { manual: false });
+  await (await import('../lib/revisions.js')).checkRevisionInbox({ maxMs: 50000 }).catch(() => {});
+  void res;
+}
+const after = (await revStatus()).tickets.find((x) => x.id === rNo.ticket.id);
+check('after six automation passes it is BLOCKED, not still looping', after.state === 'blocked', after.state);
+check('it is no longer picked up by the worker', after.due === false);
+check('the owner is told what to actually do', /Link this site/.test(after.blockedBy?.label || ''), JSON.stringify(after.blockedBy));
+check('the original request text is preserved', /testimonials button/i.test(after.summary || ''), after.summary);
+check('no AI spend was burned on the unworkable site', !W.anthropicCalls.slice(callsBefore).some((c) => /norepo/i.test(JSON.stringify(c.messages))), 'an AI call referenced norepo');
+check('the owner was notified exactly once, not six times', W.sms.filter((s) => /No Repo Co/.test(s.body)).length + W.emails.filter((e) => /No Repo Co/.test(e.subject || '')).length === 1, JSON.stringify({ sms: W.sms.filter((s) => /No Repo Co/.test(s.body)).length, em: W.emails.filter((e) => /No Repo Co/.test(e.subject || '')).length }));
+
+section('I12b  …and it resumes by itself once the repo is linked');
+planMode = 'patch';
+addRepo('acme/norepo', { 'index.html': '<html><head><title>No Repo Co</title></head><body><p>Hours: 8-6</p></body></html>', 'sitemap.xml': 'x', 'robots.txt': 'x', 'llms.txt': 'x' });
+await saveSiteConfig('norepo', { repo: 'acme/norepo' });
+await store.set('conv:tagged:norepo', '1'); await store.set('tracker:installed:norepo', '1');
+await store.set('agent:keywords:norepo', JSON.stringify(['a b c']));
+const { retryTicket: retryT } = await import('../lib/revisions.js');
+const resumed = await retryT(rNo.ticket.id);
+check('pressing Retry puts it straight back in the queue', resumed.ok && resumed.ticket.state === 'queued' && !resumed.ticket.blockedBy, JSON.stringify(resumed.ticket.state));
+const fixedSite = (await listSites()).find((s) => s.slug === 'norepo');
+await store.set('agent:lastCycleAt:norepo', '0'); await store.set('agent:lastShipAt:norepo', '0');
+// uses the shared fake planner from W.router (Hours: 8-6 -> 9-5)
+const shipped = await cycle(fixedSite, { manual: false });
+check('the saved request is worked for real once unblocked', shipped.action === 'change', JSON.stringify({ a: shipped.action, e: shipped.error }));
+check('the change is live in the repo', /Hours: 9-5/.test(W.repos['acme/norepo'].files['index.html']));
+
 done();
