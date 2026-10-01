@@ -61,6 +61,31 @@
   .attention{background:rgba(234,181,74,.12);border:1px solid rgba(234,181,74,.4);color:var(--warn);border-radius:12px;padding:10px 14px;font-size:13px;margin-bottom:18px;display:flex;align-items:center;justify-content:space-between;gap:12px;}
   .attention .link{background:none;border:1px solid rgba(234,181,74,.5);color:var(--warn);border-radius:7px;padding:4px 9px;font-size:12px;white-space:nowrap;}
   .attention .link:hover{background:rgba(234,181,74,.15);}
+
+  /* R2.4 — the needs-attention list. Severity is carried by a word as well as
+     a colour, so it survives colour blindness and a greyscale print. */
+  .attn-block{margin:0 0 22px;}
+  .attn-head{font-size:14px;margin:0 0 10px;letter-spacing:.01em;}
+  .attn-item{display:flex;align-items:flex-start;gap:12px;background:var(--surface);border:1px solid var(--line);
+    border-left:3px solid var(--line);border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;}
+  .attn-item.sev-act{border-left-color:var(--neg);}
+  .attn-item.sev-watch{border-left-color:var(--warn);}
+  .attn-item.sev-info{border-left-color:var(--faint);}
+  .attn-sev{flex:0 0 auto;font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;padding:3px 7px;border-radius:6px;
+    margin-top:2px;white-space:nowrap;background:rgba(255,255,255,.05);color:var(--muted);}
+  .attn-item.sev-act .attn-sev{background:rgba(224,96,86,.16);color:var(--neg);}
+  .attn-item.sev-watch .attn-sev{background:rgba(234,181,74,.14);color:var(--warn);}
+  .attn-body{flex:1 1 auto;min-width:0;}
+  .attn-t{font-size:13.5px;font-weight:600;}
+  .attn-d{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.55;}
+  .attn-go{flex:0 0 auto;align-self:center;}
+  .attn-more{margin:2px 0 0;}
+  .glance-h{font:600 12px/1 "Fraunces",serif;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0 0 10px;}
+  .glance-h span{text-transform:none;letter-spacing:0;font-family:inherit;font-weight:400;font-size:12px;color:var(--faint);margin-left:8px;}
+  @media(max-width:560px){
+    .attn-item{flex-wrap:wrap;gap:8px;}
+    .attn-go{align-self:flex-start;width:100%;}
+  }
   .sysbtn{display:inline-flex;align-items:center;gap:7px;}
   .sysbadge{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:99px;font-size:12px;font-weight:700;line-height:1;background:rgba(119,219,170,.16);color:var(--green-br);}
   .sysbtn.warn .sysbadge{background:#e9b949;color:#241a00;}
@@ -363,7 +388,11 @@
 
   <section id="view-overview">
     <div id="sysHealth" hidden></div>
-    <div class="attention" id="attention" hidden></div>
+    <!-- R2.4 — what needs you, first and in words. The numbers below are for
+         looking up, not for noticing: nothing on this page should require the
+         owner to spot a problem by reading six tiles. -->
+    <div id="attention"></div>
+    <div class="glance-h" id="glanceH" hidden>Portfolio at a glance <span>tap any number for the per-site detail</span></div>
     <div class="overview" id="overview"></div>
   </section>
 
@@ -610,7 +639,6 @@ function cardClick(e,slug){
   if(selectMode){ toggleSel(slug); } else { openDrawer(slug); }
 }
 let selectMode=false; const selected=new Set();
-let attnDismissedKey=null;   // session-level: which attention set has been dismissed
 let drawerPane='overview';   // remembered drawer tab
 const dur=(s)=>{ s=Math.round(s||0); if(s<60) return s+'s'; const m=Math.floor(s/60); return m+'m '+(s%60)+'s'; };
 
@@ -637,8 +665,12 @@ async function load(){
     const msg='<div class="loading">Could not reach the API. If this is a fresh deploy, give it a minute.</div>';
     $('#sites').innerHTML=msg;
     $('#overview').innerHTML=msg;
+    // and the attention list must say it knows nothing, not render empty (R2.4)
+    ATT_ERROR='The portfolio feed did not answer.';
+    renderOverviewAttention();
     return;
   }
+  ATT_ERROR='';
   STATE=data;
   render(data);
 }
@@ -665,22 +697,9 @@ function render(data){
   $('#nextSeoTile').onclick=openSeoOverview;
   $$('#overview [data-drill]').forEach(el=>el.onclick=()=>el.dataset.drill==='revisions'?revealRevWidget():openDrill(el.dataset.drill));
 
-  // --- needs-attention banner (dismiss = session flag + localStorage) ---
-  const att=$('#attention');
-  let ackList=[]; try{ ackList=JSON.parse(localStorage.getItem('iw_ack')||'[]'); }catch{}
-  const ackKey=(p.attention||[]).slice().sort().join('|');
-  const show = p.attention && p.attention.length && ackKey!==attnDismissedKey && !ackList.includes(ackKey);
-  if(show){
-    att.hidden=false;
-    att.innerHTML=`<span>⚠ Needs attention: <strong>${(p.attention).map(esc).join(', ')}</strong></span>
-      <button type="button" class="link" id="ackBtn">✕ dismiss</button>`;
-    $('#ackBtn').addEventListener('click',(e)=>{
-      e.preventDefault(); e.stopPropagation();
-      attnDismissedKey=ackKey;
-      try{ if(!ackList.includes(ackKey)){ ackList.push(ackKey); localStorage.setItem('iw_ack',JSON.stringify(ackList.slice(-20))); } }catch{}
-      att.hidden=true; att.innerHTML='';
-    });
-  } else { att.hidden=true; att.innerHTML=''; }
+  // R2.4 — what needs you, computed from what is actually loaded.
+  renderOverviewAttention();
+  $('#glanceH').hidden=false;
 
   $('#siteCount').textContent=`${data.sites.length} tracked`;
   const upd=`Updated ${new Date(data.generatedAt).toLocaleString()}.`;
@@ -1042,6 +1061,9 @@ async function loadRevWidget(){
   // views, so the global queue and the per-client list can never disagree
   REV_TICKETS=(revData&&revData.tickets)||[];
   REV_CONFIGURED=revData?revData.configured!==false:true;
+  // only now are tickets genuinely "checked" — a failed fetch must not let the
+  // Overview report "no stuck requests" (R2.4)
+  REV_LOADED=!!(j&&j.ok);
   renderRevWidget();
   if(typeof STATE!=='undefined'&&STATE) render(STATE);
 }
@@ -2445,7 +2467,71 @@ setInterval(()=>{
 // shared list by eye.
 let CW = null;            // the client-workspace module, once loaded
 let REV_TICKETS = [];     // last known tickets, refreshed with the revisions widget
+let REV_LOADED = false;   // false means NOT CHECKED — which is not the same as none
 import('/client-workspace.js').then((m)=>{ CW = m; }).catch(()=>{ CW = null; });
+
+/* ---------- R2.4 Overview: what needs you ----------------------------------
+   The old banner listed slugs — "⚠ Needs attention: acme, beta" — with a
+   dismiss button that wrote the set into localStorage, so the same real
+   problems never came back. This replaces it with named problems, the reason,
+   and a button that goes to the thing that fixes each one.
+
+   The rule it has to keep: an empty list is only an all-clear when every
+   source was actually read. Tickets arrive after the first paint and replies
+   need the password, so both are reported as unchecked until they are not. */
+let ATT = null;           // the attention module
+let ATT_RESULT = null;    // last computed result, so a click can find its item
+let ATT_EXPANDED = false;
+let ATT_REPLIES = null;   // null = not fetched (password or no acquisition data)
+let ATT_ERROR = '';
+import('/attention.js').then((m)=>{ ATT = m; renderOverviewAttention(); }).catch(()=>{ ATT = null; });
+
+function renderOverviewAttention(){
+  const host=$('#attention'); if(!host) return;
+  if(!ATT){ host.innerHTML='<div class="attn-block"><div class="loading">Checking what needs you…</div></div>'; return; }
+  // An error wins over whatever is in STATE, even a previous good load: a list
+  // built from figures that just failed to refresh would read as current.
+  if(ATT_ERROR||!STATE){
+    host.innerHTML=ATT.renderAttention({items:[],counts:{act:0,watch:0,info:0},checked:[],notChecked:[],allClear:false},
+      {loading:!ATT_ERROR, error:ATT_ERROR});
+    return;
+  }
+  ATT_RESULT=ATT.buildAttention({
+    sites: STATE.sites,
+    portfolio: STATE.portfolio,
+    // only pass tickets once they have genuinely been fetched, so "none" is
+    // never inferred from "not yet"
+    tickets: REV_LOADED ? REV_TICKETS : undefined,
+    replies: ATT_REPLIES || undefined,
+    generatedAt: STATE.generatedAt,
+  });
+  host.innerHTML=ATT.renderAttention(ATT_RESULT,{expanded:ATT_EXPANDED});
+  ATT.wireAttention(host, ATT_RESULT, {
+    expand:()=>{ ATT_EXPANDED=true; renderOverviewAttention(); },
+    go:(action)=>{
+      if(!action) return;
+      if(action.refresh){ load().then(loadRevWidget); return; }
+      if(action.slug){
+        drawerPane=action.pane||'overview';
+        if(goView) goView('clients');
+        openDrawer(action.slug);
+        return;
+      }
+      if(action.view==='acquisition'){ if(action.tab) ACQ.tab=action.tab; if(goView) goView('acquisition'); return; }
+      if(action.view&&goView) goView(action.view);
+    },
+  });
+}
+
+/* Replies live behind the admin password. Asking for them without one would
+   turn the Overview into a permission error, so they stay "not checked" — and
+   the list says so — until a password is present. */
+async function loadAttentionReplies(){
+  if(!key()) return;
+  const j=await acqApi('replies-list&limit=100');
+  if(j&&j.ok&&Array.isArray(j.replies)) ATT_REPLIES=j.replies;
+  renderOverviewAttention();
+}
 
 function REVSUM(slug){
   if(!CW) return { count:0, open:0, stuck:0, text:'' };
@@ -2613,6 +2699,7 @@ loadSysHealth();
   await load(); // let the main dashboard paint first — revisions renders after, not ahead of everything else
   await loadRevWidget();
   startRevPoll();
+  loadAttentionReplies(); // only does anything once a password is present
 })();
 </script>
 </body>
