@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1027 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1065 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 107 ·
-outreach 46 · acquisition-ui 62 · campaigns 72) plus **71 supervisor
+outreach 46 · acquisition-ui 86 · campaigns 72 · campaign-flow 43) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -274,3 +274,31 @@ Suite: `tests/campaigns.test.mjs`, 72 checks.
 **Not done in R5:** R5.9 (periodic website recheck creating an internal opportunity) and the
 campaign-side halves of R5.6/R5.7 — the consent scopes they depend on exist and are tested in
 `lib/contacts.js`, but no SMS sequence exists to be prevented from running yet.
+
+---
+
+## R5 reachable — the orphan correction
+
+The independent reviewer flagged that `lib/campaigns.js` was tested in isolation with
+"no user-facing screens, API endpoints, or end-to-end workflows". It was right, and it
+was the rule I had written myself: *code that is never called from anywhere is not
+implemented*. The R5 ticks were **downgraded to `[b]` before any new work was started**,
+then earned back.
+
+Suite: `tests/campaign-flow.test.mjs`, 43 checks, all driving the real `api/admin.js`.
+
+| Check performed | Level | Result |
+|---|---|---|
+| Every campaign endpoint is password-gated | **L2** | All six return 401 unauthenticated. |
+| A campaign is created through the API as a **draft** | **L2** | Never running on creation. An unsafe cadence (0 days, 50 follow-ups) is clamped and the clamping is **reported back to the operator**, not applied silently. An unknown type is a 400. |
+| Preview shows the exact words and sends nothing | **L2** | `W.emails.length === 0` asserted after every preview. With no sender identity the API refuses and names CAN-SPAM; with it set, the message carries the postal address and quotes the configured price. |
+| A business with a verified website produces **no message**, through the API | **L2** | The endpoint returns `ok:false` with the status named. The screen presents this as the system working, not as an error. |
+| Enrolment refuses what it should | **L2** | Four distinct refusals, each with a reason an operator can read: no email on the listing ("we do not guess one from the domain"), wrong segment for the campaign type, already enrolled, prospect not found. |
+| A draft has nothing due; starting it makes work due | **L2** | And an invalid status is a 400. |
+| An opt-out is permanent | **L2** | Pending sends cancelled, never due again, and **cannot be re-enrolled** afterwards. |
+| The screen leads with whether anything can be sent | L1 | Blockers listed at the top, with "composing is safe, sending is what is gated" so the operator is not left guessing. |
+| Browser, desktop + mobile | **L2** | Five tabs, one section visible per tab, no horizontal overflow, no JS console errors. |
+
+**R6.9 sender identity** was added as part of this: stored as settings, blank by default,
+so a missing postal address blocks the message rather than shipping a placeholder into
+real mail.

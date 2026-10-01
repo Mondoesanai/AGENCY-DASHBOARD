@@ -8,10 +8,11 @@ import { authed, authError } from '../lib/auth.js';
 import { receiptsHandler } from '../lib/receipts.js';
 import { reposHandler } from '../lib/repos.js';
 import { runRepoAudit, lastRepoAudit } from '../lib/repo-audit.js';
-import { getSettings, saveSettings, pricingBlocker } from '../lib/settings.js';
+import { getSettings, saveSettings, pricingBlocker, ownerIdentity, saveSender } from '../lib/settings.js';
 import { listContacts, upsertContact, optOut } from '../lib/contacts.js';
 import { scanCards, saveCards, previewCsv, importCsv } from '../lib/card-intake.js';
-import { runDiscovery, listProspects, ATTRIBUTION as DISCOVERY_ATTRIBUTION } from '../lib/discovery.js';
+import { runDiscovery, listProspects, getProspect, ATTRIBUTION as DISCOVERY_ATTRIBUTION } from '../lib/discovery.js';
+import { listCampaigns, createCampaign, composeCold, enrolProspects, setCampaignStatus, dueSends } from '../lib/campaigns.js';
 import { sendReadiness } from '../lib/outreach-email.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
@@ -123,6 +124,42 @@ export default async function handler(req, res) {
     case 'prospects-list': {
       const rows = await listProspects({ limit: Number(req.query.limit) || 200 });
       return res.status(200).json({ ok: true, prospects: rows, attribution: DISCOVERY_ATTRIBUTION });
+    }
+    case 'campaigns-list':
+      return res.status(200).json({ ok: true, campaigns: await listCampaigns() });
+    case 'campaign-create': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await createCampaign({ name: body.name, type: body.type, cadence: body.cadence || {} });
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
+    case 'campaign-preview': {
+      // Compose WITHOUT sending, so the owner reads the exact words first.
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const owner = await ownerIdentity();
+      const prospect = body.prospectId ? await getProspect(body.prospectId) : body.prospect;
+      if (!prospect) return res.status(404).json({ ok: false, error: 'unknown prospect' });
+      const msg = await composeCold(prospect, { owner, preview: body.preview || null });
+      return res.status(200).json({ ok: true, message: msg, owner: { complete: !!(owner.name && owner.business && owner.postalAddress) } });
+    }
+    case 'campaign-add-prospects': {
+      // Turn qualified prospects into contacts, then into campaign members.
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await enrolProspects(body.campaignId, body.prospectIds || []);
+      return res.status(200).json({ ok: true, ...out });
+    }
+    case 'campaign-status': {
+      const c = await setCampaignStatus(req.query.id, req.query.status);
+      if (!c) return res.status(400).json({ ok: false, error: 'unknown campaign or status' });
+      return res.status(200).json({ ok: true, campaign: c });
+    }
+    case 'campaign-due': {
+      const out = await dueSends(req.query.id, { window: { startHour: 8, endHour: 17 } });
+      return res.status(200).json({ ok: true, ...out });
+    }
+    case 'sender-save': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const saved = await saveSender(body.sender || body);
+      return res.status(200).json({ ok: true, sender: saved.sender, identity: await ownerIdentity() });
     }
     case 'outreach-readiness':
       return res.status(200).json({ ok: true, readiness: await sendReadiness({}) });

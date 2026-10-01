@@ -5,15 +5,15 @@
 import { check, section, done } from './world.mjs';
 import {
   TABS, renderShell, renderBody, renderContacts, renderIntake,
-  renderProspects, renderAcqSettings, renderReadiness, fieldCell, SEGMENT_LABEL,
+  renderProspects, renderAcqSettings, renderReadiness, renderCampaigns, fieldCell, SEGMENT_LABEL,
 } from '../public/acquisition.js';
 
 const has = (html, s) => String(html).includes(s);
 
 // ---------------------------------------------------------------------------
-section('A1  the section has the four workflows, not a placeholder');
-check('four tabs', TABS.length === 4, String(TABS.length));
-check('contacts, intake, prospects and settings', TABS.map((t) => t.id).join(',') === 'contacts,intake,prospects,settings');
+section('A1  the section has the five workflows, not a placeholder');
+check('five tabs', TABS.length === 5, String(TABS.length));
+check('contacts, intake, prospects, campaigns and settings', TABS.map((t) => t.id).join(',') === 'contacts,intake,prospects,campaigns,settings', TABS.map((t) => t.id).join(','));
 const shell = renderShell('contacts');
 check('the shell marks the active tab', /data-acq="contacts" class="on"/.test(shell), shell.slice(0, 200));
 check('and leaves a body to fill', has(shell, 'id="acqBody"'));
@@ -128,5 +128,56 @@ check('an opted-out contact is shown as opted out', /opted out/.test(html));
 check('a bounced address is shown as bounced', /bounced/.test(html));
 check('a usable one is shown as emailable', /emailable/.test(html));
 check('and it explains why opted-out records are kept', /deleting the record would lose the opt-out/.test(html));
+
+// ---------------------------------------------------------------------------
+section('A10  the campaigns screen leads with whether anything can be sent');
+let c = renderCampaigns({ campaigns: [], readiness: { ready: false, blockers: [{ text: 'No Instantly API key.' }, { text: 'Outreach has not been switched on.' }] } });
+check('it says plainly that nothing can be sent', /Nothing can be sent yet/.test(c));
+check('it lists the blockers', /No Instantly API key/.test(c) && /switched on/.test(c));
+check('but makes clear you can still build and preview', /composing is safe, sending is what is gated/.test(c));
+check('no campaigns says what a campaign is', /A campaign is a message plus a cadence/.test(c));
+check('and that creating one sends nothing', /campaigns start as drafts/.test(c));
+check('the cadence limits are stated before you type', /capped at 2 \(1 for warm\)/.test(c));
+
+c = renderCampaigns({
+  campaigns: [{ id: 'c1', name: 'DFW flooring', type: 'cold-no-site-found', cadence: { gapDays: 4, followUps: 2 }, status: 'draft' }],
+  readiness: { ready: true, blockers: [] },
+});
+check('a ready provider says sending is live', /Sending is live/.test(c));
+check('the campaign type is shown in words', /Cold — no website found/.test(c));
+check('the cadence is shown in words', /intro \+ 2, 4d apart/.test(c));
+check('a draft offers Start', /data-act="running"/.test(c));
+c = renderCampaigns({ campaigns: [{ id: 'c1', name: 'x', type: 'cold-no-site-found', cadence: { gapDays: 4, followUps: 2 }, status: 'running' }], readiness: { ready: true, blockers: [] } });
+check('a running campaign offers Pause', /data-act="paused"/.test(c) && />\s*Pause/.test(c));
+
+// the preview block — the exact words, and the honest refusal
+c = renderCampaigns({ campaigns: [], readiness: { ready: true, blockers: [] }, campaignPreview: { ok: true, message: { ok: true, subject: 'Couldn\'t find a website for Lone Star Flooring', body: 'Hi,\n\nI was looking up Lone Star Flooring...', mentionsPrice: true, mentionsPreview: false } } });
+check('the preview shows the subject', /Couldn&#39;t find a website for Lone Star/.test(c));
+check('and the body verbatim in a pre block', /acq-pre/.test(c) && /I was looking up Lone Star Flooring/.test(c));
+check('it states whether a price is quoted', /Quotes your price/.test(c));
+check('and whether a preview is mentioned', /No preview mentioned/.test(c));
+
+c = renderCampaigns({ campaigns: [], readiness: { ready: true, blockers: [] }, campaignPreview: { ok: true, message: { ok: false, reason: 'no honest opening for this prospect (web status: verified-present)' } } });
+check('a refusal to compose is shown as such', /No message can be written/.test(c));
+check('with the reason', /verified-present/.test(c));
+check('and framed as correct behaviour, not an error', /That is the system working/.test(c));
+
+// ---------------------------------------------------------------------------
+section('A11  prospects can be selected and enrolled, with honest limits');
+html = renderProspects({
+  prospects: [
+    { id: 'p1', name: 'Has Email', city: 'Dallas', email: 'a@b.com', qualification: { segment: 'no-site-found' }, web: {}, evidence: {} },
+    { id: 'p2', name: 'No Email', city: 'Plano', qualification: { segment: 'no-site-found' }, web: {}, evidence: {} },
+  ],
+  campaigns: [{ id: 'c1', name: 'DFW flooring' }],
+});
+check('a prospect with an email can be picked', /value="p1"[^>]*\/>/.test(html) && !/value="p1"[^>]*disabled/.test(html), html.match(/value="p1"[^>]*/)?.[0]);
+check('a prospect with no email cannot be picked', /value="p2"[^>]*disabled/.test(html), html.match(/value="p2"[^>]*/)?.[0]);
+check('and the reason is given', /do not guess an\s+address from a domain/.test(html.replace(/\s+/g, ' ')) || /do not guess/.test(html));
+check('a campaign picker is offered', /pr_campaign/.test(html) && /pr_enrol/.test(html));
+check('each prospect offers a message preview', /data-preview="p1"/.test(html));
+
+html = renderProspects({ prospects: [{ id: 'p1', name: 'X', qualification: {}, web: {}, evidence: {} }], campaigns: [] });
+check('with no campaigns it says to create one first', /Create a campaign first/.test(html));
 
 done();

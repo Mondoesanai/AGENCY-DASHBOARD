@@ -2419,7 +2419,8 @@ async function renderAcq(){
   const body=$('#acqBody');
   body.innerHTML=acqMod.renderBody(ACQ.tab, {...ACQ, loading:true});
   if(ACQ.tab==='contacts'){ const j=await acqApi('contacts-list'); ACQ.contacts=j.contacts||[]; }
-  if(ACQ.tab==='prospects'){ const j=await acqApi('prospects-list'); ACQ.prospects=j.prospects||[]; ACQ.attribution=j.attribution; const s=await acqApi('settings-get'); ACQ.targetingStatus=s.settings?.targeting?.status; }
+  if(ACQ.tab==='prospects'){ const j=await acqApi('prospects-list'); ACQ.prospects=j.prospects||[]; ACQ.attribution=j.attribution; const s=await acqApi('settings-get'); ACQ.targetingStatus=s.settings?.targeting?.status; const c=await acqApi('campaigns-list'); ACQ.campaigns=c.campaigns||[]; }
+  if(ACQ.tab==='campaigns'){ const c=await acqApi('campaigns-list'); ACQ.campaigns=c.campaigns||[]; const r=await acqApi('outreach-readiness'); ACQ.readiness=r.readiness; }
   if(ACQ.tab==='settings'){ const j=await acqApi('settings-get'); ACQ.settings=j.settings; ACQ.pricingBlocker=j.pricingBlocker; const r=await acqApi('outreach-readiness'); ACQ.readiness=r.readiness; }
   body.innerHTML=acqMod.renderBody(ACQ.tab, {...ACQ, loading:false});
   wireAcq();
@@ -2479,6 +2480,31 @@ function wireAcq(){
   };
   $('#acqSaveTargeting')?.addEventListener('click',()=>saveTargeting('draft'));
   $('#acqConfirmTargeting')?.addEventListener('click',()=>saveTargeting('confirmed'));
+
+  // --- campaigns ---
+  $('#cp_create')?.addEventListener('click', async ()=>{
+    const j=await acqApi('campaign-create',{name:$('#cp_name').value.trim()||'Untitled',type:$('#cp_type').value,
+      cadence:{gapDays:Number($('#cp_gap').value),followUps:Number($('#cp_follow').value)}});
+    if(!j.ok){ toast(j.reason||'Could not create.','err'); return; }
+    const notes=j.campaign.cadenceNotes||[];
+    toast(notes.length?('Created. '+notes.join('; ')):'Created as a draft.');
+    renderAcq();
+  });
+  document.querySelectorAll('[data-camp]').forEach(b=>b.addEventListener('click', async ()=>{
+    const j=await acqApi(`campaign-status&id=${encodeURIComponent(b.dataset.camp)}&status=${b.dataset.act}`);
+    toast(j.ok?`Campaign ${j.campaign.status}.`:'Could not change it.',j.ok?'':'err'); renderAcq();
+  }));
+  document.querySelectorAll('[data-preview]').forEach(b=>b.addEventListener('click', async ()=>{
+    const j=await acqApi('campaign-preview',{prospectId:b.dataset.preview});
+    ACQ.campaignPreview=j; ACQ.tab='campaigns'; renderAcq();
+  }));
+  $('#pr_enrol')?.addEventListener('click', async ()=>{
+    const ids=[...document.querySelectorAll('.pr_pick:checked')].map(c=>c.value);
+    if(!ids.length){ toast('Pick at least one prospect.','err'); return; }
+    const j=await acqApi('campaign-add-prospects',{campaignId:$('#pr_campaign').value,prospectIds:ids});
+    const note=$('#pr_enrol_note');
+    if(note) note.textContent = j.ok ? `${j.enrolled} added${j.refused.length?`, ${j.refused.length} refused: ${j.refused.map(r=>r.reason).join('; ')}`:''}` : 'failed';
+  });
 }
 
 /* ---------- R2.1 top-level navigation ---------- */

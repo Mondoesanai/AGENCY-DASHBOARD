@@ -16,8 +16,15 @@ export const TABS = Object.freeze([
   { id: 'contacts', label: 'Contacts' },
   { id: 'intake', label: 'Add contacts' },
   { id: 'prospects', label: 'Prospects' },
+  { id: 'campaigns', label: 'Campaigns' },
   { id: 'settings', label: 'Targeting & pricing' },
 ]);
+
+export const CAMPAIGN_TYPE_LABEL = Object.freeze({
+  'cold-no-site-found': 'Cold — no website found',
+  'cold-weak-site': 'Cold — website did not load',
+  'warm-card-followup': 'Warm — card / networking follow-up',
+});
 
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -180,27 +187,41 @@ export function renderProspects(state) {
     .map(([k, n]) => `<span class="pill sm">${esc(SEGMENT_LABEL[k] || k)}: ${n}</span>`)
     .join(' ');
 
+  const campaignPicker = (state.campaigns || []).length
+    ? `<div class="acq-inline">Add selected to
+         <select id="pr_campaign">${state.campaigns.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('')}</select>
+         <button class="btn sm" id="pr_enrol">Add to campaign</button>
+         <span class="faint" id="pr_enrol_note"></span>
+       </div>`
+    : '<div class="note faint">Create a campaign first to enrol these prospects.</div>';
+
   const body = rows
     .map((p) => {
       const seg = p.qualification?.segment || 'uncertain';
       const web = p.web || {};
       return `<tr>
+        <td><input type="checkbox" class="pr_pick" value="${esc(p.id)}" ${p.email ? '' : 'disabled title="No email on the listing"'} /></td>
         <td>${esc(p.name)}</td>
         <td>${esc(p.city || '')}</td>
         <td>${esc(p.industry || '')}</td>
         <td><span class="pill sm ${seg === 'no-site-found' ? 'warn' : ''}">${esc(SEGMENT_LABEL[seg] || seg)}</span></td>
         <td class="faint">${esc(web.observation || '')}</td>
-        <td>${p.evidence?.sourceUrl ? `<a href="${esc(p.evidence.sourceUrl)}" target="_blank" rel="noopener">source</a>` : ''}</td>
+        <td>
+          ${p.evidence?.sourceUrl ? `<a href="${esc(p.evidence.sourceUrl)}" target="_blank" rel="noopener">source</a> ` : ''}
+          <button class="btn sm ghost" data-preview="${esc(p.id)}">Preview message</button>
+        </td>
       </tr>`;
     })
     .join('');
 
   return `${head}
     <div style="margin:10px 0">${summary}</div>
+    ${campaignPicker}
     <table class="acq-table"><thead><tr>
-      <th>Business</th><th>City</th><th>Trade</th><th>Web presence</th><th>What was actually observed</th><th></th>
+      <th></th><th>Business</th><th>City</th><th>Trade</th><th>Web presence</th><th>What was actually observed</th><th></th>
     </tr></thead><tbody>${body}</tbody></table>
-    <p class="note faint">${esc(state.attribution || '')}</p>`;
+    <p class="note faint">A prospect with no email on the listing cannot be selected — we do not guess an
+      address from a domain. ${esc(state.attribution || '')}</p>`;
 }
 
 // ---------------------------------------------------------------------------
@@ -277,10 +298,78 @@ export function renderShell(activeTab) {
     <div id="acqBody"></div>`;
 }
 
+// ---------------------------------------------------------------------------
+// Campaigns
+// ---------------------------------------------------------------------------
+
+export function renderCampaigns(state) {
+  if (state.loading) return '<div class="loading">Loading campaigns…</div>';
+  const list = state.campaigns || [];
+  const r = state.readiness;
+
+  // The sending state belongs at the top of this screen, not buried in
+  // settings: whether anything can actually go out is the first thing an
+  // operator needs to know before building a campaign.
+  const gate = r && !r.ready
+    ? `<div class="note warn" style="line-height:1.7"><b>Nothing can be sent yet.</b>
+         ${r.blockers.map((b) => esc(b.text)).join(' ')}
+         <br />You can still build and preview campaigns — composing is safe, sending is what is gated.</div>`
+    : '<div class="note">Sending is live.</div>';
+
+  const preview = state.campaignPreview;
+  const previewBlock = !preview
+    ? ''
+    : preview.ok === false || preview.message?.ok === false
+      ? `<div class="acq-panel"><h3>Preview</h3><div class="note warn">No message can be written for this prospect: ${esc(preview.message?.reason || preview.error)}</div>
+         <p class="note faint">That is the system working. A business with a verified website gives us no honest observation to open with.</p></div>`
+      : `<div class="acq-panel"><h3>Preview — the exact words</h3>
+         <div class="note">Subject: <b>${esc(preview.message.subject)}</b></div>
+         <pre class="acq-pre">${esc(preview.message.body)}</pre>
+         <p class="note faint">
+           ${preview.message.mentionsPrice ? 'Quotes your price. ' : 'No price quoted — pricing is not set. '}
+           ${preview.message.mentionsPreview ? 'Mentions a preview that exists.' : 'No preview mentioned.'}
+         </p></div>`;
+
+  const rows = list.length
+    ? `<table class="acq-table"><thead><tr><th>Campaign</th><th>Type</th><th>Cadence</th><th>Status</th><th></th></tr></thead><tbody>
+       ${list
+         .map(
+           (c) => `<tr>
+           <td>${esc(c.name)}</td>
+           <td>${esc(CAMPAIGN_TYPE_LABEL[c.type] || c.type)}</td>
+           <td>intro + ${c.cadence.followUps}, ${c.cadence.gapDays}d apart</td>
+           <td><span class="pill sm ${c.status === 'running' ? '' : 'warn'}">${esc(c.status)}</span></td>
+           <td><button class="btn sm ghost" data-camp="${esc(c.id)}" data-act="${c.status === 'running' ? 'paused' : 'running'}">
+             ${c.status === 'running' ? 'Pause' : 'Start'}</button></td>
+         </tr>`
+         )
+         .join('')}</tbody></table>`
+    : `<div class="note"><b>No campaigns yet.</b> A campaign is a message plus a cadence, pointed at a
+         group of prospects. Creating one sends nothing — campaigns start as drafts.</div>`;
+
+  return `${gate}
+    <div class="acq-panel">
+      <h3>Create a campaign</h3>
+      <div class="acq-grid">
+        <label>Name<input id="cp_name" placeholder="DFW flooring — no site found" /></label>
+        <label>Type<select id="cp_type">
+          ${Object.entries(CAMPAIGN_TYPE_LABEL).map(([k, v]) => `<option value="${k}">${esc(v)}</option>`).join('')}
+        </select></label>
+        <label>Days between messages<input id="cp_gap" value="4" /></label>
+        <label>Follow-ups<input id="cp_follow" value="2" /></label>
+      </div>
+      <p class="note faint">Follow-ups are capped at 2 (1 for warm) and the gap at 2–30 days. Anything outside that is clamped and the change is reported back to you.</p>
+      <div class="btn-row"><button class="btn" id="cp_create">Create as draft</button></div>
+    </div>
+    ${rows}
+    ${previewBlock}`;
+}
+
 export function renderBody(tab, state) {
   if (tab === 'contacts') return renderContacts(state);
   if (tab === 'intake') return renderIntake(state);
   if (tab === 'prospects') return renderProspects(state);
+  if (tab === 'campaigns') return renderCampaigns(state);
   if (tab === 'settings') return renderAcqSettings(state);
   return '<div class="note">Unknown tab.</div>';
 }

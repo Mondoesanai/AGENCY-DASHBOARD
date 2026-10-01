@@ -24,7 +24,7 @@ written down where the supervisor can read it rather than re-argued every cycle.
 
 1. `R3.*` — contact intake screens over the existing OCR/import backend — **done**
 2. `R4.*` — discovery and qualification — **done**
-3. `R5.*` — campaign creation, scheduling, sending adapters — **done** (R5.6/R5.7 consent-side, R5.9 recheck still open)
+3. `R5.*` — campaign creation, scheduling, sending adapters — **done** (R5.9 recheck still open)
 4. `R7.*` — replies, manual takeover, verified booking attribution — **current**
 5. `R8.*`, `R10.*`, `R11.*` — budget controls, reporting, durable background operation
 6. everything else, including the remainder of Part 2 (R2.2, R2.4–R2.9)
@@ -167,14 +167,14 @@ and never display a mocked integration as connected (R4.4).
 
 | Req | Task | Status |
 |---|---|---|
-| R5.1 | Cold email: verified name, one real observation, truthful offer, one next step, sender identity, opt-out | `[x]` `composeCold` — one verified observation, truthful offer, sender identity, opt-out; tested that no familiarity, urgency, testimonial or performance claim can be emitted |
-| R5.2 | Never claim a preview exists unless it does — **enforced, not advisory** | `[x]` a preview is mentioned only when one exists — a URL with `exists:false` is dropped |
-| R5.3 | Intro + ≤2 follow-ups, days apart, editable within bounded limits | `[x]` intro + ≤2 follow-ups (warm: ≤1), gap clamped to 2–30 days, and the clamping is explained rather than silent |
-| R5.4 | Stop pending outreach on reply / opt-out / hard bounce / booking, proven by a race test | `[x]` `stopContact` drops every pending send in **every** campaign; a late worker cannot resurrect a stopped member |
-| R5.5 | Networking follow-up: warmer, promised follow-up + ≤1 reminder, then pause | `[x]` `composeWarm` — opener taken from the recorded relationship, never assumed |
+| R5.1 | Cold email: verified name, one real observation, truthful offer, one next step, sender identity, opt-out | `[x]` `composeCold` + `?do=campaign-preview` + the Campaigns screen — **L2 through the real API** |
+| R5.2 | Never claim a preview exists unless it does — **enforced, not advisory** | `[x]` a preview is mentioned only when one exists; verified through the preview endpoint |
+| R5.3 | Intro + ≤2 follow-ups, days apart, editable within bounded limits | `[x]` clamped 2–30 days / ≤2 follow-ups, and the clamping is reported back on the create endpoint |
+| R5.4 | Stop pending outreach on reply / opt-out / hard bounce / booking, proven by a race test | `[x]` `stopContact` drops every pending send in every campaign; verified end to end that an opt-out never becomes due again and cannot be re-enrolled |
+| R5.5 | Networking follow-up: warmer, promised follow-up + ≤1 reminder, then pause | `[x]` `composeWarm` — opener taken from the recorded relationship |
 | R5.6 | A card exchange alone never enters a recurring promotional SMS sequence | `[b]` consent scopes already enforce this in `lib/contacts.js`; campaign side not built |
 | R5.7 | Three distinct permissions: requested preview · appointment reminders · promotional | `[b]` scopes exist (`one_time_followup`/`transactional`/`promotional`) |
-| R5.8 | No auto-escalation from unanswered email to SMS | `[x]` `mayEscalateToSms()` refuses, so the prohibition is testable rather than merely absent |
+| R5.8 | No auto-escalation from unanswered email to SMS | `[x]` `mayEscalateToSms()` refuses |
 | R5.9 | Website recheck → internal opportunity, with material-change threshold + cooldown | `[ ]` |
 
 ## PART 6 — Email & SMS integrations
@@ -185,7 +185,7 @@ and never display a mocked integration as connected (R4.4).
 | R6.2 | Prospecting separated from transactional client mail | `[x]` Resend recorded in code as unsuitable for prospecting, with the reason; enforced by the send gate |
 | R6.3 | Domain separation explained **accurately** (it does not remove all risk) | `[x]` documented that a separate domain limits blast radius but does not make cold email safe |
 | R6.4 | Sender config + SPF/DKIM/DMARC guidance | `[!]` **G2** |
-| R6.5 | Conservative limits + business-local sending windows | `[x]` `withinWindow` + `dueSends` — 2pm Wednesday sends, 3am and Saturday are held with the hold explained |
+| R6.5 | Conservative limits + business-local sending windows | `[x]` `withinWindow` + `?do=campaign-due` — Saturday and 3am are held, with the hold explained |
 | R6.6 | Delivery / bounce / complaint / unsubscribe each update contact state | `[ ]` |
 | R6.7 | Reply ingestion + thread matching to contact and campaign | `[ ]` |
 | R6.8 | Global suppression across all campaigns | `[b]` `lib/contacts.js` suppression is already global; not wired to a sender |
@@ -334,4 +334,5 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 - **2026-10-01** — R1.8 end-to-end flow verification (`tests/flows.test.mjs`, 96 checks) + `tests/governance.test.mjs` (28 checks). Found and fixed **a serious data exposure**: `/api/sites` had no authorization at all and returns every client's email, phone, monthly price, setup fee, expenses, private notes and changelog — anyone with the deployment URL could read the whole client book. It is now password-gated, and the dashboard sends the stored password and shows the unlock prompt on a 401. Also found **five copies of an auth gate that failed OPEN**: each endpoint did `if (!CRON_SECRET) return true`, so a missing secret on a deployment would silently authorise every admin request including finances. Replaced with one shared gate in `lib/auth.js` that fails CLOSED when deployed, uses a timing-safe comparison, and explains the locked state instead of saying 'wrong password'. Two smaller real bugs: an empty Add-site form created a phantom client called 'site' (the `if (!slug)` guard could never fire because `slugify()` falls back to the literal 'site'), and `changelog-del` with no arguments wrote an empty array to `changelog:undefined` and reported success. The governance suite then caught **four drifts in my own documents** — 11 items ticked with no traceable evidence, three acceptance criteria worn down to single words ('Always', 'Bounded', 'Backoff'), R10.4 reduced to 'Filters', and a tally that disagreed with the file. All repaired by strengthening, never by deleting.
 - **2026-10-01** — R2.1 top-level nav (`public/nav.js`, 44 checks; suite 740). Five sections as specified, hash-routed so a view is linkable and survives reload, and an unknown or hostile hash resolves to Overview rather than leaving the page blank. Existing panels moved into their section; **Acquisition says plainly that it is not built yet** rather than rendering an empty state that would read as 'no prospects' (R2.9). Caught two real breaks before shipping: `#seoOverview` would have been nested inside `#mainView`, which `openSeoOverview()` hides — the SEO page would have gone blank; and the money/receipts panels now live in Settings, so opening them has to route there first or they render inside a hidden section. Verified by screenshot on localhost, both default and deep-linked.
 - **2026-10-01** — R5 campaigns (`lib/campaigns.js`, 72 checks; suite 1027). Two campaign types because the relationship differs: cold prospects get one verified observation, warm contacts get an opener taken from the recorded relationship. The composer cannot emit a claim the evidence does not support — a business with a working website produces NO cold message at all, because there is nothing honest to open with. A preview is mentioned only when one exists, even if a URL is supplied. Price appears only when pricing is configured. The stop is the important part: a reply drops every pending send in **every** campaign, not just the current step, and a late worker cannot resurrect a stopped member.
+- **2026-10-01** — R5 made REACHABLE. The independent reviewer was right that the campaign library was an orphan: unit tests only, no endpoint, no screen. The R5 ticks were downgraded to `[b]` before any new work, then earned back with six API endpoints (`campaigns-list`, `campaign-create`, `campaign-preview`, `campaign-add-prospects`, `campaign-status`, `campaign-due`), a Campaigns screen, prospect selection with enrolment, and `tests/campaign-flow.test.mjs` — 43 checks driving the real `api/admin.js` end to end. `enrolProspects` is the join between discovery and campaigns, and its refusals are the point: no email on the listing, wrong segment for the campaign, already enrolled, or opted out. Sender identity (R6.9) added as settings, blank by default, so a missing postal address blocks the message instead of shipping a placeholder.
 - **NEXT:** R2.4 Overview = what needs attention only, then R4.1/R4.3 discovery settings + source adapter.
