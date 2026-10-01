@@ -18,6 +18,7 @@ import { listOpportunities, resolveOpportunity, runRecheckSweep } from '../lib/r
 import { recordReply, listReplies, markHandled, REPLY_KINDS } from '../lib/replies.js';
 import { getKnowledge, saveKnowledge, draftAnswer, containsUnapprovedClaim } from '../lib/knowledge.js';
 import { getReplyMode, setReplyMode, sendDraft, takeOver, conversationFor } from '../lib/replies.js';
+import { listBookings, bookingStats, recordManualBooking, recordOutcome, recordBookingLinkClick } from '../lib/bookings.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
@@ -213,6 +214,20 @@ export default async function handler(req, res) {
     }
     case 'conversation': {
       return res.status(200).json({ ok: true, conversation: await conversationFor(req.query.contactId) });
+    }
+    case 'bookings-list':
+      return res.status(200).json({ ok: true, bookings: await listBookings({ limit: Number(req.query.limit) || 200 }), stats: await bookingStats() });
+    case 'booking-manual': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      return res.status(200).json(await recordManualBooking({ contactId: body.contactId, campaignId: body.campaignId || null, startAt: body.startAt, by: body.by || 'owner' }));
+    }
+    case 'booking-outcome': {
+      const out = await recordOutcome(req.query.id, req.query.outcome, { by: req.query.by || 'owner' });
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
+    case 'booking-click': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      return res.status(200).json(await recordBookingLinkClick(body.contactId, { campaignId: body.campaignId || null }));
     }
     case 'outreach-readiness':
       return res.status(200).json({ ok: true, readiness: await sendReadiness({}) });

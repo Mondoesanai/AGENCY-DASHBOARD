@@ -25,8 +25,8 @@ written down where the supervisor can read it rather than re-argued every cycle.
 1. `R3.*` — contact intake screens over the existing OCR/import backend — **done**
 2. `R4.*` — discovery and qualification — **done**
 3. `R5.*` — campaign creation, scheduling, sending adapters — **done**
-4. `R7.*` — replies, manual takeover, verified booking attribution — **current**
-5. `R8.*`, `R10.*`, `R11.*` — budget controls, reporting, durable background operation
+4. `R7.*` — replies, manual takeover, verified booking attribution — **done**
+5. `R8.*`, `R10.*`, `R11.*` — budget controls, reporting, durable background operation — **current**
 6. everything else, including the remainder of Part 2 (R2.2, R2.4–R2.9)
 
 ---
@@ -208,9 +208,9 @@ and never display a mocked integration as connected (R4.4).
 | R7.5 | Never reply conversationally to bounces or automated mail | `[x]` auto-replies and bounces are classified non-human and never pause or trigger a response |
 | R7.6 | Loop prevention: max turns, cooldown, dedup, escalation | `[x]` four brakes — max turns, cooldown, duplicate text, handover — each escalating to a person rather than stopping silently; wired into ingestion |
 | R7.7 | Unified inbox · AI history · manual takeover · draft-only vs automatic · notifications | `[x]` Replies screen + `sendDraft`/`takeOver`/`conversationFor`; draft-only is the default and the send path is the one place a turn is counted |
-| R7.8 | Booking via verified webhook or supported API — **a link click is not a booking** | `[ ]` |
-| R7.9 | Cancellations and reschedules; attribution survives both | `[ ]` |
-| R7.10 | Attribution to contact, source, campaign, variant, recorded at booking time | `[ ]` |
+| R7.8 | Booking via verified webhook or supported API — **a link click is not a booking** | `[x]` `lib/bookings.js` — signature-verified Calendly webhook on `api/collect.js?hook=booking`; a click is recorded as interest and explicitly not a booking |
+| R7.9 | Cancellations and reschedules; attribution survives both | `[x]` cancel and reschedule both carry the original attribution; a late older webhook cannot resurrect a cancelled booking |
+| R7.10 | Attribution to contact, source, campaign, variant, recorded at booking time | `[x]` contact, campaign and message variant captured **at booking time**, not reconstructed later |
 
 ## PART 8 — Budget controls
 
@@ -290,11 +290,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 69 |
+| `[x]` built **and** verified | 72 |
 | `[b]` built, not verified | 6 |
 | `[~]` in progress | 5 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 39 |
+| `[ ]` not started | 36 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -346,4 +346,5 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 - **2026-10-01** — R7.6 loop prevention. Two machines can talk to each other forever, and an auto-responder on the other end will do it at full speed. Four independent brakes, because any one of them can be defeated by a sufficiently odd correspondent: a small automatic-turn budget, a 30-minute cooldown, duplicate-text detection (whitespace-insensitive, so a reformatted repeat still counts), and explicit handover. Every brake **escalates** rather than stopping — the draft is kept and handed to a person with the reason, because silently abandoning a live prospect mid-conversation is its own failure. A human taking over sets the automatic budget to zero and records who owns the thread. A negative control that unwires the brakes from ingestion fails exactly the two checks that depend on them.
 - Also widened the supervisor's reviewer budget and made it **trim** rather than drop: a 9.5k implementation file had pushed the total barely over the cap and vanished entirely, so the reviewer could see the call sites but not the logic they called.
 - **2026-10-01** — R7.7, and a gap the reviewer was right about. It noticed `recordAutoReply()` was exported but called only from tests — so in production the turn counter would stay at zero and the max-turns and cooldown brakes could **never fire**. The cause was that no send path existed yet: drafting checked the brakes, nothing recorded a turn. `sendDraft` is now the single exit, and it is the one place a turn is counted. A negative control that removes that line fails five checks, including "a second send straight after is stopped by the cooldown" — exactly the silent failure predicted. Two reply modes and only two: draft-only (the default; a person must approve) and automatic. Both re-check the loop brakes **and** the claims guard at send time, not just at drafting, because a person can edit a draft in between — an edited draft offering a discount is refused even in automatic mode. A failed transport does **not** count a turn. Takeover zeroes the automatic budget and records who owns the thread. The screen leads with the mode, counts what is worth the owner's time, shows the prospect's own words, and surfaces when a draft was withheld and why.
+- **2026-10-01** — R7.8–R7.10 bookings, and a notification gap I had overclaimed. The reviewer pointed out that R7.7's "notifications for interested and uncertain replies" was only a count on a screen — which does nothing if nobody is looking at the screen. A prospect who says "yes, call me" and hears nothing for two days is worse off than one never contacted. Interested and uncertain replies now go out through the owner's existing notify path (text, falling back to email); not-interested, opt-outs, bounces and auto-replies stay silent, because being pinged for those teaches you to ignore the pings. On bookings the rule is six words — **a link click is not a booking** — and it is the easiest metric in the world to fake. A click is stored as interest with `isBooking: false` and counted separately. The only two things that create a booking are a signature-verified webhook and a record the owner entered themselves. Verification is HMAC over `timestamp.body` with a 5-minute replay window, timing-safe compare, and **no signing key means nothing is trusted at all**. Duplicates are ignored by event id, and a late older event cannot resurrect a cancelled booking. Attribution is captured at booking time and survives both cancellation and reschedule.
 - **NEXT:** R2.4 Overview = what needs attention only, then R4.1/R4.3 discovery settings + source adapter.

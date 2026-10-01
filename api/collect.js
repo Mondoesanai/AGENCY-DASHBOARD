@@ -45,6 +45,26 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   if (req.method === 'OPTIONS') return res.status(204).end();
 
+  // R7.8 — the scheduler webhook. It lives on this public function because
+  // Calendly cannot authenticate with the dashboard password, so the SIGNATURE
+  // is the only thing standing between a stranger's HTTP request and a record
+  // the owner plans their week around. An unverified payload is refused, and
+  // with no signing key configured nothing is trusted at all.
+  if (req.query?.hook === 'booking') {
+    const { verifyCalendlySignature, handleBookingWebhook } = await import('../lib/bookings.js');
+    const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+    const v = verifyCalendlySignature({
+      header: req.headers['calendly-webhook-signature'],
+      rawBody,
+      signingKey: process.env.CALENDLY_WEBHOOK_KEY,
+    });
+    if (!v.ok) return res.status(401).json({ ok: false, error: v.reason });
+    let event = {};
+    try { event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}; } catch { event = {}; }
+    const out = await handleBookingWebhook({ event, verified: true });
+    return res.status(out.ok ? 200 : 400).json(out);
+  }
+
   let d = {};
   try {
     d = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {};
