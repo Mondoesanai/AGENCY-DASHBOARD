@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1257 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1295 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 151 ·
-outreach 46 · acquisition-ui 86 · campaigns 97 · recheck 47 · replies 36 · campaign-flow 52) plus **71 supervisor
+outreach 46 · acquisition-ui 86 · campaigns 97 · recheck 47 · replies 74 · campaign-flow 52) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -321,7 +321,10 @@ real mail.
 | Req | Check performed | Level | Result |
 |---|---|---|---|
 | R7.1 | An inbound reply immediately pauses that contact's follow-ups, **including the already-queued race** | **L1+L2** | `tests/replies.test.mjs`, 36 checks. The race is driven directly: a worker takes a send claim, the contact replies *during* preparation, and the pre-commit re-check refuses with *"a reply arrived while this message was being prepared"*. **Negative control**: removing that re-check fails three checks including "commit was never called" — so without it the follow-up genuinely does reach someone who just replied. A worker cannot even claim a send for a contact who has already replied (refused at the claim stage, `prepare` never runs). A clean send still completes, and a refused composition stops at `prepare` carrying the composer's reason, so the guard is not a blanket refusal. The stop flag is written **before** the campaign bookkeeping, leaving no window where a reply is known but unenforced. Two months later the contact is still not due. |
-| R7.2 (partial) | Auto-replies and bounces are not treated as a human reply | L1 | An out-of-office is recorded but does **not** pause follow-ups and does not flag the contact stopped; their campaign membership is untouched. Full ten-category classification is **not** implemented. |
-| R7.5 (partial) | Never reply conversationally to an automated message | L1 | Covered by the same non-human set. No auto-responder exists yet to test the reply side of this. |
+| R7.2 | Reply classifier, ten categories | **L1** | All ten exist. The three where a wrong answer does real damage are decided by **rules, not judgement**: delivery failure from `X-Failed-Recipients`/mailer-daemon/subject, auto-reply from RFC 3834 `Auto-Submitted` and the vendor headers (and `Auto-Submitted: no` is correctly *not* an auto-reply), and opt-out from explicit phrases. Precedence verified: a bounce containing "not interested" is still a bounce, and an opt-out inside a polite message still wins. Unmatched text returns **AMBIGUOUS with zero confidence** and the basis *"a person should read this"* — a real outcome that routes to a human rather than a guess. |
+| R7.5 | Never reply conversationally to a bounce or automated mail | **L1** | Auto-replies and bounces classify as non-human, are recorded without pausing follow-ups, and leave campaign membership untouched — an out-of-office must not look like interest. |
 | R7.7 (partial) | Owner tools — unified inbox | L1 | Replies are listed newest-first, filterable to unhandled, and markable as handled. **No screen yet**, and no AI history, takeover or draft-only mode. |
 | — | An opt-out is a standing instruction, not just a stop | L1 | After an opt-out reply, re-reading the contact shows the consent gate refuses them — the opt-out survives as a consent fact, not only as a stop flag. |
+
+
+| R7.1 (ingestion) | Replies are **detected**, not reported by hand | **L1+L2** | **Gap found by the reviewer**, and it was the right question: `recordReply` alone only fires if a human tells the system a reply arrived, so the automatic pause did not exist. `ingestReplies` reads the mailbox, matches senders against contacts with a recorded **send** (exact email match only — a colleague replying must not stop someone else's campaign), classifies and records. Verified: a real reply is ingested, classified and the contact stopped **without being told**; a stranger is ignored; a contact we never wrote to is not treated as a campaign reply; a mailbox failure is reported as transient rather than swallowed. Wired into `runAutoTick` **before** any sending work. **Negative control**: blinding the detection fails four checks including "the contact is now stopped". |

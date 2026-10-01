@@ -148,4 +148,95 @@ check('and it leaves the unhandled list', (await listReplies({ onlyUnhandled: tr
 
 check('no email or text was sent anywhere in this suite', W.emails.length === 0 && W.sms.length === 0);
 
+// ---------------------------------------------------------------------------
+section('P8  R7.2 — all ten categories, with the dangerous three on rules');
+const { classifyReply, ALL_KINDS, ingestReplies, prospectReplyLookup } = await import('../lib/replies.js');
+check('all ten categories exist', ALL_KINDS.length === 10, String(ALL_KINDS.length));
+
+// the three where a wrong answer does real damage are decided by headers/phrases
+let v = classifyReply({ subject: 'Undeliverable: Couldn\'t find a website', from: 'MAILER-DAEMON@mail.test' });
+check('a bounce is detected from the sender', v.kind === REPLY_KINDS.BOUNCE && v.byRule === true, JSON.stringify(v));
+v = classifyReply({ subject: 'anything', headers: { 'X-Failed-Recipients': 'a@b.test' } });
+check('and from the X-Failed-Recipients header', v.kind === REPLY_KINDS.BOUNCE);
+
+v = classifyReply({ subject: 'Out of office', text: 'back on the 9th' });
+check('an out-of-office is an auto-reply', v.kind === REPLY_KINDS.AUTO_REPLY);
+v = classifyReply({ subject: 're: your email', headers: { 'Auto-Submitted': 'auto-replied' } });
+check('RFC 3834 Auto-Submitted is honoured', v.kind === REPLY_KINDS.AUTO_REPLY, JSON.stringify(v));
+v = classifyReply({ subject: 're: hi', headers: { 'Auto-Submitted': 'no' } });
+check('Auto-Submitted: no is NOT an auto-reply', v.kind !== REPLY_KINDS.AUTO_REPLY);
+
+for (const phrase of ['please unsubscribe me', 'take me off your list', 'STOP', 'remove me from this', 'do not contact me again']) {
+  check(`"${phrase}" is an opt-out`, classifyReply({ text: phrase }).kind === REPLY_KINDS.OPT_OUT, phrase);
+}
+check('an opt-out is decided by rule, never inference', classifyReply({ text: 'unsubscribe' }).byRule === true);
+
+// intent categories
+check('"call me" wants a call', classifyReply({ text: 'sounds good, give me a call tomorrow' }).kind === REPLY_KINDS.WANTS_CALL);
+check('"how much" wants details', classifyReply({ text: 'how much would that cost?' }).kind === REPLY_KINDS.WANTS_DETAILS);
+check('"show me a mockup" wants a preview', classifyReply({ text: 'can you show me a mockup first?' }).kind === REPLY_KINDS.WANTS_PREVIEW);
+check('"not interested" is not interested', classifyReply({ text: 'not interested, thanks' }).kind === REPLY_KINDS.NOT_INTERESTED);
+check('"we already have a guy" is not interested', classifyReply({ text: 'we already have a developer' }).kind === REPLY_KINDS.NOT_INTERESTED);
+check('"check back next year" is not now', classifyReply({ text: 'check back next year please' }).kind === REPLY_KINDS.NOT_NOW);
+check('"yes interested" is interested', classifyReply({ text: 'yes, interested' }).kind === REPLY_KINDS.INTERESTED);
+
+// the honest fallback
+v = classifyReply({ text: 'who is this' });
+check('an unrecognised message is AMBIGUOUS, not guessed', v.kind === REPLY_KINDS.AMBIGUOUS);
+check('and it says a person should read it', /a person should read this/.test(v.basis), v.basis);
+check('with zero confidence rather than a fake score', v.confidence === 0);
+
+// precedence: a bounce that happens to contain "not interested" is still a bounce
+v = classifyReply({ subject: 'Undeliverable', from: 'mailer-daemon@x.test', text: 'not interested' });
+check('headers beat body text', v.kind === REPLY_KINDS.BOUNCE, JSON.stringify(v));
+// an opt-out inside a longer message still wins over intent words
+v = classifyReply({ text: 'thanks but please remove me from your list' });
+check('an opt-out beats a polite preamble', v.kind === REPLY_KINDS.OPT_OUT);
+
+// ---------------------------------------------------------------------------
+section('P9  ingestion detects replies and pauses, without being told');
+// This is the gap the reviewer found: recordReply alone only fires if a human
+// reports a reply, which is not an automatic pause at all.
+const g = await mkContact('Gorse', 'gorse@gorse.test');
+await addMember(camp.id, g);
+// they must have been SENT something before a reply counts as a campaign reply
+const { markStepSent } = await import('../lib/campaigns.js');
+await markStepSent(camp.id, g.id, 0);
+
+const mailbox = [
+  { id: 'm1', from: 'Gorse Co <gorse@gorse.test>', subject: 're: your email', body: 'not interested, thanks', at: Date.now() },
+  { id: 'm2', from: 'someone-else@stranger.test', subject: 'hello', body: 'buy my product', at: Date.now() },
+  { id: 'm3', from: 'MAILER-DAEMON@mail.test', subject: 'Undeliverable: hi', body: '', at: Date.now() },
+];
+let ing = await ingestReplies({
+  listMail: async () => mailbox,
+  isKnownContact: (addr) => prospectReplyLookup(addr),
+});
+check('ingestion runs', ing.ok === true, JSON.stringify(ing).slice(0, 160));
+check('it scanned the mailbox', ing.scanned === 3, String(ing.scanned));
+check('it ingested the real reply', ing.ingested >= 1, JSON.stringify(ing.results));
+check('and ignored the stranger', ing.ignored >= 1, String(ing.ignored));
+check('the reply was classified without being told', ing.results.some((x) => x.kind === REPLY_KINDS.NOT_INTERESTED), JSON.stringify(ing.results));
+check('and it paused their follow-ups', ing.paused >= 1, String(ing.paused));
+check('which is what matters — the contact is now stopped', (await isStopped(g.id)) === true);
+check('ingestion states it answers nobody', /answers anyone|answers nobody/.test(ing.note), ing.note);
+
+// a contact we never sent to is not a campaign reply
+const h = await mkContact('Hazel', 'hazel@hazel.test');
+await addMember(camp.id, h);
+ing = await ingestReplies({
+  listMail: async () => [{ id: 'm4', from: 'hazel@hazel.test', subject: 'hi', body: 'not interested', at: Date.now() }],
+  isKnownContact: (addr) => prospectReplyLookup(addr),
+});
+check('someone we never wrote to is not treated as a campaign reply', ing.ingested === 0 && ing.ignored === 1, JSON.stringify(ing));
+check('so their campaign is untouched', (await isStopped(h.id)) === false);
+
+// a bad mailbox is reported, not swallowed
+ing = await ingestReplies({ listMail: async () => { throw new Error('token expired'); }, isKnownContact: async () => null });
+check('a mailbox failure is reported as transient', ing.ok === false && ing.transient === true, JSON.stringify(ing));
+check('and names the cause', /token expired/.test(ing.reason), ing.reason);
+check('missing wiring is refused rather than silently doing nothing', (await ingestReplies({})).ok === false);
+
+check('still nothing sent anywhere', W.emails.length === 0 && W.sms.length === 0);
+
 done();
