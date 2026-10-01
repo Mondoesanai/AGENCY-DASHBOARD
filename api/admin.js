@@ -10,7 +10,7 @@ import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
 import { todosState, refreshTodos } from '../lib/todos.js';
-import { backfillGmailLabels, revisionsStatus, checkRevisionInbox, recheckTicket, submitManualRevision, markTicketDone, cancelTicket, assignTicketToSite, retryTicket } from '../lib/revisions.js';
+import { backfillRevisionLabels, backfillGmailLabels, revisionsStatus, checkRevisionInbox, recheckTicket, submitManualRevision, markTicketDone, cancelTicket, assignTicketToSite, retryTicket } from '../lib/revisions.js';
 import { systemHealth } from '../lib/health.js';
 import { autoTagConversions } from '../lib/conversions-setup.js';
 import { sendClientEmail } from '../lib/winsrecap.js';
@@ -99,6 +99,7 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, state, draft: draftUpsell(site, state) });
     }
     case 'gmail-backfill': {
+      if (req.query.revisions === '1') return res.status(200).json(await backfillRevisionLabels());
       // file existing mail into the business folders (header-only, no AI spend)
       const out = await backfillGmailLabels({ days: Number(req.query.days) || 60, max: Number(req.query.max) || 200 });
       return res.status(200).json(out);
