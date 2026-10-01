@@ -2047,6 +2047,31 @@ function wireDrawer(s,bf){
   _openToAgentDetail=false;
   clearTimeout(_agentPollT); clearInterval(_agentTickT); clearInterval(_todosTickT); // a previous drawer session's timers, if any
   $('#agentToggle')?.addEventListener('click',()=>{ agentExpanded=!agentExpanded; renderAgentBox(); });
+
+  // R1.5 recovery buttons on the Requests tab. The pane is rebuilt on every
+  // drawer open, so one delegated listener on it cannot accumulate.
+  // A button that claims a fix and does nothing is worse than no button, so
+  // every action either lands the owner on the control that fixes it or says
+  // plainly that the fix is a Vercel variable and names it.
+  if(CW) CW.wireFixButtons($('.tabpane[data-pane="revisions"]',$('#drawerIn')),{
+    switchPane,
+    expand:(sel)=>{ if(sel==='#agentDetail'){ agentExpanded=true; renderAgentBox(); } },
+    focus:(sel)=>{
+      const el=$(sel); if(!el) return;
+      el.scrollIntoView({block:'center',behavior:'smooth'});
+      if(typeof el.focus==='function') el.focus({preventScroll:true});
+    },
+    note:(msg,btn,res)=>{
+      const pane = res.pane ? $(`.tabpane[data-pane="${res.pane}"]`,$('#drawerIn')) : null;
+      const host = pane || btn.parentElement;
+      if(!host) return;
+      let n=[...host.children].find(c=>c.classList&&c.classList.contains('fixnote'));
+      if(!n){ n=document.createElement('div'); n.className='fixnote note warn'; n.setAttribute('role','status'); n.style.margin='0 0 10px'; }
+      n.textContent=msg;
+      if(pane) host.insertBefore(n,host.firstChild); else host.appendChild(n);
+    },
+  });
+
   function renderAgentBox(){
     const st=agentLastStatus; if(!st||!$('#agentDot')) return;
     clearInterval(_agentTickT);
