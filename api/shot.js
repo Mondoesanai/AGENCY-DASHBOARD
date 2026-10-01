@@ -2,6 +2,7 @@
 // Redirects to WordPress mShots — free, no key, and it re-captures roughly
 // weekly on their side. We bucket the URL by week so it refreshes on its own
 // without us ever running a browser or spending API calls.
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import { listSites } from '../lib/registry.js';
 
 export default async function handler(req, res) {

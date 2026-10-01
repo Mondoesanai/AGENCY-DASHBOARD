@@ -1,5 +1,6 @@
 // Monthly report card image.  /api/card?slug=relax-tax  ->  SVG.
 // Non-sensitive — safe to link in an email.
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import { listSites } from '../lib/registry.js';
 import { getHistory } from '../lib/history.js';
 import { siteStats } from '../lib/stats.js';

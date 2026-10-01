@@ -1,3 +1,4 @@
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import { runAudit } from '../lib/audit.js';
 import { getSite } from '../lib/sites.js';
 

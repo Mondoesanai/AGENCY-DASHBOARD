@@ -1,6 +1,7 @@
 // Client-safe slice of a site's data for the shareable /r/<slug> page.
 // Deliberately omits builder notes, client contact details, pricing and the
 // blunt technical findings.
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import { listSites } from '../lib/registry.js';
 import { getHistory } from '../lib/history.js';
 import { runAudit } from '../lib/audit.js';

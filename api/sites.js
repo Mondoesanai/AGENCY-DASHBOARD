@@ -1,4 +1,5 @@
 // Main dashboard feed.
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import { listSites } from '../lib/registry.js';
 import { authed, authError } from '../lib/auth.js';
 import { runAudit } from '../lib/audit.js';

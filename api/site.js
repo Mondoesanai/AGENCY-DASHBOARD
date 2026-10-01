@@ -1,5 +1,6 @@
 // Create / update / delete a client site, plus builder notes and the
 // "what we did this month" changelog. All writes require CRON_SECRET.
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import { store } from '../lib/store.js';
 import { authed, authError } from '../lib/auth.js';
 import {

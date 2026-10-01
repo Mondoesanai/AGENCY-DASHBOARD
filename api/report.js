@@ -5,6 +5,7 @@
 //
 // Always: snapshots this month's numbers, builds a rotating client email, and
 // (on send) attaches a branded PNG report card + links the shareable report page.
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import { listSites } from '../lib/registry.js';
 import { authed, authError } from '../lib/auth.js';
 import { runAudit } from '../lib/audit.js';

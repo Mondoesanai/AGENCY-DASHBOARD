@@ -162,4 +162,54 @@ check('it is queued for later', after.state === JOB_STATE.QUEUED);
 check('with the provider Retry-After honoured', after.runAt - Date.now() > 40000, String(after.runAt - Date.now()));
 check('and a two-attempt job survives repeated rate limits', after.state !== JOB_STATE.DEAD);
 
+// ---------------------------------------------------------------------------
+section('S8  the redaction is INSTALLED, not merely available');
+// The reviewer's point: a library nothing calls protects nothing. The
+// acceptance criterion is a runtime outcome — "no credential leaks in logs" —
+// so the sink itself is patched rather than every call site rewritten.
+const { installSafeConsole, isSafeConsoleInstalled } = await import('../lib/redact.js');
+
+// every serverless entry point must load the patch, and load it FIRST
+const apiDir = path.join(ROOT, 'api');
+const entries = fs.readdirSync(apiDir).filter((f) => f.endsWith('.js'));
+check('there are entry points to check', entries.length === 12, String(entries.length));
+const missing = entries.filter((f) => !fs.readFileSync(path.join(apiDir, f), 'utf8').includes("from '../lib/boot.js'") && !fs.readFileSync(path.join(apiDir, f), 'utf8').includes("import '../lib/boot.js'"));
+check('every entry point loads the patch', missing.length === 0, missing.join(', '));
+
+const notFirst = entries.filter((f) => {
+  const imports = fs.readFileSync(path.join(apiDir, f), 'utf8').split('\n').filter((l) => /^import\s/.test(l));
+  return imports.length > 0 && !imports[0].includes('boot.js');
+});
+check('and loads it BEFORE anything that could log', notFirst.length === 0, notFirst.join(', '));
+
+// now the behaviour itself: a RAW console.log must be redacted once booted
+await import('../lib/boot.js');
+check('the patch reports itself installed', isSafeConsoleInstalled() === true);
+check('installing twice is harmless', installSafeConsole() === installSafeConsole());
+
+const captured = [];
+const realLog2 = console.log;
+// capture at the layer BELOW the patch, so we see what would really be written
+const inner = { log: (...a) => captured.push(a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')), error() {}, warn() {}, info() {} };
+const handle = installSafeConsole(inner);
+
+// the exact mistake this exists to stop: logging a whole request object
+inner.log('incoming', { headers: { authorization: 'Bearer livetoken1234567890abcdef' }, query: { secret: 'Doelee39RealValue' } });
+inner.log(`calling https://api.test/v1?api_key=sk-live9876543210abcdef`);
+inner.log('error from provider: ghp_abcdefghijklmnopqrstuvwxyz0123456789');
+
+handle.restore();
+console.log = realLog2;
+
+const out = captured.join('\n');
+check('a bearer token in a logged object is masked', !out.includes('Bearer livetoken1234567890abcdef'), out);
+check('a secret in a logged query object is masked', !out.includes('Doelee39RealValue'), out);
+check('an api_key in a logged URL is masked', !out.includes('sk-live9876543210abcdef'), out);
+check('a provider token in a plain string is masked', !out.includes('ghp_abcdefghijklmnopqrstuvwxyz0123456789'), out);
+check('the logs are still useful', /incoming/.test(out) && /api\.test/.test(out), out);
+
+// and the audit function agrees there is nothing credential-shaped left
+const audit = containsSecret(out);
+check('containsSecret finds nothing in the captured output', audit.clean === true, (audit.hits || []).join(', '));
+
 done();

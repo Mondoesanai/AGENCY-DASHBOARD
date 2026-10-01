@@ -1,5 +1,6 @@
 // Receives tracking beacons from t.js and rolls them into daily counters.
 // Cost: $0 — it's just your own function writing to your own KV store.
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import { store, dayKey } from '../lib/store.js';
 import { slugify, slugForHost, rememberHost, matchExistingSite } from '../lib/registry.js';
 

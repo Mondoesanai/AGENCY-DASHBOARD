@@ -3,6 +3,7 @@
 //   /api/admin?do=coach     (POST)  -> Compass chat
 //   /api/admin?do=receipts          -> ledger / receipts / tax (?one=, ?format=csv)
 //   /api/admin?do=repos             -> GitHub repo list + match (?match=<url>)
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import { coachHandler } from '../lib/coach.js';
 import { authed, authError } from '../lib/auth.js';
 import { receiptsHandler } from '../lib/receipts.js';
@@ -20,6 +21,7 @@ import { getKnowledge, saveKnowledge, draftAnswer, containsUnapprovedClaim } fro
 import { getReplyMode, setReplyMode, sendDraft, takeOver, conversationFor } from '../lib/replies.js';
 import { listBookings, bookingStats, recordManualBooking, recordOutcome, recordBookingLinkClick } from '../lib/bookings.js';
 import { buildReport, METRIC_DEFINITIONS } from '../lib/reporting.js';
+import { erasePerson, exportPerson, runRetentionSweep, RETENTION } from '../lib/retention.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
@@ -240,6 +242,19 @@ export default async function handler(req, res) {
     }
     case 'metric-definitions':
       return res.status(200).json({ ok: true, definitions: METRIC_DEFINITIONS });
+    case 'person-erase': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await erasePerson({ contactId: body.contactId, email: body.email, reason: body.reason || 'requested', by: body.by || 'owner' });
+      return res.status(out.ok ? 200 : 404).json(out);
+    }
+    case 'person-export': {
+      const out = await exportPerson(req.query.contactId);
+      return res.status(out.ok ? 200 : 404).json(out);
+    }
+    case 'retention-sweep': {
+      const out = await runRetentionSweep({ dryRun: req.query.apply !== '1' });
+      return res.status(200).json({ ok: true, windows: RETENTION, ...out });
+    }
     case 'outreach-readiness':
       return res.status(200).json({ ok: true, readiness: await sendReadiness({}) });
     // R1.7 — client↔repo mapping audit. `fix=1` applies only the unambiguous

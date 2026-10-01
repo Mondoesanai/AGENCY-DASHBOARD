@@ -1,5 +1,6 @@
 // Admin-only. Lifetime sales, expenses, net profit, former clients.
 // Kept out of /api/sites so the financial data is never in a public response.
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import { listSites } from '../lib/registry.js';
 import { authed, authError } from '../lib/auth.js';
 import { siteStats } from '../lib/stats.js';

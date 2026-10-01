@@ -1,5 +1,6 @@
 // Serves the tracker script with this dashboard's own /api/collect URL baked in,
 // so the beacon target never depends on document.currentScript.
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import { TRACKER_JS } from '../lib/tracker.js';
 
 export default function handler(req, res) {

@@ -4,6 +4,7 @@
 //   - any site whose billing day is today AND auto-send is on AND has an
 //     email + Resend configured: generate + SEND this month's report
 //     (deduped via lastSent:<slug>)
+import '../lib/boot.js'; // patches console to redact secrets — must be first
 import tls from 'node:tls';
 import { authed, authError } from '../lib/auth.js';
 import { listSites } from '../lib/registry.js';
