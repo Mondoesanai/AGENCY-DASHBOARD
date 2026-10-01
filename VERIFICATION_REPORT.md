@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **955 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1027 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 107 ·
-outreach 46 · acquisition-ui 62) plus **67 supervisor
+outreach 46 · acquisition-ui 62 · campaigns 72) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -251,3 +251,26 @@ Suite: `tests/acquisition-ui.test.mjs`, 62 checks, plus a real browser run.
 2. "Targeting & pricing" was clipped off the right edge at 390px. The tab row now wraps.
 
 **Still not verified:** no real device, no cross-browser run (Chrome only), and no screen reader pass.
+
+---
+
+## R5 — Campaigns
+
+Suite: `tests/campaigns.test.mjs`, 72 checks.
+
+| Req | Check performed | Level | Result |
+|---|---|---|---|
+| R5.1 | Cold email: verified name, one real observation, truthful offer, sender identity, opt-out | **L1** | The composer assembles from fixed fragments chosen by the prospect's verified web status, so the only free text is the business name and the owner's own details. Asserted that it cannot emit: invented familiarity ("good to meet you", "as we discussed"), urgency ("act now", "limited time"), testimonials or percentage results, or any claim about lost revenue, conversion rate, broken forms or rankings. CAN-SPAM essentials are present and an incomplete sender identity **blocks the message entirely**. |
+| — | A business with a working website produces **no cold message at all** | **L1** | `observationFor()` returns null for `verified-present` and for `uncertain`, and `composeCold` then refuses with the status named. There is nothing honest to open with, so nothing is written. |
+| R5.2 | Never claim a preview exists unless one does | **L1** | A preview is mentioned only when `exists` is true. Passing `{exists:false, url:'…'}` produces a message with no mention of it and `mentionsPreview === false` — a URL alone is not permission to claim one. |
+| R5.3 | Restrained, editable, bounded cadence | L1 | Intro + ≤2 follow-ups cold, ≤1 reminder warm; gap clamped to 2–30 days. Clamping is **explained** (`cadenceNotes`), not silent, and garbage input falls back to the default rather than NaN. |
+| R5.4 | Stop on reply / opt-out / bounce / booking | **L1** | `stopContact` drops every pending send across **every** campaign the contact is in, not just the current one — a queued follow-up firing after someone replies is the worst thing this system could do. Verified: a stopped member is not due a month later, and `markStepSent` cannot resurrect them. An opted-out contact cannot be added to a campaign at all. |
+| R5.5 | Warm follow-up based on recorded context | L1 | The opener comes from the stored relationship. |
+| R3.12 (again, in campaign copy) | "Met in person" vs "same networking group" | **L1** | A shared-group contact gets *"I don't think we've actually met"*, and the phrase "good to meet you" is asserted absent. A contact with no recorded relationship produces **no warm message**. |
+| R5.8 | No escalation from unanswered email to SMS | L1 | `mayEscalateToSms()` exists and refuses, so the prohibition is testable rather than merely absent. |
+| R6.5 | Business-local sending window | L1 | 2pm Wednesday sends; 3am and all day Saturday are **held**, with the hold explained. A draft campaign has nothing due and says why. |
+| G1 in copy | Price quoted only when configured | L1 | Unset pricing yields no price sentence and no stray `$undefined`/`$0`. |
+
+**Not done in R5:** R5.9 (periodic website recheck creating an internal opportunity) and the
+campaign-side halves of R5.6/R5.7 — the consent scopes they depend on exist and are tested in
+`lib/contacts.js`, but no SMS sequence exists to be prevented from running yet.

@@ -24,8 +24,8 @@ written down where the supervisor can read it rather than re-argued every cycle.
 
 1. `R3.*` — contact intake screens over the existing OCR/import backend — **done**
 2. `R4.*` — discovery and qualification — **done**
-3. `R5.*` — campaign creation, scheduling, sending adapters — **current**
-4. `R7.*` — replies, manual takeover, verified booking attribution
+3. `R5.*` — campaign creation, scheduling, sending adapters — **done** (R5.6/R5.7 consent-side, R5.9 recheck still open)
+4. `R7.*` — replies, manual takeover, verified booking attribution — **current**
 5. `R8.*`, `R10.*`, `R11.*` — budget controls, reporting, durable background operation
 6. everything else, including the remainder of Part 2 (R2.2, R2.4–R2.9)
 
@@ -167,14 +167,14 @@ and never display a mocked integration as connected (R4.4).
 
 | Req | Task | Status |
 |---|---|---|
-| R5.1 | Cold email: verified name, one real observation, truthful offer, one next step, sender identity, opt-out | `[ ]` copy quoting price depends on **G1** |
-| R5.2 | Never claim a preview exists unless it does — **enforced, not advisory** | `[ ]` |
-| R5.3 | Intro + ≤2 follow-ups, days apart, editable within bounded limits | `[ ]` |
-| R5.4 | Stop pending outreach on reply / opt-out / hard bounce / booking, proven by a race test | `[ ]` |
-| R5.5 | Networking follow-up: warmer, promised follow-up + ≤1 reminder, then pause | `[ ]` |
+| R5.1 | Cold email: verified name, one real observation, truthful offer, one next step, sender identity, opt-out | `[x]` `composeCold` — one verified observation, truthful offer, sender identity, opt-out; tested that no familiarity, urgency, testimonial or performance claim can be emitted |
+| R5.2 | Never claim a preview exists unless it does — **enforced, not advisory** | `[x]` a preview is mentioned only when one exists — a URL with `exists:false` is dropped |
+| R5.3 | Intro + ≤2 follow-ups, days apart, editable within bounded limits | `[x]` intro + ≤2 follow-ups (warm: ≤1), gap clamped to 2–30 days, and the clamping is explained rather than silent |
+| R5.4 | Stop pending outreach on reply / opt-out / hard bounce / booking, proven by a race test | `[x]` `stopContact` drops every pending send in **every** campaign; a late worker cannot resurrect a stopped member |
+| R5.5 | Networking follow-up: warmer, promised follow-up + ≤1 reminder, then pause | `[x]` `composeWarm` — opener taken from the recorded relationship, never assumed |
 | R5.6 | A card exchange alone never enters a recurring promotional SMS sequence | `[b]` consent scopes already enforce this in `lib/contacts.js`; campaign side not built |
 | R5.7 | Three distinct permissions: requested preview · appointment reminders · promotional | `[b]` scopes exist (`one_time_followup`/`transactional`/`promotional`) |
-| R5.8 | No auto-escalation from unanswered email to SMS | `[ ]` |
+| R5.8 | No auto-escalation from unanswered email to SMS | `[x]` `mayEscalateToSms()` refuses, so the prohibition is testable rather than merely absent |
 | R5.9 | Website recheck → internal opportunity, with material-change threshold + cooldown | `[ ]` |
 
 ## PART 6 — Email & SMS integrations
@@ -185,7 +185,7 @@ and never display a mocked integration as connected (R4.4).
 | R6.2 | Prospecting separated from transactional client mail | `[x]` Resend recorded in code as unsuitable for prospecting, with the reason; enforced by the send gate |
 | R6.3 | Domain separation explained **accurately** (it does not remove all risk) | `[x]` documented that a separate domain limits blast radius but does not make cold email safe |
 | R6.4 | Sender config + SPF/DKIM/DMARC guidance | `[!]` **G2** |
-| R6.5 | Conservative limits + business-local sending windows | `[ ]` enforceable in the adapter without a provider |
+| R6.5 | Conservative limits + business-local sending windows | `[x]` `withinWindow` + `dueSends` — 2pm Wednesday sends, 3am and Saturday are held with the hold explained |
 | R6.6 | Delivery / bounce / complaint / unsubscribe each update contact state | `[ ]` |
 | R6.7 | Reply ingestion + thread matching to contact and campaign | `[ ]` |
 | R6.8 | Global suppression across all campaigns | `[b]` `lib/contacts.js` suppression is already global; not wired to a sender |
@@ -290,11 +290,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 50 |
+| `[x]` built **and** verified | 57 |
 | `[b]` built, not verified | 10 |
 | `[~]` in progress | 5 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 54 |
+| `[ ]` not started | 47 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -333,4 +333,5 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 - **2026-10-01** — R1.7 repo-mapping audit (`lib/repo-audit.js`, 94 checks; suite now 562). Found that `cfg.repo` was never validated against GitHub at all: a renamed repo, a read-only token, an archived or empty repo, and **two clients sharing one repository** all surfaced at commit time as a generic "could not read repo" that the pipeline then retried. The rename case is the dangerous one — GitHub serves a renamed repo through a redirect, so a stale name works silently until someone reuses the old name, at which point a client's changes would land in a stranger's repository. Two new permanent causes added to the state-machine classifier (`repo-renamed`, `repo-collision`) so these block instead of looping. Transient faults are deliberately NOT blocks: a timeout is not evidence of a broken mapping. A suspicious repo/domain mismatch is reported as *uncertain*, never as a fault. Only unambiguous fixes auto-apply (a name GitHub itself just confirmed, a stale cached block); collisions, missing repos and permission faults are reported for the owner. **Also fixed a real stale-state bug:** `agent:blocked:<slug>` held a repo failure for 12h and was cleared only by a later *successful* cycle, so repointing a client at the correct repo left the old repo's error in place and the site stayed ineligible for up to half a day. Verified by a negative control — removing the wiring fails exactly the 4 wiring tests.
 - **2026-10-01** — R1.8 end-to-end flow verification (`tests/flows.test.mjs`, 96 checks) + `tests/governance.test.mjs` (28 checks). Found and fixed **a serious data exposure**: `/api/sites` had no authorization at all and returns every client's email, phone, monthly price, setup fee, expenses, private notes and changelog — anyone with the deployment URL could read the whole client book. It is now password-gated, and the dashboard sends the stored password and shows the unlock prompt on a 401. Also found **five copies of an auth gate that failed OPEN**: each endpoint did `if (!CRON_SECRET) return true`, so a missing secret on a deployment would silently authorise every admin request including finances. Replaced with one shared gate in `lib/auth.js` that fails CLOSED when deployed, uses a timing-safe comparison, and explains the locked state instead of saying 'wrong password'. Two smaller real bugs: an empty Add-site form created a phantom client called 'site' (the `if (!slug)` guard could never fire because `slugify()` falls back to the literal 'site'), and `changelog-del` with no arguments wrote an empty array to `changelog:undefined` and reported success. The governance suite then caught **four drifts in my own documents** — 11 items ticked with no traceable evidence, three acceptance criteria worn down to single words ('Always', 'Bounded', 'Backoff'), R10.4 reduced to 'Filters', and a tally that disagreed with the file. All repaired by strengthening, never by deleting.
 - **2026-10-01** — R2.1 top-level nav (`public/nav.js`, 44 checks; suite 740). Five sections as specified, hash-routed so a view is linkable and survives reload, and an unknown or hostile hash resolves to Overview rather than leaving the page blank. Existing panels moved into their section; **Acquisition says plainly that it is not built yet** rather than rendering an empty state that would read as 'no prospects' (R2.9). Caught two real breaks before shipping: `#seoOverview` would have been nested inside `#mainView`, which `openSeoOverview()` hides — the SEO page would have gone blank; and the money/receipts panels now live in Settings, so opening them has to route there first or they render inside a hidden section. Verified by screenshot on localhost, both default and deep-linked.
+- **2026-10-01** — R5 campaigns (`lib/campaigns.js`, 72 checks; suite 1027). Two campaign types because the relationship differs: cold prospects get one verified observation, warm contacts get an opener taken from the recorded relationship. The composer cannot emit a claim the evidence does not support — a business with a working website produces NO cold message at all, because there is nothing honest to open with. A preview is mentioned only when one exists, even if a URL is supplied. Price appears only when pricing is configured. The stop is the important part: a reply drops every pending send in **every** campaign, not just the current step, and a late worker cannot resurrect a stopped member.
 - **NEXT:** R2.4 Overview = what needs attention only, then R4.1/R4.3 discovery settings + source adapter.
