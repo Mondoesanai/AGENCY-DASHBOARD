@@ -14,9 +14,9 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **686 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **740 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
-platform 59 · reports 31 · repo-audit 94 · flows 96 · governance 28) plus **48 supervisor
+platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44) plus **48 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -124,7 +124,7 @@ isolation checks, 0 failing**.
 Everything below is **unimplemented or unverified**. No claim is made about it.
 
 - R1.7 UI: the audit report is exposed at `?do=repo-audit` and persisted, but **nothing renders it in the dashboard yet** — that is R2.5
-- R2 (all) — dashboard reorganisation
+- R2.2–R2.9 — the rest of the dashboard reorganisation (R2.1 nav is done)
 - R4 (all) — discovery and qualification
 - R5 (all) — campaign workflows
 - R6 (all) — email/SMS infrastructure. R6.11 SMS is deliberately off by owner decision.
@@ -177,3 +177,22 @@ defines its own competing auth gate again, or if the shared gate stops failing c
 
 **Still not verified for R11.7:** safe logging has not been audited, so R11.7 stays open. No claim
 is made that logs are free of credentials.
+
+---
+
+## R2 — Dashboard organisation
+
+| Req | Check performed | Level | Result |
+|---|---|---|---|
+| R2.1 | Task-based top-level navigation | **L1+L2** | `public/nav.js`, 44 checks in `tests/nav.test.mjs`. Five sections in the specified order. Routing is a pure function, so it is tested without a browser: `#clients`, `clients`, `#/clients`, `#clients?from=email` and `#Clients` all resolve; an empty, missing, unknown or hostile hash resolves to Overview rather than hiding every section. Exactly one section is visible at any time, `aria-current` follows the active tab, a deep link opens its section on load, and a page without the nav host returns null instead of throwing. L2: rendered on localhost and screenshotted in both the default and deep-linked states. |
+**On R2.9** (no fake metrics, unknown never shown as zero): the Acquisition section states
+"Not built yet", names what exists underneath without a screen, and names the two owner
+decisions blocking it, rather than rendering a zeroed dashboard that would read as "no
+prospects yet". That is **one section honouring R2.9, not R2.9 satisfied** — the requirement
+covers every screen, so it stays open and unticked until the rest of Part 2 is built.
+
+### Breaks caught before shipping
+1. `#seoOverview` was nested inside `#mainView`, which `openSeoOverview()` hides — the SEO overview page would have gone blank. Moved back out as a full-page takeover.
+2. The money and receipts panels moved into Settings, so opening them from the header had to route there first; otherwise they rendered inside a hidden section and the button appeared to do nothing.
+
+**Not verified:** no cross-browser or real-mobile check has been run (R12.7). Only a desktop viewport was inspected.

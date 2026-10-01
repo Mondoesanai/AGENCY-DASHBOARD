@@ -336,4 +336,24 @@ await store.set('health:down-site', '{not json');
 const fin3 = await call(financesHandler, { query: { ...S } });
 check('a corrupt health record is skipped, not fatal', fin3.code === 200, String(fin3.code));
 
+// ---------------------------------------------------------------------------
+section('F12  the client report token had the same fail-open shape, now fixed');
+// `tokenOk()` returned true for EVERY request when CRON_SECRET was unset.
+// Locally that is convenience; on a deployment missing the variable it would
+// have made every client's report page readable from the slug alone.
+const { tokenOk, reportToken } = await import('../lib/token.js');
+const tok = reportToken('acme');
+check('a token is derived when a secret is set', typeof tok === 'string' && tok.length === 16, tok);
+check('the right token is accepted', tokenOk('acme', tok) === true);
+check('a wrong token is refused', tokenOk('acme', 'nope') === false);
+check('a token minted for another site does not work', tokenOk('acme', reportToken('beta')) === false);
+check('a missing token is refused', tokenOk('acme', undefined) === false);
+delete process.env.CRON_SECRET;
+delete process.env.VERCEL;
+check('with no secret and not deployed, tokens stay unenforced for local work', tokenOk('acme', undefined) === true);
+process.env.VERCEL = '1';
+check('but on a DEPLOYMENT with no secret, the report page refuses', tokenOk('acme', undefined) === false);
+delete process.env.VERCEL;
+process.env.CRON_SECRET = 'sekret-1234';
+
 done();

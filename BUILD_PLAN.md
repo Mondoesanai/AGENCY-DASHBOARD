@@ -101,7 +101,7 @@ and never display a mocked integration as connected (R4.4).
 
 | Req | Task | Status |
 |---|---|---|
-| R2.1 | Top-level nav: Overview / Clients / Acquisition / Automations / Settings | `[ ]` |
+| R2.1 | Top-level nav: Overview / Clients / Acquisition / Automations / Settings | `[x]` `public/nav.js` + 44 checks; hash-routed, deep-linkable, falls back to Overview on an unknown hash |
 | R2.2 | Client workspace holds that client's analytics, sites, revisions | `[ ]` |
 | R2.3 | Acquisition section holds prospecting, contacts, campaigns, conversations, bookings, reporting | `[ ]` |
 | R2.4 | Overview = what needs attention only | `[ ]` |
@@ -271,11 +271,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 32 |
+| `[x]` built **and** verified | 33 |
 | `[b]` built, not verified | 10 |
 | `[~]` in progress | 5 |
 | `[!]` externally blocked | 4 (R4.2 · R6.1 · R6.2 · R6.4 — all gaps G2/G3) |
-| `[ ]` not started | 69 |
+| `[ ]` not started | 68 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -313,4 +313,5 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 - **2026-10-01** — `PROJECT_SPEC.md` written (R1–R12, 120 requirements with acceptance criteria, gaps G1–G5) and `VERIFICATION_REPORT.md` opened with L0–L4 evidence levels. **This file reconciled against the spec**: every task now carries its requirement ID, `[b]` was introduced to stop "built" being mistaken for "verified", and 11 previously-implied-complete items were honestly downgraded. Tally: 33 verified, 11 built-unverified, 6 in progress, 4 externally blocked, 67 not started.
 - **2026-10-01** — R1.7 repo-mapping audit (`lib/repo-audit.js`, 94 checks; suite now 562). Found that `cfg.repo` was never validated against GitHub at all: a renamed repo, a read-only token, an archived or empty repo, and **two clients sharing one repository** all surfaced at commit time as a generic "could not read repo" that the pipeline then retried. The rename case is the dangerous one — GitHub serves a renamed repo through a redirect, so a stale name works silently until someone reuses the old name, at which point a client's changes would land in a stranger's repository. Two new permanent causes added to the state-machine classifier (`repo-renamed`, `repo-collision`) so these block instead of looping. Transient faults are deliberately NOT blocks: a timeout is not evidence of a broken mapping. A suspicious repo/domain mismatch is reported as *uncertain*, never as a fault. Only unambiguous fixes auto-apply (a name GitHub itself just confirmed, a stale cached block); collisions, missing repos and permission faults are reported for the owner. **Also fixed a real stale-state bug:** `agent:blocked:<slug>` held a repo failure for 12h and was cleared only by a later *successful* cycle, so repointing a client at the correct repo left the old repo's error in place and the site stayed ineligible for up to half a day. Verified by a negative control — removing the wiring fails exactly the 4 wiring tests.
 - **2026-10-01** — R1.8 end-to-end flow verification (`tests/flows.test.mjs`, 96 checks) + `tests/governance.test.mjs` (28 checks). Found and fixed **a serious data exposure**: `/api/sites` had no authorization at all and returns every client's email, phone, monthly price, setup fee, expenses, private notes and changelog — anyone with the deployment URL could read the whole client book. It is now password-gated, and the dashboard sends the stored password and shows the unlock prompt on a 401. Also found **five copies of an auth gate that failed OPEN**: each endpoint did `if (!CRON_SECRET) return true`, so a missing secret on a deployment would silently authorise every admin request including finances. Replaced with one shared gate in `lib/auth.js` that fails CLOSED when deployed, uses a timing-safe comparison, and explains the locked state instead of saying 'wrong password'. Two smaller real bugs: an empty Add-site form created a phantom client called 'site' (the `if (!slug)` guard could never fire because `slugify()` falls back to the literal 'site'), and `changelog-del` with no arguments wrote an empty array to `changelog:undefined` and reported success. The governance suite then caught **four drifts in my own documents** — 11 items ticked with no traceable evidence, three acceptance criteria worn down to single words ('Always', 'Bounded', 'Backoff'), R10.4 reduced to 'Filters', and a tally that disagreed with the file. All repaired by strengthening, never by deleting.
-- **NEXT:** R4.3 the discovery source adapter (R4.1 settings first), then R2 so the repo audit and budget actually render.
+- **2026-10-01** — R2.1 top-level nav (`public/nav.js`, 44 checks; suite 740). Five sections as specified, hash-routed so a view is linkable and survives reload, and an unknown or hostile hash resolves to Overview rather than leaving the page blank. Existing panels moved into their section; **Acquisition says plainly that it is not built yet** rather than rendering an empty state that would read as 'no prospects' (R2.9). Caught two real breaks before shipping: `#seoOverview` would have been nested inside `#mainView`, which `openSeoOverview()` hides — the SEO page would have gone blank; and the money/receipts panels now live in Settings, so opening them has to route there first or they render inside a hidden section. Verified by screenshot on localhost, both default and deep-linked.
+- **NEXT:** R2.4 Overview = what needs attention only, then R4.1/R4.3 discovery settings + source adapter.

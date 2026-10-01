@@ -84,6 +84,17 @@
 
   #finPanel{display:flex;flex-direction:column;gap:10px;margin-top:10px;}
   #finPanel[hidden]{display:none;}
+  /* R2.1 top-level nav. Restrained: a quiet row of tabs, the current one
+     marked by the brand green rather than a loud fill. */
+  .mainnav{display:flex;gap:4px;flex-wrap:wrap;margin:0 0 16px;border-bottom:1px solid var(--line);padding-bottom:0;}
+  .mainnav .navbtn{appearance:none;background:none;border:0;border-bottom:2px solid transparent;
+    color:var(--muted);font:inherit;font-size:14px;font-weight:600;padding:9px 13px;cursor:pointer;
+    border-radius:8px 8px 0 0;transition:color .14s ease, border-color .14s ease, background-color .14s ease;}
+  .mainnav .navbtn:hover{color:var(--ink);background:rgba(255,255,255,.04);}
+  .mainnav .navbtn:focus-visible{outline:2px solid var(--green-br);outline-offset:2px;}
+  .mainnav .navbtn:active{transform:translateY(1px);}
+  .mainnav .navbtn.on{color:var(--ink);border-bottom-color:var(--green-br);}
+  @media (max-width:560px){ .mainnav{gap:0;} .mainnav .navbtn{padding:9px 10px;font-size:13px;} }
   .fin-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;}
   .fin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px;}
   .fin-grid .b{background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:12px 13px;}
@@ -312,20 +323,55 @@
     </div>
   </header>
 
+  <nav class="mainnav" id="mainNav" aria-label="Sections"></nav>
+
   <div id="mainView">
   <div id="sysPanel" class="syspanel" hidden role="dialog" aria-label="System checks"></div>
-  <div id="sysHealth" hidden></div>
-  <div class="attention" id="attention" hidden></div>
-  <div class="overview" id="overview"></div>
 
-  <div class="section-h"><h2>Sites</h2><span id="siteCount"></span></div>
-  <div class="sites" id="sites"><div class="loading">Loading portfolio…</div></div>
-  <p class="note" id="footNote"></p>
+  <section id="view-overview">
+    <div id="sysHealth" hidden></div>
+    <div class="attention" id="attention" hidden></div>
+    <div class="overview" id="overview"></div>
+  </section>
 
-  <div id="revWidget"></div>
+  <section id="view-clients" hidden>
+    <div class="section-h"><h2>Clients</h2><span id="siteCount"></span></div>
+    <div class="sites" id="sites"><div class="loading">Loading portfolio…</div></div>
+    <p class="note" id="footNote"></p>
+  </section>
+
+  <section id="view-acquisition" hidden>
+    <div class="section-h"><h2>Acquisition</h2></div>
+    <!-- R2.9: an unbuilt section must say so plainly rather than render an
+         empty state that looks like "no prospects yet". -->
+    <div class="note" style="line-height:1.7">
+      <b>Not built yet.</b> This is where prospecting, contacts, campaigns, conversations
+      and bookings will live. Nothing here is connected and no outreach can be sent.
+      <br /><br />
+      Already built and tested underneath, but with no screen yet: contact storage with
+      consent and opt-out handling, business-card and CSV import, and the spend ledger.
+      <br /><br />
+      Two decisions are needed before any of it can send: a cold-email provider on a
+      separate sending domain, and a discovery data source whose terms permit outreach.
+    </div>
+  </section>
+
+  <section id="view-automations" hidden>
+    <div class="section-h"><h2>Automations</h2></div>
+    <div id="revWidget"></div>
+  </section>
+
+  <section id="view-settings" hidden>
+    <div class="section-h"><h2>Settings</h2></div>
+    <div id="finPanel" hidden></div>
+    <p class="note" id="settingsNote">Business settings, integrations and budgets. Per-client
+      settings stay on each client's card under <b>Clients</b>.</p>
+  </section>
   </div><!-- /mainView -->
+  <!-- Full-page takeovers, deliberately OUTSIDE #mainView: openSeoOverview()
+       and openDrill() hide #mainView, so anything nested inside it would be
+       hidden along with the page it is meant to replace. -->
   <div id="seoOverview" hidden></div>
-  <div id="finPanel" hidden></div>
 </div>
 
 <div id="coachPanel" hidden></div>
@@ -677,6 +723,9 @@ async function openFinances(tab){
     finKey=k;
   }
   if(typeof coachOpen!=='undefined'&&coachOpen) closeCoach();
+  // the money/receipts panels live in Settings now, so go there first or the
+  // panel renders inside a hidden section and nothing appears to happen
+  if(goView) goView('settings');
   openPanels.push(tab);
   renderFinPanel();
   await loadFinTab(tab);
@@ -2329,6 +2378,24 @@ setInterval(()=>{
   const revVal='T‑'+fmtCountdown(nextRevisionCheckMs());
   $$('.rev-next-ct').forEach(el=>el.textContent=revVal);
 },1000);
+
+/* ---------- R2.1 top-level navigation ---------- */
+// Loaded as a module so the routing logic is testable in node. `go` lets the
+// rest of the page send you to a section — opening the money panel, for
+// instance, has to land you on Settings or the panel renders out of sight.
+let goView = null;
+import('/nav.js')
+  .then((nav) => {
+    goView = nav.initNav(document);
+    window.IWgo = (v) => (goView ? goView(v) : null);
+  })
+  .catch(() => {
+    // if the module cannot load, show everything rather than a blank page
+    ['overview', 'clients', 'acquisition', 'automations', 'settings'].forEach((v) => {
+      const el = document.getElementById('view-' + v);
+      if (el) el.hidden = false;
+    });
+  });
 
 renderUnlock();
 fillLeadSourceList();

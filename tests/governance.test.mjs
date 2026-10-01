@@ -152,7 +152,20 @@ check('still within the Vercel Hobby 12-function limit', apiFiles.length <= 12, 
 const unguarded = [];
 for (const f of apiFiles) {
   const src = read(path.join('api', f));
-  const guarded = /\bauthed\s*\(/.test(src) || /CRON_SECRET/.test(src) || /reportToken|verifyToken/.test(src);
+  // Require an actual CALL to the shared gate. Nothing fuzzier.
+  //
+  // Two weaker versions of this check were written first and both produced a
+  // FALSE PASS, which is worth recording because the whole point of this file
+  // is to not accept a proxy for evidence:
+  //   1. a substring match on `CRON_SECRET` — a bare comment mentioning it
+  //      would have satisfied the check;
+  //   2. allowing `reportToken(...)` to count as a guard — but `api/sites.js`
+  //      calls that to GENERATE a client's report URL, which is not access
+  //      control at all. With the real gate deleted from sites.js, the suite
+  //      still passed 28/28. A negative control caught it.
+  // An endpoint that is reachable without the password now has to be named in
+  // the allowlist above, with a reason, by a person.
+  const guarded = /if\s*\(\s*!\s*authed\s*\(\s*req\s*\)/.test(src);
   if (!guarded && !PUBLIC_BY_DESIGN[f]) unguarded.push(f);
 }
 check(
@@ -164,6 +177,22 @@ check(
 // the allowlist must not rot: every entry must still exist
 const staleAllow = Object.keys(PUBLIC_BY_DESIGN).filter((f) => !apiFiles.includes(f));
 check('the public allowlist has no stale entries', staleAllow.length === 0, staleAllow.join(', '));
+
+// the one allowlisted endpoint that serves real client data must still check
+// its per-site token — it is "public" only in the sense that the client has a
+// link, not in the sense that anyone may read it
+const reportSrc = read('api/public-report.js');
+check(
+  'the client report endpoint verifies its per-site token',
+  /tokenOk\s*\(/.test(reportSrc) && /status\(403\)/.test(reportSrc),
+  'public-report.js must check a token and refuse without one'
+);
+
+// and the negative control itself is encoded: deleting the gate from a guarded
+// endpoint must be detectable by the rule above, not just by someone noticing
+const sitesSrc = read('api/sites.js');
+check('the client feed is guarded by a real gate call', /if\s*\(\s*!\s*authed\s*\(\s*req\s*\)/.test(sitesSrc));
+check('and generating a report token is not mistaken for a guard', /reportToken\s*\(/.test(sitesSrc), 'sites.js does call reportToken — the rule must not treat that as auth');
 
 // and the gate itself must fail closed — a regression here is the one that
 // quietly publishes the client book
