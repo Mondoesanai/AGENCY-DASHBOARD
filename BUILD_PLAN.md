@@ -24,7 +24,7 @@ written down where the supervisor can read it rather than re-argued every cycle.
 
 1. `R3.*` — contact intake screens over the existing OCR/import backend — **done**
 2. `R4.*` — discovery and qualification — **done**
-3. `R5.*` — campaign creation, scheduling, sending adapters — **done** (R5.9 recheck still open)
+3. `R5.*` — campaign creation, scheduling, sending adapters — **done**
 4. `R7.*` — replies, manual takeover, verified booking attribution — **current**
 5. `R8.*`, `R10.*`, `R11.*` — budget controls, reporting, durable background operation
 6. everything else, including the remainder of Part 2 (R2.2, R2.4–R2.9)
@@ -175,7 +175,7 @@ and never display a mocked integration as connected (R4.4).
 | R5.6 | A card exchange alone never enters a recurring promotional SMS sequence | `[x]` `sequenceAllowed()` + the enrolment gate — a card-sourced contact is refused from a promotional SMS sequence, verified on a real scanned card |
 | R5.7 | Three distinct permissions: requested preview · appointment reminders · promotional | `[x]` three distinct campaign types mapping to three distinct consent purposes (`one_time_followup` / `transactional` / `promotional`); none substitutes for another |
 | R5.8 | No auto-escalation from unanswered email to SMS | `[x]` `mayEscalateToSms()` refuses |
-| R5.9 | Website recheck → internal opportunity, with material-change threshold + cooldown | `[ ]` |
+| R5.9 | Website recheck → internal opportunity, with material-change threshold + cooldown | `[x]` `lib/recheck.js` — material-change threshold, 60-day contact cooldown, internal opportunities only; swept daily from `runAutoTick` |
 
 ## PART 6 — Email & SMS integrations
 
@@ -290,11 +290,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 61 |
+| `[x]` built **and** verified | 62 |
 | `[b]` built, not verified | 7 |
 | `[~]` in progress | 5 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 46 |
+| `[ ]` not started | 45 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -337,4 +337,5 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 - **2026-10-01** — R5 made REACHABLE. The independent reviewer was right that the campaign library was an orphan: unit tests only, no endpoint, no screen. The R5 ticks were downgraded to `[b]` before any new work, then earned back with six API endpoints (`campaigns-list`, `campaign-create`, `campaign-preview`, `campaign-add-prospects`, `campaign-status`, `campaign-due`), a Campaigns screen, prospect selection with enrolment, and `tests/campaign-flow.test.mjs` — 43 checks driving the real `api/admin.js` end to end. `enrolProspects` is the join between discovery and campaigns, and its refusals are the point: no email on the listing, wrong segment for the campaign, already enrolled, or opted out. Sender identity (R6.9) added as settings, blank by default, so a missing postal address blocks the message instead of shipping a placeholder.
 - **2026-10-01** — R4.5. The temptation in every prospecting tool is to dress a shared inbox up as the owner, because "Hi Pat" outperforms "Hi there" — but it is a lie told to a stranger in the opening line. 30+ role mailboxes (info@, office@, dispatch@, estimates@…) are classified as shared and can never name a person; a first.last@ address is marked *possibly* personal and still cannot, because the shape of an address is a guess rather than evidence. A person is named only when something we actually read names them (an OpenStreetMap `contact:person` or `operator` tag, or a name the owner typed), and the greeting is derived from that, so a business called "Pat Lee Flooring" does not become "Hi Pat". `guessEmailFromName()` exists purely to refuse. No title is claimed unless a listing states one.
 - **2026-10-01** — R5.6/R5.7. Contact-level consent already decided whether ONE message could be sent; nothing decided whether a SEQUENCE could. Conflating those is exactly how "yes, text me that quote" quietly becomes a monthly marketing series. `sequenceAllowed()` now separates them: only an explicit `promotional` scope carries follow-ups on SMS, a one-time permission is worth exactly one message, and a card exchange on its own is worth none. The three SMS campaign types map to three distinct consent purposes and none substitutes for another. Verified against a real scanned card: that contact is refused from a promotional SMS sequence but can still receive the warm **email** they were expecting — a different permission, correctly treated differently. SMS campaigns also default to zero follow-ups, so the safe default is the one needing least consent.
+- **2026-10-01** — R5.9 website rechecks, and a correction worth recording. The reviewer suspected `sequenceAllowed()` might be defined but not reached. A negative control proved it was **right to ask**: neutralising the call left every check passing, because the card contact was refused by contact-level consent long before the sequence rule ran. The C14 test proved nothing about the rule. Added C15, which gives a contact enough consent to clear the first gate so the sequence rule is the only thing that can refuse — and the negative control now fails exactly two checks. R5.9 itself: `materialChange()` treats only transitions that change what is TRUE about a business as material, and `uncertain` is inert in both directions because it describes our confidence rather than them. A change inside the 60-day cooldown still creates the opportunity (we want to know) but marks it not-contactable with the date it clears. The record carries no message body and no recipient, so there is nothing in it to accidentally send, and it says in words that it is not permission. Swept daily from `runAutoTick`, capped at five prospects a tick; a negative control on that wiring fails the integration check.
 - **NEXT:** R2.4 Overview = what needs attention only, then R4.1/R4.3 discovery settings + source adapter.

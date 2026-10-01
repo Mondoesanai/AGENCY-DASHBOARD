@@ -246,13 +246,49 @@ const emailCamp = (await createCampaign({ name: 'warm follow-up', type: CAMPAIGN
 const addEmail = await addMember(emailCamp.id, carded);
 check('but they can still receive the warm email they were expecting', addEmail.ok === true, JSON.stringify(addEmail));
 
-// and granting one-time SMS consent still does not authorise a series
-const { recordConsent } = await import('../lib/contacts.js');
-if (typeof recordConsent === 'function') {
-  const withOneTime = await recordConsent(carded, { channel: 'sms', scope: 'one_time_followup', wording: 'Yes, text me that quote', source: 'said at the event' });
-  const c2 = withOneTime.contact || withOneTime;
-  const addOne = await addMember(smsPromo.id, c2);
-  check('one-time consent still cannot join a promotional series', addOne.ok === false, JSON.stringify(addOne));
-}
+// ---------------------------------------------------------------------------
+section('C15  the sequence rule is REACHED, not shadowed by the consent check');
+// A negative control exposed that C14 proved nothing about sequenceAllowed():
+// the card contact is refused by contact-level consent long before the sequence
+// rule runs, so neutralising the rule left every check still passing. These
+// cases give the contact enough consent to clear the first gate, so the only
+// thing that can refuse them is the sequence rule itself.
+const { makeConsentRecord } = await import('../lib/contacts.js');
+const { upsertContact: upsert } = await import('../lib/contacts.js');
+
+const oneTime = (await upsert({
+  source: 'manual',
+  name: E('Jo Rivera'),
+  businessName: E('Rivera Roofing'),
+  phone: E('214-555-0211'),
+  phoneType: 'mobile',
+  consentLog: [makeConsentRecord({ scope: 'one_time_followup', channel: 'sms', source: 'said so at the event', wording: 'Yes, text me that quote' })],
+})).contact;
+
+// first prove the contact-level gate now PASSES, so it cannot be the refuser
+const { canContact: can } = await import('../lib/contacts.js');
+check('one-time consent clears the contact-level SMS gate', (await can(oneTime, { channel: 'sms', purpose: 'one_time_followup' })).ok === true);
+
+const oneShot = (await createCampaign({ name: 'the quote they asked for', type: CAMPAIGN_TYPES.SMS_REQUESTED_FOLLOWUP, cadence: { followUps: 0 } })).campaign;
+let addOne = await addMember(oneShot.id, oneTime);
+check('a single promised message is allowed', addOne.ok === true, JSON.stringify(addOne));
+
+// the decisive case: same contact, same consent, but a SERIES
+const series = (await createCampaign({ name: 'nurture series', type: CAMPAIGN_TYPES.SMS_REQUESTED_FOLLOWUP, cadence: { followUps: 2 } })).campaign;
+let addSeries = await addMember(series.id, oneTime);
+check('the SAME consent is refused for a series', addSeries.ok === false, JSON.stringify(addSeries));
+check('and the refusal comes from the sequence rule', /not a series of/.test(addSeries.reason || ''), addSeries.reason);
+
+// and promotional consent does carry the series
+const promoOk = (await upsert({
+  source: 'manual',
+  name: E('Kim Vance'),
+  businessName: E('Vance HVAC'),
+  phone: E('214-555-0212'),
+  phoneType: 'mobile',
+  consentLog: [makeConsentRecord({ scope: 'promotional', channel: 'sms', source: 'signed the form', wording: 'Yes, send me offers' })],
+})).contact;
+const addPromo = await addMember(smsPromo.id, promoOk);
+check('promotional consent carries a promotional series', addPromo.ok === true, JSON.stringify(addPromo));
 
 done();

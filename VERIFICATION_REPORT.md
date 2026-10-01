@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1169 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1221 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 151 ·
-outreach 46 · acquisition-ui 86 · campaigns 92 · campaign-flow 52) plus **71 supervisor
+outreach 46 · acquisition-ui 86 · campaigns 97 · recheck 47 · campaign-flow 52) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -310,3 +310,7 @@ real mail.
 
 | R5.6 | A card exchange alone never enters a recurring promotional SMS sequence | **L1+L2** | `tests/campaigns.test.mjs` C13–C14. Contact-level consent decides whether ONE message may be sent; `sequenceAllowed()` decides whether a SERIES may, which is a different question. No SMS consent refuses even a single message, with the reason *"holding someone's business card is not permission to text them"*. A `one_time_followup` scope allows exactly one message and is refused a series, with the refusal counting out the messages it blocked. **Verified against a real scanned card**: that contact cannot join a promotional SMS sequence, but can still receive the warm **email** they were expecting — a different permission, treated differently. |
 | R5.7 | Three separate permissions, never one "SMS" bucket | **L1** | Three campaign types map to three distinct consent purposes (`one_time_followup`, `transactional`, `promotional`), asserted genuinely distinct. None substitutes for another: a one-time permission does not authorise promotional texts, and neither does appointment permission. SMS campaigns default to **zero** follow-ups, so the default is the option needing least consent. |
+
+
+| R5.9 | Website recheck → internal opportunity, with material-change threshold and cooldown | **L1+L2** | `tests/recheck.test.mjs`, 47 checks. **Material change**: only transitions that change what is true about a business count — built a site, site went down, came back, disappeared. `uncertain` is inert in **both** directions, because it describes our confidence rather than them, so a flaky read cannot manufacture work. **Cooldown**: a change inside 60 days of last contact still creates the opportunity (we want to know) but marks it `contactable: false` with the date it clears and how long ago they were contacted. **Permission**: the record carries no message body and no recipient — asserted by inspecting its keys — and states in words that it is not permission; consent is still decided at send time. A premise-invalidating change (they built a site) is flagged, so a "couldn't find a website" approach cannot continue against someone who now has one. **L2**: driven through `runAutoTick`, capped at five prospects per tick and gated to once a day; a negative control that unwires the sweep fails the integration check. Zero emails and zero texts asserted after every recheck and sweep. |
+| R5.6 (re-verified) | The sequence rule is **reached**, not shadowed | **L1** | **Correction.** The reviewer suspected `sequenceAllowed()` was defined but not invoked. A negative control proved the concern justified: neutralising the call left all checks passing, because the card contact was refused by contact-level consent before the sequence rule ran — so the original test proved nothing about it. The new C15 gives a contact one-time SMS consent (which *clears* the contact-level gate, asserted), then shows the same consent is accepted for a single message and refused for a series, with the refusal text coming from the sequence rule. The negative control now fails exactly those two checks. |

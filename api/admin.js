@@ -14,6 +14,7 @@ import { scanCards, saveCards, previewCsv, importCsv } from '../lib/card-intake.
 import { runDiscovery, listProspects, getProspect, ATTRIBUTION as DISCOVERY_ATTRIBUTION } from '../lib/discovery.js';
 import { listCampaigns, createCampaign, composeCold, enrolProspects, setCampaignStatus, dueSends } from '../lib/campaigns.js';
 import { sendReadiness } from '../lib/outreach-email.js';
+import { listOpportunities, resolveOpportunity, runRecheckSweep } from '../lib/recheck.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
@@ -160,6 +161,17 @@ export default async function handler(req, res) {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const saved = await saveSender(body.sender || body);
       return res.status(200).json({ ok: true, sender: saved.sender, identity: await ownerIdentity() });
+    }
+    case 'opportunities-list':
+      return res.status(200).json({ ok: true, opportunities: await listOpportunities({ limit: Number(req.query.limit) || 100 }) });
+    case 'opportunity-resolve': {
+      const o = await resolveOpportunity(req.query.id, req.query.outcome || 'actioned');
+      if (!o) return res.status(404).json({ ok: false, error: 'unknown opportunity' });
+      return res.status(200).json({ ok: true, opportunity: o });
+    }
+    case 'recheck-run': {
+      const out = await runRecheckSweep({ max: Math.min(Number(req.query.max) || 10, 50) });
+      return res.status(200).json({ ok: true, ...out });
     }
     case 'outreach-readiness':
       return res.status(200).json({ ok: true, readiness: await sendReadiness({}) });
