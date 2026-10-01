@@ -189,4 +189,70 @@ const all = await listCampaigns();
 check('campaigns are listed newest first', all.length >= 3 && all[0].createdAt >= all[all.length - 1].createdAt);
 check('none of them is running by accident', all.filter((x) => x.status === 'running').length === 2, all.map((x) => `${x.name}:${x.status}`).join(', '));
 
+// ---------------------------------------------------------------------------
+section('C12  R5.7 — SMS permissions are three separate things, not one bucket');
+const { channelFor, purposeFor, sequenceAllowed } = await import('../lib/campaigns.js');
+check('a cold email campaign is email', channelFor(CAMPAIGN_TYPES.COLD_NO_SITE) === 'email');
+check('a requested follow-up is SMS', channelFor(CAMPAIGN_TYPES.SMS_REQUESTED_FOLLOWUP) === 'sms');
+check('a requested follow-up needs one-time permission', purposeFor(CAMPAIGN_TYPES.SMS_REQUESTED_FOLLOWUP) === 'one_time_followup');
+check('an appointment reminder needs transactional permission', purposeFor(CAMPAIGN_TYPES.SMS_APPOINTMENT) === 'transactional');
+check('a promotional text needs promotional permission', purposeFor(CAMPAIGN_TYPES.SMS_PROMOTIONAL) === 'promotional');
+check('the three are genuinely distinct', new Set([
+  purposeFor(CAMPAIGN_TYPES.SMS_REQUESTED_FOLLOWUP),
+  purposeFor(CAMPAIGN_TYPES.SMS_APPOINTMENT),
+  purposeFor(CAMPAIGN_TYPES.SMS_PROMOTIONAL),
+]).size === 3);
+check('an SMS campaign defaults to a SINGLE message', defaultCadence(CAMPAIGN_TYPES.SMS_PROMOTIONAL).followUps === 0);
+
+// ---------------------------------------------------------------------------
+section('C13  R5.6 — a card alone never becomes a recurring text sequence');
+// one message vs a series is a separate question from "may we send at all"
+let sa = sequenceAllowed(CAMPAIGN_TYPES.SMS_REQUESTED_FOLLOWUP, 'none', 0);
+check('no SMS consent refuses even a single message', sa.ok === false);
+check('and says a card is not permission', /business card is not permission to text/.test(sa.reason), sa.reason);
+
+sa = sequenceAllowed(CAMPAIGN_TYPES.SMS_REQUESTED_FOLLOWUP, 'one_time_followup', 0);
+check('a one-time permission allows exactly one message', sa.ok === true, sa.reason);
+sa = sequenceAllowed(CAMPAIGN_TYPES.SMS_REQUESTED_FOLLOWUP, 'one_time_followup', 2);
+check('but NOT a series', sa.ok === false);
+check('and it counts out the messages it refused', /not a series of 3/.test(sa.reason), sa.reason);
+
+sa = sequenceAllowed(CAMPAIGN_TYPES.SMS_PROMOTIONAL, 'one_time_followup', 0);
+check('a one-time permission does not authorise promotional texts', sa.ok === false, sa.reason);
+sa = sequenceAllowed(CAMPAIGN_TYPES.SMS_PROMOTIONAL, 'transactional', 0);
+check('nor does appointment permission', sa.ok === false, sa.reason);
+sa = sequenceAllowed(CAMPAIGN_TYPES.SMS_PROMOTIONAL, 'promotional', 2);
+check('only promotional consent carries a promotional series', sa.ok === true, sa.reason);
+check('email campaigns are unaffected by the SMS sequence rule', sequenceAllowed(CAMPAIGN_TYPES.COLD_NO_SITE, 'none', 2).ok === true);
+
+// ---------------------------------------------------------------------------
+section('C14  the rule bites on a real card-sourced contact');
+const { saveCards } = await import('../lib/card-intake.js');
+// a card scanned at an event: relationship recorded, NO sms consent given
+const cardRes = await saveCards(
+  [{ name: E('Casey Nguyen'), businessName: E('Nguyen Tile'), phone: E('214-555-0188'), email: E('casey@nguyentile.test') }],
+  { relationship: 'met_in_person', event: 'Plano chamber breakfast' }
+);
+const carded = cardRes[0]?.contact || cardRes.results?.[0]?.contact || (Array.isArray(cardRes) ? cardRes[0] : null);
+check('the card became a contact', !!carded, JSON.stringify(cardRes).slice(0, 160));
+
+const smsPromo = (await createCampaign({ name: 'monthly offers', type: CAMPAIGN_TYPES.SMS_PROMOTIONAL, cadence: { followUps: 2 } })).campaign;
+let addSms = await addMember(smsPromo.id, carded);
+check('they cannot be enrolled in a promotional SMS sequence', addSms.ok === false, JSON.stringify(addSms));
+check('and the refusal is about consent, not configuration', addSms.refused === true && /consent|permission|card/i.test(addSms.reason), addSms.reason);
+
+// the same person CAN be emailed, because that is a different permission
+const emailCamp = (await createCampaign({ name: 'warm follow-up', type: CAMPAIGN_TYPES.WARM_CARD })).campaign;
+const addEmail = await addMember(emailCamp.id, carded);
+check('but they can still receive the warm email they were expecting', addEmail.ok === true, JSON.stringify(addEmail));
+
+// and granting one-time SMS consent still does not authorise a series
+const { recordConsent } = await import('../lib/contacts.js');
+if (typeof recordConsent === 'function') {
+  const withOneTime = await recordConsent(carded, { channel: 'sms', scope: 'one_time_followup', wording: 'Yes, text me that quote', source: 'said at the event' });
+  const c2 = withOneTime.contact || withOneTime;
+  const addOne = await addMember(smsPromo.id, c2);
+  check('one-time consent still cannot join a promotional series', addOne.ok === false, JSON.stringify(addOne));
+}
+
 done();
