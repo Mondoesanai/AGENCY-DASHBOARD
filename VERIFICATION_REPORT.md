@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1498 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1557 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 151 ·
-outreach 46 · acquisition-ui 128 · inbox-ui 41 · bookings 57 · campaigns 97 · recheck 47 · replies 74 · knowledge 83 · campaign-flow 52) plus **71 supervisor
+outreach 46 · acquisition-ui 128 · inbox-ui 41 · bookings 57 · reporting 59 · campaigns 97 · recheck 47 · replies 74 · knowledge 83 · campaign-flow 52) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -349,3 +349,18 @@ real mail.
 | R7.10 | Attribution recorded at booking time | **L1** | Contact, campaign and message variant are captured when the booking is created, not reconstructed later when the campaign may have changed. |
 | R11.5 (bookings) | Duplicate and out-of-order webhooks | **L1** | The same event id is ignored as a duplicate. A **late, older** creation event does not resurrect a cancelled booking — the booking stays cancelled and keeps its attribution. |
 | R7.7 (notifications) | Interested and uncertain replies are **delivered**, not just displayed | **L1** | **Gap found by the reviewer**: notifications existed only as a count on a screen, which does nothing if nobody is looking. Interested, wants-call, wants-preview, wants-details and ambiguous replies now go through the owner's existing notify path (text, falling back to email). Not-interested, opt-outs, bounces and auto-replies stay silent on purpose — being pinged for those teaches you to ignore the pings. A notification failure never loses the reply or the pause. |
+
+
+## R10 — Reporting
+
+Suite: `tests/reporting.test.mjs`, 59 checks.
+
+| Req | Check performed | Level | Result |
+|---|---|---|---|
+| R10.3 | **Unknown is never zero** | **L1** | Every metric is `{value, measured, why}`. With nothing sent, `messagesAttempted` returns `null` with *"nothing has been sent yet"* — not 0. Delivery and complaints return null with *"no sending provider is connected, so this is not reported to us"*. The report publishes a `notMeasured` list with a reason per metric and a completeness fraction whose note states that unknown is never shown as zero. |
+| R10.1 | Real metrics with stated definitions | **L1** | 20 definitions, each a full sentence. Acceptance is explicitly distinguished from delivery; a qualified lead is defined as explicitly **not** just a reply; bookings are defined as excluding link clicks. **Cost per qualified reply and per booking are undefined — not zero — with no denominator**, and the definition says so. |
+| R10.2 | Totals distinguished from unique people | **L1** | **Real bug found here.** The send log is a KV set, and without a unique id per entry two genuine attempts to the same contact in the same millisecond collapsed into one — so a retry, exactly what this metric counts, disappeared. Fixed and locked down: five retries in one millisecond now report **5 attempts to 1 unique person**. |
+| R10.4 | Filters | **L1** | Period, campaign and industry. A filtered report's definitions are byte-identical to the unfiltered one, so narrowing data cannot silently change what a number means. A future period measures no sends and still does not claim zero. |
+| R10.5 | Funnel | **L1** | discovered → contacted → replied → positive → qualified → booked, each stage carrying whether it was measured. |
+| R10.6 | A cold prospect is never a warm lead | **L1** | `isOverstated()` rejects "warm lead" or "new lead" for a discovered or contacted business, with the reason *"a business we found or wrote to has not shown interest"*. No funnel stage before "qualified" carries the word "lead". |
+| — | Clicks never enter the booking totals | **L1** | Two clicks and zero bookings report as exactly that; **zero bookings is measured**, because we looked and there are none — which is different from not having looked. |

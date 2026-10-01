@@ -244,12 +244,12 @@ and never display a mocked integration as connected (R4.4).
 
 | Req | Task | Status |
 |---|---|---|
-| R10.1 | Real metrics with stated definitions, incl. cost per qualified reply and per booking | `[ ]` cost-per-sale needs **G1** |
-| R10.2 | Totals distinguished from unique people | `[ ]` |
-| R10.3 | Unknown ≠ zero; incomplete tracking marked | `[ ]` |
-| R10.4 | Filters: period, source, campaign, industry, geography, channel, version | `[ ]` |
-| R10.5 | Funnel + source attribution end to end | `[ ]` |
-| R10.6 | A cold prospect is never described as a warm lead | `[ ]` |
+| R10.1 | Real metrics with stated definitions, incl. cost per qualified reply and per booking | `[x]` `lib/reporting.js` — every metric carries its definition; cost per qualified reply and per booking are **undefined, not zero**, with no denominator |
+| R10.2 | Totals distinguished from unique people | `[x]` totals and uniques are separate numbers — five retries in one millisecond count as 5 attempts to 1 person |
+| R10.3 | Unknown ≠ zero; incomplete tracking marked | `[x]` every metric is `{value, measured, why}`; unmeasurable metrics return null with a reason, never 0, and the report lists what it could not measure |
+| R10.4 | Filters: period, source, campaign, industry, geography, channel, version | `[x]` period, campaign and industry filters narrow the data without changing a single definition |
+| R10.5 | Funnel + source attribution end to end | `[x]` six-stage funnel, each stage carrying whether it was measured |
+| R10.6 | A cold prospect is never described as a warm lead | `[x]` `isOverstated()` — a discovered or contacted business cannot be called a lead or warm |
 
 ## PART 11 — Reliability & security
 
@@ -290,11 +290,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 72 |
+| `[x]` built **and** verified | 78 |
 | `[b]` built, not verified | 6 |
 | `[~]` in progress | 5 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 36 |
+| `[ ]` not started | 30 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -347,4 +347,5 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 - Also widened the supervisor's reviewer budget and made it **trim** rather than drop: a 9.5k implementation file had pushed the total barely over the cap and vanished entirely, so the reviewer could see the call sites but not the logic they called.
 - **2026-10-01** — R7.7, and a gap the reviewer was right about. It noticed `recordAutoReply()` was exported but called only from tests — so in production the turn counter would stay at zero and the max-turns and cooldown brakes could **never fire**. The cause was that no send path existed yet: drafting checked the brakes, nothing recorded a turn. `sendDraft` is now the single exit, and it is the one place a turn is counted. A negative control that removes that line fails five checks, including "a second send straight after is stopped by the cooldown" — exactly the silent failure predicted. Two reply modes and only two: draft-only (the default; a person must approve) and automatic. Both re-check the loop brakes **and** the claims guard at send time, not just at drafting, because a person can edit a draft in between — an edited draft offering a discount is refused even in automatic mode. A failed transport does **not** count a turn. Takeover zeroes the automatic budget and records who owns the thread. The screen leads with the mode, counts what is worth the owner's time, shows the prospect's own words, and surfaces when a draft was withheld and why.
 - **2026-10-01** — R7.8–R7.10 bookings, and a notification gap I had overclaimed. The reviewer pointed out that R7.7's "notifications for interested and uncertain replies" was only a count on a screen — which does nothing if nobody is looking at the screen. A prospect who says "yes, call me" and hears nothing for two days is worse off than one never contacted. Interested and uncertain replies now go out through the owner's existing notify path (text, falling back to email); not-interested, opt-outs, bounces and auto-replies stay silent, because being pinged for those teaches you to ignore the pings. On bookings the rule is six words — **a link click is not a booking** — and it is the easiest metric in the world to fake. A click is stored as interest with `isBooking: false` and counted separately. The only two things that create a booking are a signature-verified webhook and a record the owner entered themselves. Verification is HMAC over `timestamp.body` with a 5-minute replay window, timing-safe compare, and **no signing key means nothing is trusted at all**. Duplicates are ignored by event id, and a late older event cannot resurrect a cancelled booking. Attribution is captured at booking time and survives both cancellation and reschedule.
+- **2026-10-01** — R10 reporting. This system has sent nothing, so almost every number it could show is **unknown** — and the entire value of this module is refusing to render unknown as 0. The two look identical on a dashboard and mean opposite things: "0 replies" says we asked and nobody answered; "not measured" says we never asked. Every metric is `{value, measured, why}`, and the report publishes a list of what it could not measure with the reason for each. Cost per booking with no bookings is **undefined**, not £0. Writing the tests found a real bug: the send log is a KV set, and without a unique id per entry two genuine attempts to the same contact in the same millisecond collapsed into one — so a retry, which is precisely what "messages attempted" exists to count, silently vanished. Five retries now count as 5 attempts to 1 unique person. The vocabulary rule is code rather than discipline: a discovered or contacted business cannot be called a lead or warm, and no funnel stage before "qualified" carries the word.
 - **NEXT:** R2.4 Overview = what needs attention only, then R4.1/R4.3 discovery settings + source adapter.

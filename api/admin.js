@@ -19,6 +19,7 @@ import { recordReply, listReplies, markHandled, REPLY_KINDS } from '../lib/repli
 import { getKnowledge, saveKnowledge, draftAnswer, containsUnapprovedClaim } from '../lib/knowledge.js';
 import { getReplyMode, setReplyMode, sendDraft, takeOver, conversationFor } from '../lib/replies.js';
 import { listBookings, bookingStats, recordManualBooking, recordOutcome, recordBookingLinkClick } from '../lib/bookings.js';
+import { buildReport, METRIC_DEFINITIONS } from '../lib/reporting.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
@@ -229,6 +230,16 @@ export default async function handler(req, res) {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       return res.status(200).json(await recordBookingLinkClick(body.contactId, { campaignId: body.campaignId || null }));
     }
+    case 'acquisition-report': {
+      const filters = {};
+      if (req.query.campaignId) filters.campaignId = req.query.campaignId;
+      if (req.query.industry) filters.industry = req.query.industry;
+      if (req.query.from) filters.from = Number(req.query.from);
+      if (req.query.to) filters.to = Number(req.query.to);
+      return res.status(200).json({ ok: true, report: await buildReport({ filters }) });
+    }
+    case 'metric-definitions':
+      return res.status(200).json({ ok: true, definitions: METRIC_DEFINITIONS });
     case 'outreach-readiness':
       return res.status(200).json({ ok: true, readiness: await sendReadiness({}) });
     // R1.7 — client↔repo mapping audit. `fix=1` applies only the unambiguous
