@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1693 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1738 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 151 ·
-outreach 46 · acquisition-ui 128 · inbox-ui 41 · bookings 57 · reporting 62 · jobs 83 · webhooks 50 · campaigns 97 · recheck 47 · replies 74 · knowledge 83 · campaign-flow 52) plus **71 supervisor
+outreach 46 · acquisition-ui 128 · inbox-ui 41 · bookings 57 · reporting 62 · jobs 83 · webhooks 50 · security 45 · campaigns 97 · recheck 47 · replies 74 · knowledge 83 · campaign-flow 52) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -386,3 +386,8 @@ Suite: `tests/jobs.test.mjs`, 65 checks.
 
 
 | R11.6 | Rate-limit handling with backoff | **L1** | `tests/jobs.test.mjs` J11–J13, 18 checks. **A 429 gives the attempt back.** Driven by ten consecutive rate limits against a three-attempt job: it is still queued, attempts still zero, and the rate limits counted separately — while a genuine failure immediately afterwards does consume an attempt, so the distinction is real rather than a blanket exemption. **Retry-After is honoured** when the provider supplies it (120s produces a 120s wait and records that the provider was obeyed); without one it falls back to exponential backoff. A handler signals the condition by throwing an error carrying `rateLimited`, so it survives the throw rather than being guessed from a message string. The **sweep stops** at the first rate limit — one handler call, `deferred: 1`, `failed: 0` — because continuing would hit the same limit with the next job and burn the whole tick. |
+
+
+| R11.7 | Server-side secrets; authorization on every endpoint; safe logging | **L1+L2** | `tests/security.test.mjs`, 45 checks. **Authorization** was already enforced and is checked mechanically by `governance` (one shared gate, fails closed when deployed, every `api/` file guarded or on a reviewed allowlist). **Safe logging** is new: `lib/redact.js` masks by name (Authorization, api_key, refresh_token, CRON_SECRET and 16 more patterns) **and by shape** (bearer tokens, `sk-`, `ghp_`, `re_`, Twilio SIDs, Slack tokens, JWTs, and `?secret=` query values) at any nesting depth, inside arrays, and inside Error messages and stacks. The mask is **lossy on purpose**: it keeps a 3-character prefix and a length so you can tell which secret it was, never enough to use it. Circular references are handled rather than thrown on. **Audit**: the real `lib/` and `api/` source is scanned for lines logging a secret or a whole env/headers object — none; and `public/` is checked separately for `process.env` and credential-shaped literals. **Honest note**: this is a scan for the mistakes that actually happen, not a proof that no secret can ever be logged. |
+| — | The detectors were tightened after crying wolf | **L1** | Both of my own checks initially produced false positives: one flagged `?secret=${encodeURIComponent(k)}` — a URL being built from a variable — and the other flagged a comment demonstrating what not to do. Both were narrowed and then re-verified against a genuinely hardcoded `?secret=Doelee39RealValue`, which is still caught. A check that cries wolf trains people to ignore it. |
+| R11.6 (completed) | A provider 429 reaches the queue end to end | **L1** | **Gap found by the reviewer**: the queue handled rate limits but nothing converted a provider response into that signal, so it was half a feature. `throwFromProviderResult` bridges it: 429 → deferred with the attempt given back and Retry-After honoured; 401/403/404 → **permanent**, because credentials, permission and "it does not exist" do not improve by waiting; 500 → ordinary retry; a textual "Too Many Requests" without the status code is still detected. Verified end to end: a handler throwing from a 429 result leaves the job queued with zero attempts used. |
