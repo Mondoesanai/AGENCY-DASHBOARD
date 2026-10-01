@@ -16,6 +16,7 @@ import { listCampaigns, createCampaign, composeCold, enrolProspects, setCampaign
 import { sendReadiness } from '../lib/outreach-email.js';
 import { listOpportunities, resolveOpportunity, runRecheckSweep } from '../lib/recheck.js';
 import { recordReply, listReplies, markHandled, REPLY_KINDS } from '../lib/replies.js';
+import { getKnowledge, saveKnowledge, draftAnswer, containsUnapprovedClaim } from '../lib/knowledge.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
@@ -185,6 +186,19 @@ export default async function handler(req, res) {
       const out = await markHandled(req.query.id, req.query.by || 'owner');
       if (!out) return res.status(404).json({ ok: false, error: 'unknown reply' });
       return res.status(200).json({ ok: true, reply: out });
+    }
+    case 'knowledge-get':
+      return res.status(200).json({ ok: true, entries: (await getKnowledge()).map((e) => ({ id: e.id, approved: e.approved, answer: typeof e.answer === 'function' ? '(assembled from your settings)' : e.answer, needs: e.needs || null, matchPhrases: e.matchPhrases || null, custom: !!e.custom })) });
+    case 'knowledge-save': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const saved = await saveKnowledge(body.entries || []);
+      return res.status(200).json({ ok: true, entries: saved });
+    }
+    case 'reply-draft': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const d = await draftAnswer({ kind: body.kind, text: body.text || '', bookingUrl: body.bookingUrl || null });
+      const guard = d.ok ? containsUnapprovedClaim(d.body) : { clean: true, findings: [] };
+      return res.status(200).json({ ok: true, draft: d, guard, note: 'This is a draft for you to read. Nothing is sent from here.' });
     }
     case 'outreach-readiness':
       return res.status(200).json({ ok: true, readiness: await sendReadiness({}) });

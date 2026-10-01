@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1295 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1352 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 151 ·
-outreach 46 · acquisition-ui 86 · campaigns 97 · recheck 47 · replies 74 · campaign-flow 52) plus **71 supervisor
+outreach 46 · acquisition-ui 86 · campaigns 97 · recheck 47 · replies 74 · knowledge 57 · campaign-flow 52) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -328,3 +328,9 @@ real mail.
 
 
 | R7.1 (ingestion) | Replies are **detected**, not reported by hand | **L1+L2** | **Gap found by the reviewer**, and it was the right question: `recordReply` alone only fires if a human tells the system a reply arrived, so the automatic pause did not exist. `ingestReplies` reads the mailbox, matches senders against contacts with a recorded **send** (exact email match only — a colleague replying must not stop someone else's campaign), classifies and records. Verified: a real reply is ingested, classified and the contact stopped **without being told**; a stranger is ignored; a contact we never wrote to is not treated as a campaign reply; a mailbox failure is reported as transient rather than swallowed. Wired into `runAutoTick` **before** any sending work. **Negative control**: blinding the detection fails four checks including "the contact is now stopped". |
+
+
+| R7.3 | Approved knowledge base; booking link when appropriate; respects "information first" | **L1+L2** | `tests/knowledge.test.mjs`, 57 checks. **Closed-world**: an answer is assembled only from owner-approved entries, and an unmatched question returns `escalate: true` with the reason *"rather than being improvised"*. An **unapproved** entry is never used even when it matches. Pricing answers are assembled from settings, so with pricing unset the question **escalates instead of guessing** and no currency symbol appears anywhere. **"Information first"** is honoured: the question is still answered, the booking link is suppressed, and the draft records `respectedInformationFirst`. A booking link is only ever offered for "wants a call" or "interested", never for "not now". |
+| R7.4 | Never invent availability, discounts, contract terms, capabilities or a preview | **L1** | `containsUnapprovedClaim()` catches discounts, guarantees, invented availability ("I'm free on Tuesday"), stated contract terms and promised rankings — and does **not** fire on the approved text we actually send. The one legitimate "free" (a complimentary preview) passes while "free hosting forever" does not. Applied to every draft on ingestion: a draft that trips the guard is **withheld** with the findings recorded rather than shown. |
+| R7.7 (partial) | Draft-only mode | **L2** | Ingestion attaches a draft to the reply record with status `awaiting-review`, `needs-a-person` or `withheld`. **Draft-only is the only mode that exists** — there is no send path from here, asserted by zero emails after every ingestion. The unified inbox **screen**, AI history and manual takeover are still not built. |
+| — | A knowledge base that survives being edited | **L1** | **Real bug, found by test ordering.** `saveKnowledge` dropped the `matches` patterns, so the base became permanently unmatchable after the owner's first edit. Built-in matchers now come from code; custom entries round-trip as plain phrases; and regex metacharacters in a phrase are escaped, so `.*` matches the literal text rather than everything. |
