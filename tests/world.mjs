@@ -30,7 +30,7 @@ export const W = {
   anthropicCalls: [],
   sms: [],
   emails: [],
-  gmail: { inbox: [], threads: {}, sent: [], modified: [] },
+  gmail: { inbox: [], threads: {}, sent: [], modified: [], labels: new Map([['iw-processed','L1']]), labelsCreated: [] },
   calendar: [],
   dfs: { ranks: {}, calls: 0 }, // keyword -> our rank (null = not found)
   pages: {}, // url -> html served for live-site fetches
@@ -187,12 +187,29 @@ function gmail(url, method, body) {
     const labels = W.gmail.threads[p.split('/').pop()] || [];
     return json({ messages: [{ labelIds: labels }] });
   }
-  if (p.endsWith('/users/me/labels') && method === 'GET') return json({ labels: [{ id: 'L1', name: 'iw-processed' }] });
+  // Gmail labels: real ids, created on demand, so label application is actually
+  // exercised rather than assumed.
+  if (p.endsWith('/users/me/labels') && method === 'GET') {
+    return json({ labels: [...W.gmail.labels.entries()].map(([name, id]) => ({ id, name })) });
+  }
+  if (p.endsWith('/users/me/labels') && method === 'POST') {
+    const name = body?.name;
+    if (!W.gmail.labels.has(name)) W.gmail.labels.set(name, 'L' + (W.gmail.labels.size + 1));
+    W.gmail.labelsCreated.push({ name, visibility: body?.labelListVisibility });
+    return json({ id: W.gmail.labels.get(name), name });
+  }
   if (p.endsWith('/modify')) {
     const id = p.split('/').slice(-2)[0];
     const m = W.gmail.inbox.find((x) => x.id === id);
-    if (m && body && !body.addLabelIds && Array.isArray(body.removeLabelIds) && body.removeLabelIds.length) m.labels = m.labels.filter((l) => l !== 'iw-processed');
-    else if (m) m.labels.push('iw-processed');
+    const byId = new Map([...W.gmail.labels.entries()].map(([n, i]) => [i, n]));
+    if (m && Array.isArray(body?.addLabelIds) && body.addLabelIds.length) {
+      for (const lid of body.addLabelIds) {
+        const name = byId.get(lid);
+        if (name && !m.labels.includes(name)) m.labels.push(name);
+      }
+    } else if (m && Array.isArray(body?.removeLabelIds) && body.removeLabelIds.length) {
+      m.labels = m.labels.filter((l) => l !== 'iw-processed');
+    }
     W.gmail.modified.push(id);
     return json({});
   }

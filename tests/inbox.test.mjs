@@ -298,4 +298,26 @@ const shipped = await cycle(fixedSite, { manual: false });
 check('the saved request is worked for real once unblocked', shipped.action === 'change', JSON.stringify({ a: shipped.action, e: shipped.error }));
 check('the change is live in the repo', /Hours: 9-5/.test(W.repos['acme/norepo'].files['index.html']));
 
+
+
+section('I13  Gmail sorts itself: Revisions vs Website Agent labels');
+const { looksLikeAgentMail } = await import('../lib/google.js');
+check('a Vercel deploy mail is recognised as agent mail', looksLikeAgentMail({ from: 'Vercel <notifications@vercel.com>', subject: 'Deployment ready' }));
+check('a GitHub PR mail is recognised as agent mail', looksLikeAgentMail({ from: 'GitHub <noreply@github.com>', subject: '[acme/site] Pull request merged' }));
+check('our own "Revision done" notice is agent mail', looksLikeAgentMail({ from: 'x@y.com', subject: 'Revision done: Acme Detailing' }));
+check('a real client asking for a change is NOT agent mail', !looksLikeAgentMail({ from: 'Sam <owner@acme.test>', subject: 'please change our hours' }));
+
+const labelsOf = (id) => W.gmail.inbox.find((m) => m.id === id)?.labels || [];
+check('a client revision request is filed under Revisions', labelsOf('c1').includes('Inspiring Websites/Revisions'), JSON.stringify(labelsOf('c1')));
+ check('…and also under the business parent, so one click shows everything', labelsOf('c1').includes('Inspiring Websites'), JSON.stringify(labelsOf('c1')));
+check('…and is still marked processed so it is not re-read', labelsOf('c1').includes('iw-processed'));
+check('our own system mail is filed under Website Agent', labelsOf('self').includes('Inspiring Websites/Website Agent') && labelsOf('self').includes('Inspiring Websites'), JSON.stringify(labelsOf('self')));
+check('a plain newsletter is left unfiled (owner\u2019s normal mail is untouched)', !labelsOf('nl').includes('Revisions') && !labelsOf('nl').includes('Website Agent'), JSON.stringify(labelsOf('nl')));
+
+addMail({ id: 'deploy', from: 'Vercel <notifications@vercel.com>', subject: 'Deployment ready for relax-tax', body: 'Your deployment is live.' });
+await checkRevisionInbox({ maxMs: 40000 });
+check('an incoming deploy notification is auto-filed under Website Agent', labelsOf('deploy').includes('Inspiring Websites/Website Agent'), JSON.stringify(labelsOf('deploy')));
+check('the folders are created nested under one business parent', ['Inspiring Websites','Inspiring Websites/Revisions','Inspiring Websites/Website Agent','Inspiring Websites/Clients'].every((n) => W.gmail.labelsCreated.some((l) => l.name === n && l.visibility === 'labelShow')), JSON.stringify(W.gmail.labelsCreated.map((l) => l.name)));
+check('the bookkeeping label stays hidden', !W.gmail.labelsCreated.some((l) => l.name === 'iw-processed' && l.visibility === 'labelShow'));
+
 done();

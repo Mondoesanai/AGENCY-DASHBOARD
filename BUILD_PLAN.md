@@ -134,9 +134,21 @@ Last updated: 2026-10-01
 
 ---
 
+## Gmail organisation (owner request, 2026-10-01)
+
+Mail files itself as the inbox check runs. Nested so one click shows the whole business:
+
+    Inspiring Websites            <- everything business/dashboard related
+      ├ Revisions                 <- client change requests
+      ├ Website Agent             <- automation output + Vercel/GitHub build mail
+      └ Clients                   <- other client correspondence
+
+The owner personal/unrelated mail is never labelled. `iw-processed` stays hidden.
+
 ## Session log
 - **2026-10-01** — Inventory done. Constraints table written.
 - **2026-10-01** — ROOT CAUSE FOUND for the repeat-failure bug: `agentStatus()` returns a flat list of decline reasons mixing permanent config problems (no repo linked, no token, no permission) with self-resolving ones (pacing, monthly budget). `runAgentCycle` returned `{skipped:true}` for all of them and `recordAttempt` just logged "not eligible yet" — no failure counted, nothing blocked, no recovery shown. A ticket on a repo-less site was therefore retried on EVERY tick forever (seen live on Renewity). Fixed with an explicit state machine + reason classifier. 46 unit + 2 end-to-end regression tests.
 - **2026-10-01** — Part 3 data model: `lib/contacts.js` (normalisation, confidence-tagged fields, append-only consent, eligibility gate, dedup/merge, opt-out suppression that survives deletion + re-import). Added `store.del/srem/reserve`; `reserve` is the concurrency-safe budget primitive for Part 8. Test caught a real bug: dedup compared BUSINESS names, which flags every colleague as their coworker — now compares person names.
 - **2026-10-01** — Part 8 budget ledger: cents-based (no float drift), UTC period keys, reserve→run→reconcile with atomic INCR so 25 concurrent workers cannot overspend one allowance, double-reconcile guard for retried workers, crash-safe release, conversation reserve, essential bypass, pause.
+- **2026-10-01** — Gmail auto-filing: nested business labels applied during the existing inbox pass (parent + child, because clicking a Gmail parent does not show children-only mail). 12 new tests.
 - **2026-10-01** — Suite: revision-state 46, inbox 73, agent 101, platform 59, reports 31 — all green.
