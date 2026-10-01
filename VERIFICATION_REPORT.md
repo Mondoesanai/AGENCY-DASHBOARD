@@ -14,9 +14,9 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1105 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1149 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
-platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 107 ·
+platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 151 ·
 outreach 46 · acquisition-ui 86 · campaigns 72 · campaign-flow 52) plus **71 supervisor
 isolation checks, 0 failing**.
 
@@ -217,7 +217,7 @@ Suite: `tests/discovery.test.mjs`, 107 checks.
 | R4.10 | No unsupported performance claims | **L1** | Asserted that no output can contain a lost-revenue, conversion-rate or broken-form claim. |
 | R4.11 | No duplicate discovery | L1 | Identity key resolves domain → phone → name+city; the same business from two different sources collides deliberately. |
 | R11.9 | SSRF protection | L1 | localhost, 127.x, 10.x, 192.168.x, 172.16-31.x, 169.254.169.254, `file://` and non-standard ports all blocked before any fetch. |
-| R4.5 | Decision-makers only where evidence supports | — | **Not implemented.** |
+| R4.5 | Decision-makers only where evidence supports | — | Implemented later the same day — see the R4.5 row at the end of this file. |
 
 ## R6 — Cold email (G2)
 
@@ -304,3 +304,5 @@ so a missing postal address blocks the message rather than shipping a placeholde
 real mail.
 
 | R3.6 | Manual entry with meeting notes | **L2** | `tests/campaign-flow.test.mjs` E7, through `?do=contacts-save`: notes and relationship are stored against the contact and are what `composeWarm` actually draws on. **An invented relationship value ("we definitely had lunch") is rejected and stored as `none`**, after which no warm message can be written at all. Notes without a relationship keep the note but still record `none`, so a note can never imply a meeting. The spec says "text **or** voice"; text is implemented, voice capture remains an unspecified enhancement (G5). |
+
+| R4.5 | Decision-makers only where evidence supports it; private details never guessed | **L1+L2** | `tests/discovery.test.mjs` S11–S15, 31 checks. **30+ role mailboxes** (`info@`, `office@`, `dispatch@`, `estimates@`, `bookings@`…) classify as shared and can never name a person — including `INFO@` in capitals and `info+quotes@`. A `first.last@` address is marked *possibly* personal and **still cannot name anyone**, with the note stating the shape is a guess, not evidence. A person is named only from something actually read: an OSM `contact:person`/`operator` tag or a name the owner typed, and the evidence cites which. `greetingFor` is wired into `composeCold`, so **a business called "Pat Lee Flooring" is greeted "Hi," not "Hi Pat"**, and the composed message carries `addressedByName` plus the basis for the operator to check. `guessEmailFromName()` exists only to refuse. No job title is claimed unless a listing states one. |

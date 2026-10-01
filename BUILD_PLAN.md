@@ -155,7 +155,7 @@ and never display a mocked integration as connected (R4.4).
 | R4.2 | Source terms permit collection, storage and outreach use | `[x]` OpenStreetMap / ODbL selected. **Google Places rejected**: its policy forbids storing content beyond `place_id`, which fails the storage requirement |
 | R4.3 | Source adapter layer, provider swappable | `[x]` `createOverpassAdapter`, injected fetch, provider swappable without touching the pipeline |
 | R4.4 | One real adapter; disconnected + fixture-tested if credentials are missing; never shown as connected | `[x]` the Overpass adapter needs no credential, so it is genuinely connected rather than a mock shown as connected |
-| R4.5 | Decision-makers only where evidence supports it; never guess private details | `[ ]` |
+| R4.5 | Decision-makers only where evidence supports it; never guess private details | `[x]` `classifyEmail` / `decisionMakerEvidence` / `greetingFor`, wired into `composeCold` — a shared inbox never names a person, and the greeting follows the evidence |
 | R4.6 | identity → real website beyond the listing → evidence match → status (present/not-found/inaccessible/uncertain) | `[x]` identity → website → evidence match → one of four statuses |
 | R4.7 | A missing listing link ≠ no website; wording matches the actual observation | `[x]` fixed wording: "I couldn't find a website linked from your listing", carried with an explicit note that it is not evidence they have none |
 | R4.8 | Conservative crawl limits; never submit a real contact form | `[x]` one page per prospect, 12s timeout, 300KB cap, no form POSTs, SSRF-blocked |
@@ -290,11 +290,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 58 |
+| `[x]` built **and** verified | 59 |
 | `[b]` built, not verified | 9 |
 | `[~]` in progress | 5 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 47 |
+| `[ ]` not started | 46 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -335,4 +335,5 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 - **2026-10-01** — R2.1 top-level nav (`public/nav.js`, 44 checks; suite 740). Five sections as specified, hash-routed so a view is linkable and survives reload, and an unknown or hostile hash resolves to Overview rather than leaving the page blank. Existing panels moved into their section; **Acquisition says plainly that it is not built yet** rather than rendering an empty state that would read as 'no prospects' (R2.9). Caught two real breaks before shipping: `#seoOverview` would have been nested inside `#mainView`, which `openSeoOverview()` hides — the SEO page would have gone blank; and the money/receipts panels now live in Settings, so opening them has to route there first or they render inside a hidden section. Verified by screenshot on localhost, both default and deep-linked.
 - **2026-10-01** — R5 campaigns (`lib/campaigns.js`, 72 checks; suite 1027). Two campaign types because the relationship differs: cold prospects get one verified observation, warm contacts get an opener taken from the recorded relationship. The composer cannot emit a claim the evidence does not support — a business with a working website produces NO cold message at all, because there is nothing honest to open with. A preview is mentioned only when one exists, even if a URL is supplied. Price appears only when pricing is configured. The stop is the important part: a reply drops every pending send in **every** campaign, not just the current step, and a late worker cannot resurrect a stopped member.
 - **2026-10-01** — R5 made REACHABLE. The independent reviewer was right that the campaign library was an orphan: unit tests only, no endpoint, no screen. The R5 ticks were downgraded to `[b]` before any new work, then earned back with six API endpoints (`campaigns-list`, `campaign-create`, `campaign-preview`, `campaign-add-prospects`, `campaign-status`, `campaign-due`), a Campaigns screen, prospect selection with enrolment, and `tests/campaign-flow.test.mjs` — 43 checks driving the real `api/admin.js` end to end. `enrolProspects` is the join between discovery and campaigns, and its refusals are the point: no email on the listing, wrong segment for the campaign, already enrolled, or opted out. Sender identity (R6.9) added as settings, blank by default, so a missing postal address blocks the message instead of shipping a placeholder.
+- **2026-10-01** — R4.5. The temptation in every prospecting tool is to dress a shared inbox up as the owner, because "Hi Pat" outperforms "Hi there" — but it is a lie told to a stranger in the opening line. 30+ role mailboxes (info@, office@, dispatch@, estimates@…) are classified as shared and can never name a person; a first.last@ address is marked *possibly* personal and still cannot, because the shape of an address is a guess rather than evidence. A person is named only when something we actually read names them (an OpenStreetMap `contact:person` or `operator` tag, or a name the owner typed), and the greeting is derived from that, so a business called "Pat Lee Flooring" does not become "Hi Pat". `guessEmailFromName()` exists purely to refuse. No title is claimed unless a listing states one.
 - **NEXT:** R2.4 Overview = what needs attention only, then R4.1/R4.3 discovery settings + source adapter.

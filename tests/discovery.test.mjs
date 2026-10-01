@@ -224,4 +224,78 @@ await saveSettings({ targeting: { industries: [] } });
 const none = await runDiscovery({ adapter: createOverpassAdapter({ fetchImpl: fakeFetch }), fetchImpl: fakeFetch });
 check('no configured industries refuses rather than searching for everything', none.ok === false && /no industries configured/.test(none.error), JSON.stringify(none));
 
+// ---------------------------------------------------------------------------
+section('S11  R4.5 — a shared inbox is never dressed up as the owner');
+const { classifyEmail, decisionMakerEvidence, greetingFor, guessEmailFromName, titleClaim } = await import('../lib/discovery.js');
+
+for (const generic of ['info@acme.com', 'sales@acme.com', 'office@acme.com', 'contact@acme.com', 'hello@acme.com', 'bookings@acme.com', 'dispatch@acme.com', 'estimates@acme.com']) {
+  const cl = classifyEmail(generic);
+  check(`${generic} is a shared inbox`, cl.isRole === true, JSON.stringify(cl));
+  check(`${generic} cannot be used to name a person`, cl.canNamePerson === false);
+}
+check('a role inbox says why it is not evidence', /not evidence of who owns or runs/.test(classifyEmail('info@acme.com').note));
+check('info+quotes@ is still a shared inbox', classifyEmail('info+quotes@acme.com').isRole === true);
+check('INFO@ in capitals is still a shared inbox', classifyEmail('INFO@acme.com').isRole === true);
+
+// a personal-LOOKING address is still not proof
+let cl = classifyEmail('pat.lee@acme.com');
+check('a first.last address looks personal', cl.kind === 'possibly-personal');
+check('but still cannot name a person', cl.canNamePerson === false);
+check('and it admits the shape is a guess', /guess from its shape, not evidence/.test(cl.note), cl.note);
+check('an empty address classifies as none', classifyEmail('').kind === 'none');
+
+// ---------------------------------------------------------------------------
+section('S12  a person is named only when something we read names them');
+let ev = decisionMakerEvidence({ name: 'Acme Flooring', email: 'info@acme.com', evidence: { rawTags: {} } });
+check('a shared inbox alone gives no named person', ev.level === 'none' && ev.personName === null);
+check('and the basis explains it', /names nobody/.test(ev.basis), ev.basis);
+check('so the greeting is not personalised', greetingFor({ name: 'Acme', email: 'info@acme.com', evidence: { rawTags: {} } }).text === 'Hi,');
+
+ev = decisionMakerEvidence({ name: 'Acme', email: 'pat@acme.com', evidence: { rawTags: {} } });
+check('a personal-looking address still gives no named person', ev.canAddressByName === false, JSON.stringify(ev));
+check('and the greeting stays unpersonalised', greetingFor({ name: 'Acme', email: 'pat@acme.com', evidence: { rawTags: {} } }).named === false);
+
+ev = decisionMakerEvidence({ name: 'Acme', email: 'info@acme.com', evidence: { rawTags: { 'contact:person': 'Patricia Lee' } } });
+check('a listing that names a person IS evidence', ev.level === 'named-in-listing' && ev.personName === 'Patricia Lee');
+check('and it cites which tag said so', /contact:person/.test(ev.basis), ev.basis);
+let g = greetingFor({ name: 'Acme', email: 'info@acme.com', evidence: { rawTags: { 'contact:person': 'Patricia Lee' } } });
+check('so the greeting uses their first name', g.text === 'Hi Patricia,' && g.named === true, g.text);
+
+ev = decisionMakerEvidence({ name: 'Acme', contactName: 'Sam Ortiz', contactNameSource: 'owner-entered' });
+check('a name the owner typed is evidence', ev.level === 'stated-by-owner' && ev.canAddressByName === true);
+check('and it says so plainly', /you entered this name yourself/.test(ev.basis));
+
+// ---------------------------------------------------------------------------
+section('S13  an address is never built from a name and a domain');
+const guess = guessEmailFromName('Patricia Lee', 'acme.com');
+check('guessing is refused', guess.ok === false);
+check('and the reason is concrete', /reaches a stranger or bounces/.test(guess.reason), guess.reason);
+
+// ---------------------------------------------------------------------------
+section('S14  no title is claimed unless something states it');
+let tc = titleClaim({ name: 'Acme', evidence: { rawTags: {} } });
+check('with nothing stated, no title is claimed', tc.claim === null);
+check('and it says why', /no title is stated anywhere we read/.test(tc.basis), tc.basis);
+tc = titleClaim({ name: 'Acme', evidence: { rawTags: { 'contact:position': 'Owner' } } });
+check('a stated position may be used', tc.claim === 'Owner' && /stated in the listing/.test(tc.basis));
+
+// ---------------------------------------------------------------------------
+section('S15  the composed message obeys the evidence');
+const { composeCold } = await import('../lib/campaigns.js');
+const OWNER2 = { name: 'Mondo Davis', business: 'Inspiring Websites LLC', postalAddress: '1 Example St, Plano TX' };
+const roleProspect = { name: 'Acme Flooring', email: 'info@acme.com', web: { status: WEB_STATUS.NOT_LINKED }, evidence: { rawTags: {} } };
+let out = await composeCold(roleProspect, { owner: OWNER2 });
+check('a shared-inbox prospect gets an unnamed greeting', /^Hi,\n/.test(out.body), out.body.slice(0, 40));
+check('and the message records that it did not use a name', out.addressedByName === false);
+check('with the reason attached for the operator', /names nobody/.test(out.greetingBasis), out.greetingBasis);
+
+const namedProspect = { ...roleProspect, evidence: { rawTags: { 'contact:person': 'Patricia Lee' } } };
+out = await composeCold(namedProspect, { owner: OWNER2 });
+check('a named prospect is addressed by first name', /^Hi Patricia,\n/.test(out.body), out.body.slice(0, 40));
+check('and the message says the name was evidenced', out.addressedByName === true && /listing names them/.test(out.greetingBasis), out.greetingBasis);
+
+// the business name must never become a person's name
+out = await composeCold({ name: 'Pat Lee Flooring', email: 'info@patlee.com', web: { status: WEB_STATUS.NOT_LINKED }, evidence: { rawTags: {} } }, { owner: OWNER2 });
+check('a business named after a person does NOT become a greeting', /^Hi,\n/.test(out.body), out.body.slice(0, 40));
+
 done();
