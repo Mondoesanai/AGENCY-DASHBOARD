@@ -66,12 +66,12 @@ Last updated: 2026-10-01
 - [ ] Responsive, keyboard-navigable, accessible contrast, dark-green restrained accents
 
 ## PART 3 — Contacts & business-card intake
-- [ ] Contact data model + KV indexes (email/phone/domain normalized dedup)
+- [x] Contact data model + KV indexes (email/phone/domain normalized dedup) — `lib/contacts.js`, 54 tests — 2026-10-01
 - [ ] Card OCR: multi-card photos, front/back, confidence per field, ambiguous-char flagging
 - [ ] CSV import with column mapping + preview; manual entry; meeting notes
-- [ ] Consent model: scope, source, timestamp, wording version, withdrawal — never overwritten by import
-- [ ] Merge review for uncertain duplicates
-- [ ] "Met in person" vs "in my networking group" distinction
+- [x] Consent model: scope, source, timestamp, wording version, withdrawal — append-only, withdrawal always wins — 2026-10-01
+- [x] Merge review for uncertain duplicates (exact=merge, same-phone/same-person=review, same-business=separate) — 2026-10-01
+- [x] "Met in person" vs "in my networking group" distinction (relationship rank, stronger claim wins on merge) — 2026-10-01
 
 ## PART 4 — Discovery & qualification
 - [ ] Source adapter layer + at least one real adapter (disconnected until credentials)
@@ -102,7 +102,7 @@ Last updated: 2026-10-01
 ## PART 8 — Budget controls
 - [ ] Cost ledger: discovery, enrichment, verification, AI, lookup, messaging, infra allocation
 - [ ] Estimated vs reserved vs reconciled actuals
-- [ ] Atomic pre-job reservation, concurrency-safe, reconcile after
+- [~] Atomic pre-job reservation primitive done (`store.reserve`, proven concurrency-safe by test); ledger + reconcile still to build
 - [ ] Discretionary jobs stop at exhaustion; reply ingestion/opt-outs/monitoring always run; reserve for live conversations
 - [ ] Period/spent/reserved/remaining/next-reset display; no weekly+monthly double count; explicit rollover
 - [ ] Honest statement about provider charges the app cannot cap
@@ -137,4 +137,5 @@ Last updated: 2026-10-01
 ## Session log
 - **2026-10-01** — Inventory done. Constraints table written.
 - **2026-10-01** — ROOT CAUSE FOUND for the repeat-failure bug: `agentStatus()` returns a flat list of decline reasons mixing permanent config problems (no repo linked, no token, no permission) with self-resolving ones (pacing, monthly budget). `runAgentCycle` returned `{skipped:true}` for all of them and `recordAttempt` just logged "not eligible yet" — no failure counted, nothing blocked, no recovery shown. A ticket on a repo-less site was therefore retried on EVERY tick forever (seen live on Renewity). Fixed with an explicit state machine + reason classifier. 46 unit + 2 end-to-end regression tests.
+- **2026-10-01** — Part 3 data model: `lib/contacts.js` (normalisation, confidence-tagged fields, append-only consent, eligibility gate, dedup/merge, opt-out suppression that survives deletion + re-import). Added `store.del/srem/reserve`; `reserve` is the concurrency-safe budget primitive for Part 8. Test caught a real bug: dedup compared BUSINESS names, which flags every colleague as their coworker — now compares person names.
 - **2026-10-01** — Suite: revision-state 46, inbox 73, agent 101, platform 59, reports 31 — all green.
