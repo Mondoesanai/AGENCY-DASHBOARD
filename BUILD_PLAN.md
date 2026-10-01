@@ -201,7 +201,7 @@ and never display a mocked integration as connected (R4.4).
 
 | Req | Task | Status |
 |---|---|---|
-| R7.1 | Inbound reply immediately pauses that contact's follow-ups, incl. the already-queued race | `[ ]` |
+| R7.1 | Inbound reply immediately pauses that contact's follow-ups, incl. the already-queued race | `[x]` `lib/replies.js` — stop flag written first, send claims revoked, and a pre-commit re-check that provably blocks the already-queued race |
 | R7.2 | Reply classifier, 10 categories | `[ ]` |
 | R7.3 | Approved knowledge base; booking link when appropriate; respects "information first" | `[ ]` |
 | R7.4 | Never invent availability, discounts, terms, capabilities, or a preview | `[ ]` |
@@ -290,11 +290,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 62 |
+| `[x]` built **and** verified | 63 |
 | `[b]` built, not verified | 7 |
 | `[~]` in progress | 5 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 45 |
+| `[ ]` not started | 44 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -338,4 +338,6 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 - **2026-10-01** — R4.5. The temptation in every prospecting tool is to dress a shared inbox up as the owner, because "Hi Pat" outperforms "Hi there" — but it is a lie told to a stranger in the opening line. 30+ role mailboxes (info@, office@, dispatch@, estimates@…) are classified as shared and can never name a person; a first.last@ address is marked *possibly* personal and still cannot, because the shape of an address is a guess rather than evidence. A person is named only when something we actually read names them (an OpenStreetMap `contact:person` or `operator` tag, or a name the owner typed), and the greeting is derived from that, so a business called "Pat Lee Flooring" does not become "Hi Pat". `guessEmailFromName()` exists purely to refuse. No title is claimed unless a listing states one.
 - **2026-10-01** — R5.6/R5.7. Contact-level consent already decided whether ONE message could be sent; nothing decided whether a SEQUENCE could. Conflating those is exactly how "yes, text me that quote" quietly becomes a monthly marketing series. `sequenceAllowed()` now separates them: only an explicit `promotional` scope carries follow-ups on SMS, a one-time permission is worth exactly one message, and a card exchange on its own is worth none. The three SMS campaign types map to three distinct consent purposes and none substitutes for another. Verified against a real scanned card: that contact is refused from a promotional SMS sequence but can still receive the warm **email** they were expecting — a different permission, correctly treated differently. SMS campaigns also default to zero follow-ups, so the safe default is the one needing least consent.
 - **2026-10-01** — R5.9 website rechecks, and a correction worth recording. The reviewer suspected `sequenceAllowed()` might be defined but not reached. A negative control proved it was **right to ask**: neutralising the call left every check passing, because the card contact was refused by contact-level consent long before the sequence rule ran. The C14 test proved nothing about the rule. Added C15, which gives a contact enough consent to clear the first gate so the sequence rule is the only thing that can refuse — and the negative control now fails exactly two checks. R5.9 itself: `materialChange()` treats only transitions that change what is TRUE about a business as material, and `uncertain` is inert in both directions because it describes our confidence rather than them. A change inside the 60-day cooldown still creates the opportunity (we want to know) but marks it not-contactable with the date it clears. The record carries no message body and no recipient, so there is nothing in it to accidentally send, and it says in words that it is not permission. Swept daily from `runAutoTick`, capped at five prospects a tick; a negative control on that wiring fails the integration check.
+- **2026-10-01** — R7.1, the race. A worker decides a follow-up is due; the person replies while the message is being prepared; the message goes anyway and asks why they have not answered. That is the worst thing this system could produce, so stopping is checked **twice**: once when the reply lands, and again immediately before the send commits. `guardedSend` is claim → prepare → **re-check** → commit, and a negative control that removes the re-check fails exactly three checks, including "commit was never called" — i.e. without it, the message really does go to someone who just replied. The stop flag is written *before* the slower campaign bookkeeping, so there is no window where a reply is known but not yet enforced. An auto-reply or a bounce is explicitly **not** someone talking to us: recorded, but follow-ups continue. An opt-out is a standing instruction, verified to survive as a consent fact rather than only a stop flag.
+- Also fixed a structural flaw in the supervisor that had produced a false "deviation" flag on four consecutive cycles: it was reviewing each diff against the task it had just selected for the NEXT cycle, i.e. judging finished work against instructions that had not been given yet. It now records what it assigned and reviews against that.
 - **NEXT:** R2.4 Overview = what needs attention only, then R4.1/R4.3 discovery settings + source adapter.

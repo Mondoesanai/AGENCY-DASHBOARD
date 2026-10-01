@@ -15,6 +15,7 @@ import { runDiscovery, listProspects, getProspect, ATTRIBUTION as DISCOVERY_ATTR
 import { listCampaigns, createCampaign, composeCold, enrolProspects, setCampaignStatus, dueSends } from '../lib/campaigns.js';
 import { sendReadiness } from '../lib/outreach-email.js';
 import { listOpportunities, resolveOpportunity, runRecheckSweep } from '../lib/recheck.js';
+import { recordReply, listReplies, markHandled, REPLY_KINDS } from '../lib/replies.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
@@ -172,6 +173,18 @@ export default async function handler(req, res) {
     case 'recheck-run': {
       const out = await runRecheckSweep({ max: Math.min(Number(req.query.max) || 10, 50) });
       return res.status(200).json({ ok: true, ...out });
+    }
+    case 'replies-list':
+      return res.status(200).json({ ok: true, replies: await listReplies({ limit: Number(req.query.limit) || 100, onlyUnhandled: req.query.unhandled === '1' }), kinds: REPLY_KINDS });
+    case 'reply-record': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await recordReply({ contactId: body.contactId, kind: body.kind, text: body.text, campaignId: body.campaignId || null });
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
+    case 'reply-handled': {
+      const out = await markHandled(req.query.id, req.query.by || 'owner');
+      if (!out) return res.status(404).json({ ok: false, error: 'unknown reply' });
+      return res.status(200).json({ ok: true, reply: out });
     }
     case 'outreach-readiness':
       return res.status(200).json({ ok: true, readiness: await sendReadiness({}) });

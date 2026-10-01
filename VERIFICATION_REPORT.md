@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1221 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1257 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 151 ·
-outreach 46 · acquisition-ui 86 · campaigns 97 · recheck 47 · campaign-flow 52) plus **71 supervisor
+outreach 46 · acquisition-ui 86 · campaigns 97 · recheck 47 · replies 36 · campaign-flow 52) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -314,3 +314,14 @@ real mail.
 
 | R5.9 | Website recheck → internal opportunity, with material-change threshold and cooldown | **L1+L2** | `tests/recheck.test.mjs`, 47 checks. **Material change**: only transitions that change what is true about a business count — built a site, site went down, came back, disappeared. `uncertain` is inert in **both** directions, because it describes our confidence rather than them, so a flaky read cannot manufacture work. **Cooldown**: a change inside 60 days of last contact still creates the opportunity (we want to know) but marks it `contactable: false` with the date it clears and how long ago they were contacted. **Permission**: the record carries no message body and no recipient — asserted by inspecting its keys — and states in words that it is not permission; consent is still decided at send time. A premise-invalidating change (they built a site) is flagged, so a "couldn't find a website" approach cannot continue against someone who now has one. **L2**: driven through `runAutoTick`, capped at five prospects per tick and gated to once a day; a negative control that unwires the sweep fails the integration check. Zero emails and zero texts asserted after every recheck and sweep. |
 | R5.6 (re-verified) | The sequence rule is **reached**, not shadowed | **L1** | **Correction.** The reviewer suspected `sequenceAllowed()` was defined but not invoked. A negative control proved the concern justified: neutralising the call left all checks passing, because the card contact was refused by contact-level consent before the sequence rule ran — so the original test proved nothing about it. The new C15 gives a contact one-time SMS consent (which *clears* the contact-level gate, asserted), then shows the same consent is accepted for a single message and refused for a series, with the refusal text coming from the sequence rule. The negative control now fails exactly those two checks. |
+
+
+## R7 — Replies
+
+| Req | Check performed | Level | Result |
+|---|---|---|---|
+| R7.1 | An inbound reply immediately pauses that contact's follow-ups, **including the already-queued race** | **L1+L2** | `tests/replies.test.mjs`, 36 checks. The race is driven directly: a worker takes a send claim, the contact replies *during* preparation, and the pre-commit re-check refuses with *"a reply arrived while this message was being prepared"*. **Negative control**: removing that re-check fails three checks including "commit was never called" — so without it the follow-up genuinely does reach someone who just replied. A worker cannot even claim a send for a contact who has already replied (refused at the claim stage, `prepare` never runs). A clean send still completes, and a refused composition stops at `prepare` carrying the composer's reason, so the guard is not a blanket refusal. The stop flag is written **before** the campaign bookkeeping, leaving no window where a reply is known but unenforced. Two months later the contact is still not due. |
+| R7.2 (partial) | Auto-replies and bounces are not treated as a human reply | L1 | An out-of-office is recorded but does **not** pause follow-ups and does not flag the contact stopped; their campaign membership is untouched. Full ten-category classification is **not** implemented. |
+| R7.5 (partial) | Never reply conversationally to an automated message | L1 | Covered by the same non-human set. No auto-responder exists yet to test the reply side of this. |
+| R7.7 (partial) | Owner tools — unified inbox | L1 | Replies are listed newest-first, filterable to unhandled, and markable as handled. **No screen yet**, and no AI history, takeover or draft-only mode. |
+| — | An opt-out is a standing instruction, not just a stop | L1 | After an opt-out reply, re-reading the contact shows the consent gate refuses them — the opt-out survives as a consent fact, not only as a stop flag. |
