@@ -50,6 +50,36 @@ export default async function handler(req, res) {
   // is the only thing standing between a stranger's HTTP request and a record
   // the owner plans their week around. An unverified payload is refused, and
   // with no signing key configured nothing is trusted at all.
+  // R6.6 / R11.5 — delivery receipts, bounces, complaints and unsubscribes from
+  // the sending provider. Same discipline as the booking hook, through the one
+  // shared helper so a second webhook cannot implement three of the four checks.
+  if (req.query?.hook === 'delivery') {
+    const { acceptWebhook } = await import('../lib/webhooks.js');
+    const { applyDeliveryEvent } = await import('../lib/outreach-email.js');
+    const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});
+    let event = {};
+    try { event = typeof req.body === 'string' ? JSON.parse(req.body) : req.body || {}; } catch { event = {}; }
+
+    const verdict = await acceptWebhook({
+      scope: 'delivery',
+      header: req.headers['x-webhook-signature'],
+      rawBody,
+      signingKey: process.env.OUTREACH_WEBHOOK_KEY,
+      eventId: event.id || event.event_id,
+      subject: event.email ? String(event.email).toLowerCase() : null,
+      stamp: Number(event.at || event.timestamp) || Date.now(),
+    });
+    if (!verdict.accept) return res.status(verdict.status).json({ ok: verdict.status === 200, error: verdict.reason });
+
+    const out = await applyDeliveryEvent({
+      type: event.type,
+      email: event.email,
+      hard: event.hard !== false,
+      campaignId: event.campaignId || null,
+    });
+    return res.status(out.ok ? 200 : 400).json(out);
+  }
+
   if (req.query?.hook === 'booking') {
     const { verifyCalendlySignature, handleBookingWebhook } = await import('../lib/bookings.js');
     const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});

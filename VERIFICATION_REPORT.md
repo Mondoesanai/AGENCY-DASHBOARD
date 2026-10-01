@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1625 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1675 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 151 ·
-outreach 46 · acquisition-ui 128 · inbox-ui 41 · bookings 57 · reporting 62 · jobs 65 · campaigns 97 · recheck 47 · replies 74 · knowledge 83 · campaign-flow 52) plus **71 supervisor
+outreach 46 · acquisition-ui 128 · inbox-ui 41 · bookings 57 · reporting 62 · jobs 65 · webhooks 50 · campaigns 97 · recheck 47 · replies 74 · knowledge 83 · campaign-flow 52) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -378,3 +378,8 @@ Suite: `tests/jobs.test.mjs`, 65 checks.
 | R11.4 | Worker leases and stale-job recovery | **L1** | `queueHealth` reports stale leases separately from dead jobs, with the note *"nothing is lost"*. |
 | — | **Bug: replies lost in a burst** | **L1** | `recordReply` built its id from `contactId-timestamp`, so replies in the same millisecond overwrote each other — a batch of mail silently lost replies. Six in one millisecond now store as six, all with distinct ids. Found while fixing the human-reply metric to count by classification rather than by the `pausedFollowUps` side-effect, as its definition states. |
 | — | **Bug: one bad job type froze the queue** | **L1** | `drain()` read a no-handler job's `ran: false` as "nothing due" and broke its loop, so a single unregistered job type would silently stop every job behind it from running. Now a claimed-and-failed job is `handled` and the sweep continues; a regression test queues work behind a bad job and asserts it still runs. |
+
+
+| R11.5 | Verified webhook signatures + replay protection | **L1+L2** | `tests/webhooks.test.mjs`, 50 checks. Four independent properties in one call. **Signed**: wrong key, tampered body and missing header all fail; **no configured key fails CLOSED** and says so. **Fresh**: an hour-old signature is refused as replay, with the reason explaining that a valid signature replayed later is still valid. **Unique**: the same event id is applied once; an event with no id is refused rather than risking a double apply; scopes do not collide. **Ordered**: a watermark per subject means an older event is ignored and cannot undo a newer one. A duplicate or out-of-order event answers **200, not an error**, because a provider that sees a failure retries the duplicate forever. **L2**: driven through the real `api/collect.js` — unsigned rejected with no suppression, signed accepted and applied, replayed not applied twice, and refused entirely when no key is configured. |
+| R6.6 | Delivery, bounce, complaint and unsubscribe update contact state | **L1** | A delivery is counted and changes nothing. An **open is counted but means nothing on its own** — it is not consent and not interest. A **soft** bounce deliberately does not suppress, because it is a temporary condition. A hard bounce or complaint suppresses, opts the contact out, and stops their pending sends. |
+| R6.8 | Global suppression across all campaigns | **L1** | Suppression is written before anything else, then the contact is opted out and stopped in **every** campaign — the person did not complain about a campaign, they complained about us. Verified by re-reading the contact and confirming the consent gate refuses them. |
