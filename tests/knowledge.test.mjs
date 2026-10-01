@@ -167,4 +167,76 @@ check('an unanswerable question produces no draft body', theirs.draft.body === n
 check('and is marked as needing a person', theirs.draft.status === 'needs-a-person', theirs.draft.status);
 check('still nothing emailed', W.emails.length === 0);
 
+// ---------------------------------------------------------------------------
+section('B9  R7.6 — four brakes, and every one escalates rather than stopping');
+const { mayAutoReply, recordAutoReply, handOver, conversationState, LOOP_LIMITS } = await import('../lib/knowledge.js');
+const CID = 'loop-test-contact';
+
+let m = await mayAutoReply(CID, 'first reply');
+check('the first automatic reply is allowed', m.ok === true, JSON.stringify(m));
+
+// --- cooldown ---
+await recordAutoReply(CID, 'first reply');
+m = await mayAutoReply(CID, 'a different second reply');
+check('a second reply straight away is refused', m.ok === false, JSON.stringify(m));
+check('the brake is the cooldown', m.brake === 'cooldown', m.brake);
+check('it says how long ago and what the window is', /minutes ago; the cooldown is 30 minutes/.test(m.reason), m.reason);
+check('it escalates rather than silently stopping', m.escalate === true);
+check('and it says when it could retry', typeof m.retryAt === 'number');
+
+// --- duplicate ---
+const future = Date.now() + 60 * 60000; // past the cooldown
+m = await mayAutoReply(CID, 'first reply', { now: future });
+check('past the cooldown, repeating the SAME text is still refused', m.ok === false, JSON.stringify(m));
+check('the brake is duplicate detection', m.brake === 'duplicate', m.brake);
+check('and the reason explains how it looks from outside', /how a loop looks from the outside/.test(m.reason), m.reason);
+m = await mayAutoReply(CID, 'genuinely different text', { now: future });
+check('but new text is allowed', m.ok === true, JSON.stringify(m));
+check('whitespace-only differences still count as duplicates', (await mayAutoReply(CID, '  FIRST   reply  ', { now: future })).brake === 'duplicate');
+
+// --- max turns ---
+await recordAutoReply(CID, 'reply two', { now: future });
+await recordAutoReply(CID, 'reply three', { now: future });
+m = await mayAutoReply(CID, 'reply four', { now: future + 60 * 60000 });
+check('after the turn limit, no more automatic replies', m.ok === false, JSON.stringify(m));
+check('the brake is max-turns', m.brake === 'max-turns', m.brake);
+check('and it hands over rather than abandoning the thread', /a person should take it from here/.test(m.reason), m.reason);
+check('the limit is small on purpose', LOOP_LIMITS.maxAutoTurns <= 3, String(LOOP_LIMITS.maxAutoTurns));
+
+let cs = await conversationState(CID);
+check('the conversation state reports the turns used', cs.autoTurns >= 3, JSON.stringify(cs));
+check('and that no automatic replies remain', cs.automaticRepliesRemaining === 0);
+
+// --- handover ---
+const fresh = 'handover-contact';
+check('a fresh contact has its full budget', (await conversationState(fresh)).automaticRepliesRemaining === LOOP_LIMITS.maxAutoTurns);
+await handOver(fresh, 'owner');
+cs = await conversationState(fresh);
+check('a human taking over stops automatic replies', cs.automaticRepliesRemaining === 0, JSON.stringify(cs));
+check('and records who owns the thread', cs.takenOverBy === 'owner');
+check('after handover nothing automatic may go out', (await mayAutoReply(fresh, 'anything')).ok === false);
+
+// ---------------------------------------------------------------------------
+section('B10  the brakes are wired into ingestion, not just available');
+const who3 = (await upsertContact({ source: 'discovery', name: E('Larch'), businessName: E('Larch Co'), email: E('larch@larch.test') })).contact;
+await addMember(camp.id, who3);
+await markStepSent(camp.id, who3.id, 0);
+
+// burn the automatic budget for this contact
+await recordAutoReply(who3.id, 'one');
+await recordAutoReply(who3.id, 'two');
+await recordAutoReply(who3.id, 'three');
+
+await ingestReplies({
+  listMail: async () => [{ id: 'loop1', from: 'larch@larch.test', subject: 're:', body: 'how much is it?', at: Date.now() }],
+  isKnownContact: (addr) => prospectReplyLookup(addr),
+});
+const loopReplies = await listReplies();
+const larch = loopReplies.find((x) => x.contactId === who3.id);
+check('a reply is still recorded', !!larch);
+check('but the draft is marked for a person', larch.draft.status === 'needs-a-person', JSON.stringify(larch.draft));
+check('with the brake named', larch.draft.brake === 'max-turns', larch.draft.brake);
+check('and the draft text is still kept for them to use', typeof larch.draft.body === 'string' && larch.draft.body.length > 0);
+check('nothing was sent', W.emails.length === 0, String(W.emails.length));
+
 done();

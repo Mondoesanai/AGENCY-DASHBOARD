@@ -206,7 +206,7 @@ and never display a mocked integration as connected (R4.4).
 | R7.3 | Approved knowledge base; booking link when appropriate; respects "information first" | `[x]` `lib/knowledge.js` — closed-world answers from approved entries only; unanswerable questions escalate; "information first" suppresses the booking link |
 | R7.4 | Never invent availability, discounts, terms, capabilities, or a preview | `[x]` `containsUnapprovedClaim()` guards every draft — discounts, guarantees, invented availability, contract terms and promised rankings are all caught |
 | R7.5 | Never reply conversationally to bounces or automated mail | `[x]` auto-replies and bounces are classified non-human and never pause or trigger a response |
-| R7.6 | Loop prevention: max turns, cooldown, dedup, escalation | `[ ]` |
+| R7.6 | Loop prevention: max turns, cooldown, dedup, escalation | `[x]` four brakes — max turns, cooldown, duplicate text, handover — each escalating to a person rather than stopping silently; wired into ingestion |
 | R7.7 | Unified inbox · AI history · manual takeover · draft-only vs automatic · notifications | `[ ]` |
 | R7.8 | Booking via verified webhook or supported API — **a link click is not a booking** | `[ ]` |
 | R7.9 | Cancellations and reschedules; attribution survives both | `[ ]` |
@@ -290,11 +290,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 67 |
+| `[x]` built **and** verified | 68 |
 | `[b]` built, not verified | 6 |
 | `[~]` in progress | 5 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 41 |
+| `[ ]` not started | 40 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -343,4 +343,6 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 - **2026-10-01** — R7.2 classifier **and the ingestion the reviewer correctly said was missing**. It pointed out that `recordReply` only fires if a human reports a reply, which is not an automatic pause at all — the whole R7.1 guarantee depended on something nobody had built. `ingestReplies` now reads the mailbox, matches senders against contacts we have **actually sent to** (an exact email match only, so a colleague replying cannot stop someone else's campaign), classifies, and records — which is what revokes the send claims. Wired into `runAutoTick` **before** any sending work, so a reply that arrived since the last pass is enforced before a follow-up can be chosen. A negative control that blinds the detection fails four checks, including "the contact is now stopped". The classifier puts the three dangerous categories — bounce, auto-reply, opt-out — on headers and exact phrases rather than a model's judgement, because "probably not an opt-out" is not a standard anyone should be held to. Anything unmatched returns AMBIGUOUS with zero confidence and routes to a person, rather than being guessed.
 - **2026-10-01** — R7.3/R7.4. The dangerous version of auto-reply is a model answering freely from the conversation: it will eventually promise a discount, invent availability, or agree to terms nobody offered, and a prospect is entitled to hold us to whatever we wrote. So this is closed-world — an answer is assembled only from entries the owner approved, and a question with no matching entry is **escalated rather than improvised**, which is the right outcome far more often than people expect. "Send me information first" is treated as an instruction, not an objection: it suppresses the booking link while still answering the question. Drafts are attached to the reply for review; **draft-only is the only mode that exists** and nothing in this path sends. A test-ordering accident exposed a real bug: `saveKnowledge` dropped the `matches` patterns, so the knowledge base became permanently unmatchable the moment the owner edited it once. Built-in matchers now come from code, custom phrases round-trip as plain strings, and regex characters in a phrase are escaped so a typo cannot become a catch-all.
 - Also fixed the supervisor's diff slicing, which had caused two "cannot verify the integration" flags: the patch was emitted in git's order, so large test files consumed the reviewer's budget before the call sites. Call sites and implementation now come first and tests are what gets dropped.
+- **2026-10-01** — R7.6 loop prevention. Two machines can talk to each other forever, and an auto-responder on the other end will do it at full speed. Four independent brakes, because any one of them can be defeated by a sufficiently odd correspondent: a small automatic-turn budget, a 30-minute cooldown, duplicate-text detection (whitespace-insensitive, so a reformatted repeat still counts), and explicit handover. Every brake **escalates** rather than stopping — the draft is kept and handed to a person with the reason, because silently abandoning a live prospect mid-conversation is its own failure. A human taking over sets the automatic budget to zero and records who owns the thread. A negative control that unwires the brakes from ingestion fails exactly the two checks that depend on them.
+- Also widened the supervisor's reviewer budget and made it **trim** rather than drop: a 9.5k implementation file had pushed the total barely over the cap and vanished entirely, so the reviewer could see the call sites but not the logic they called.
 - **NEXT:** R2.4 Overview = what needs attention only, then R4.1/R4.3 discovery settings + source adapter.

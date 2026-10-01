@@ -14,10 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **1352 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **1378 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
 platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 151 ·
-outreach 46 · acquisition-ui 86 · campaigns 97 · recheck 47 · replies 74 · knowledge 57 · campaign-flow 52) plus **71 supervisor
+outreach 46 · acquisition-ui 86 · campaigns 97 · recheck 47 · replies 74 · knowledge 83 · campaign-flow 52) plus **71 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -334,3 +334,6 @@ real mail.
 | R7.4 | Never invent availability, discounts, contract terms, capabilities or a preview | **L1** | `containsUnapprovedClaim()` catches discounts, guarantees, invented availability ("I'm free on Tuesday"), stated contract terms and promised rankings — and does **not** fire on the approved text we actually send. The one legitimate "free" (a complimentary preview) passes while "free hosting forever" does not. Applied to every draft on ingestion: a draft that trips the guard is **withheld** with the findings recorded rather than shown. |
 | R7.7 (partial) | Draft-only mode | **L2** | Ingestion attaches a draft to the reply record with status `awaiting-review`, `needs-a-person` or `withheld`. **Draft-only is the only mode that exists** — there is no send path from here, asserted by zero emails after every ingestion. The unified inbox **screen**, AI history and manual takeover are still not built. |
 | — | A knowledge base that survives being edited | **L1** | **Real bug, found by test ordering.** `saveKnowledge` dropped the `matches` patterns, so the base became permanently unmatchable after the owner's first edit. Built-in matchers now come from code; custom entries round-trip as plain phrases; and regex metacharacters in a phrase are escaped, so `.*` matches the literal text rather than everything. |
+
+
+| R7.6 | Loop prevention: max turns, cooldown, dedup, escalation | **L1+L2** | `tests/knowledge.test.mjs` B9–B10, 26 checks. **Four independent brakes.** Max turns: a small automatic budget, then *"a person should take it from here"*. Cooldown: a second automatic reply inside 30 minutes is refused with how long ago the last one went and when it could retry. Duplicate: the same text is refused even past the cooldown, and **whitespace/case differences still count as duplicates**, so a reformatted repeat does not slip through. Handover: a human taking over sets the budget to zero and records who owns the thread. **Every brake escalates rather than stopping** — the draft is kept and handed over with the reason, because silently abandoning a live prospect is its own failure. **L2**: wired into ingestion, where a contact with a spent budget gets a draft marked `needs-a-person` with the brake named; a negative control that unwires it fails exactly those two checks. |
