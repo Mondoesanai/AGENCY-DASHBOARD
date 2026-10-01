@@ -1,4 +1,39 @@
- `[x]` `public/acquisition.js` — contacts, intake, prospects, targeting & pricing |||||||||||||||| Mark | Meaning | Rule |
+# Acquisition System Build — persistent plan & status
+
+**This file is the continuity anchor.** Every working session reads this first and updates it
+before stopping. Never delete completed history — mark it DONE with a date.
+
+Reconciled against `PROJECT_SPEC.md` on 2026-10-01. Every task below carries the stable
+requirement ID it satisfies. Evidence for anything marked verified lives in
+`VERIFICATION_REPORT.md` — **not here**. This file says what is *done*; that file says what is
+*proven*. They are deliberately different questions.
+
+Last updated: 2026-10-01
+
+---
+
+## Owner-set priority order (2026-10-01)
+
+The supervisor picks the next task from this order first, and falls back to document
+order only once these are exhausted.
+
+Recorded here because the independent reviewer flagged "scope creep / misaligned
+priorities" when the work followed the owner's instruction instead of the file's
+order. The work was right and the **ordering** was wrong, so the ordering is now
+written down where the supervisor can read it rather than re-argued every cycle.
+
+1. `R3.*` — contact intake screens over the existing OCR/import backend — **done**
+2. `R4.*` — discovery and qualification — **done**
+3. `R5.*` — campaign creation, scheduling, sending adapters — **current**
+4. `R7.*` — replies, manual takeover, verified booking attribution
+5. `R8.*`, `R10.*`, `R11.*` — budget controls, reporting, durable background operation
+6. everything else, including the remainder of Part 2 (R2.2, R2.4–R2.9)
+
+---
+
+## Status key
+
+| Mark | Meaning | Rule |
 |---|---|---|
 | `[ ]` | not started | — |
 | `[~]` | in progress | — |
