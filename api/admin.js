@@ -8,6 +8,11 @@ import { authed, authError } from '../lib/auth.js';
 import { receiptsHandler } from '../lib/receipts.js';
 import { reposHandler } from '../lib/repos.js';
 import { runRepoAudit, lastRepoAudit } from '../lib/repo-audit.js';
+import { getSettings, saveSettings, pricingBlocker } from '../lib/settings.js';
+import { listContacts, upsertContact, optOut } from '../lib/contacts.js';
+import { scanCards, saveCards, previewCsv, importCsv } from '../lib/card-intake.js';
+import { runDiscovery, listProspects, ATTRIBUTION as DISCOVERY_ATTRIBUTION } from '../lib/discovery.js';
+import { sendReadiness } from '../lib/outreach-email.js';
 import { listSites } from '../lib/registry.js';
 import { runAgentCycle, agentStatus, refreshRanksIfStale } from '../lib/agent.js';
 import { upsellState, draftUpsell, sendUpsell } from '../lib/upsell.js';
@@ -65,6 +70,62 @@ export default async function handler(req, res) {
       return receiptsHandler(req, res);
     case 'repos':
       return reposHandler(req, res);
+    // ---- Acquisition (R3 contacts, R4 discovery, R6 sending readiness) ----
+    case 'settings-get':
+      return res.status(200).json({ ok: true, settings: await getSettings(), pricingBlocker: pricingBlocker(await getSettings()) });
+    case 'settings-save': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const saved = await saveSettings(body.patch || body);
+      return res.status(200).json({ ok: true, settings: saved, pricingBlocker: pricingBlocker(saved) });
+    }
+    case 'contacts-list': {
+      const out = await listContacts({ limit: Number(req.query.limit) || 200, offset: Number(req.query.offset) || 0, source: req.query.source || null });
+      return res.status(200).json({ ok: true, ...out });
+    }
+    case 'contacts-save': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await upsertContact(body.contact || {});
+      return res.status(200).json({ ok: true, contact: out.contact, action: out.action });
+    }
+    case 'contacts-optout': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      await optOut({ email: body.email, phone: body.phone, reason: body.reason || 'manual' });
+      return res.status(200).json({ ok: true });
+    }
+    case 'cards-scan': {
+      // existing OCR backend, now reachable from a screen
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await scanCards(body.images || [], { note: body.note || '' });
+      return res.status(200).json({ ok: true, ...out });
+    }
+    case 'cards-commit': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await saveCards(body.cards || [], body.context || {});
+      return res.status(200).json({ ok: true, ...out });
+    }
+    case 'csv-preview': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await previewCsv(body.csv || '', body.mapping || null);
+      return res.status(200).json({ ok: true, ...out });
+    }
+    case 'csv-import': {
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await importCsv(body.csv || '', body.mapping || null, body.context || {});
+      return res.status(200).json({ ok: true, ...out });
+    }
+    case 'discovery-run': {
+      const out = await runDiscovery({
+        industries: req.query.industries ? String(req.query.industries).split(',') : null,
+        max: Math.min(Number(req.query.max) || 25, 100),
+      });
+      return res.status(200).json({ ok: out.ok !== false, ...out });
+    }
+    case 'prospects-list': {
+      const rows = await listProspects({ limit: Number(req.query.limit) || 200 });
+      return res.status(200).json({ ok: true, prospects: rows, attribution: DISCOVERY_ATTRIBUTION });
+    }
+    case 'outreach-readiness':
+      return res.status(200).json({ ok: true, readiness: await sendReadiness({}) });
     // R1.7 — client↔repo mapping audit. `fix=1` applies only the unambiguous
     // fixes (a name GitHub itself just confirmed, a stale cached block);
     // collisions, missing repos and permission faults are reported for the

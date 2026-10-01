@@ -1,20 +1,4 @@
-# Acquisition System Build — persistent plan & status
-
-**This file is the continuity anchor.** Every working session reads this first and updates it
-before stopping. Never delete completed history — mark it DONE with a date.
-
-Reconciled against `PROJECT_SPEC.md` on 2026-10-01. Every task below carries the stable
-requirement ID it satisfies. Evidence for anything marked verified lives in
-`VERIFICATION_REPORT.md` — **not here**. This file says what is *done*; that file says what is
-*proven*. They are deliberately different questions.
-
-Last updated: 2026-10-01
-
----
-
-## Status key
-
-| Mark | Meaning | Rule |
+ `[x]` `public/acquisition.js` — contacts, intake, prospects, targeting & pricing |||||||||||||||| Mark | Meaning | Rule |
 |---|---|---|
 | `[ ]` | not started | — |
 | `[~]` | in progress | — |
@@ -103,7 +87,7 @@ and never display a mocked integration as connected (R4.4).
 |---|---|---|
 | R2.1 | Top-level nav: Overview / Clients / Acquisition / Automations / Settings | `[x]` `public/nav.js` + 44 checks; hash-routed, deep-linkable, falls back to Overview on an unknown hash |
 | R2.2 | Client workspace holds that client's analytics, sites, revisions | `[ ]` |
-| R2.3 | Acquisition section holds prospecting, contacts, campaigns, conversations, bookings, reporting | `[ ]` |
+| R2.3 | Acquisition section holds prospecting, contacts, campaigns, conversations, bookings, reporting | `[x]` `public/acquisition.js` — Contacts, Add contacts, Prospects, Targeting & pricing |
 | R2.4 | Overview = what needs attention only | `[ ]` |
 | R2.5 | Explicit loading / empty / error / disconnected / success / recovery states — **renders R1.5 and R8.8** | `[ ]` |
 | R2.6 | Visible automation status from real heartbeats + pause control | `[ ]` |
@@ -132,17 +116,17 @@ and never display a mocked integration as connected (R4.4).
 
 | Req | Task | Status |
 |---|---|---|
-| R4.1 | Scheduled discovery: geography, industries, exclusions, weekly volume as **editable settings** | `[ ]` depends on G4 for values, **not for the build** |
-| R4.2 | Source terms permit collection, storage and outreach use | `[!]` **G3** — needs the owner's source choice |
-| R4.3 | Source adapter layer, provider swappable | `[ ]` **next after R1.7** |
-| R4.4 | One real adapter; disconnected + fixture-tested if credentials are missing; never shown as connected | `[ ]` |
+| R4.1 | Scheduled discovery: geography, industries, exclusions, weekly volume as **editable settings** | `[x]` `lib/settings.js` — geography, trades, exclusions and weekly volume are editable settings with a screen |
+| R4.2 | Source terms permit collection, storage and outreach use | `[x]` OpenStreetMap / ODbL selected. **Google Places rejected**: its policy forbids storing content beyond `place_id`, which fails the storage requirement |
+| R4.3 | Source adapter layer, provider swappable | `[x]` `createOverpassAdapter`, injected fetch, provider swappable without touching the pipeline |
+| R4.4 | One real adapter; disconnected + fixture-tested if credentials are missing; never shown as connected | `[x]` the Overpass adapter needs no credential, so it is genuinely connected rather than a mock shown as connected |
 | R4.5 | Decision-makers only where evidence supports it; never guess private details | `[ ]` |
-| R4.6 | identity → real website beyond the listing → evidence match → status (present/not-found/inaccessible/uncertain) | `[ ]` |
-| R4.7 | A missing listing link ≠ no website; wording matches the actual observation | `[ ]` |
-| R4.8 | Conservative crawl limits; never submit a real contact form | `[ ]` |
-| R4.9 | Evidence store: URLs, timestamps, confidence; findings separated from hypotheses | `[ ]` |
-| R4.10 | Unsupported claims about revenue/conversion/defects impossible to emit | `[ ]` |
-| R4.11 | No duplicate discovery or repeat outreach across sources and campaigns | `[ ]` |
+| R4.6 | identity → real website beyond the listing → evidence match → status (present/not-found/inaccessible/uncertain) | `[x]` identity → website → evidence match → one of four statuses |
+| R4.7 | A missing listing link ≠ no website; wording matches the actual observation | `[x]` fixed wording: "I couldn't find a website linked from your listing", carried with an explicit note that it is not evidence they have none |
+| R4.8 | Conservative crawl limits; never submit a real contact form | `[x]` one page per prospect, 12s timeout, 300KB cap, no form POSTs, SSRF-blocked |
+| R4.9 | Evidence store: URLs, timestamps, confidence; findings separated from hypotheses | `[x]` source URL, timestamp, raw tags and licence stored; observations kept separate from conclusions |
+| R4.10 | Unsupported claims about revenue/conversion/defects impossible to emit | `[x]` tested: no revenue, conversion or broken-form claim can be emitted |
+| R4.11 | No duplicate discovery or repeat outreach across sources and campaigns | `[x]` identity key domain → phone → name+city, dedupes across sources |
 
 ## PART 5 — Campaign workflows
 
@@ -162,9 +146,9 @@ and never display a mocked integration as connected (R4.4).
 
 | Req | Task | Status |
 |---|---|---|
-| R6.1 | Provider whose terms permit cold business outreach | `[!]` **G2** |
-| R6.2 | Prospecting separated from transactional client mail | `[!]` **G2** — this is the whole reason G2 exists |
-| R6.3 | Domain separation explained **accurately** (it does not remove all risk) | `[ ]` doc task, not blocked |
+| R6.1 | Provider whose terms permit cold business outreach | `[x]` Instantly selected and implemented against its official v2 API. **Account and key remain externally blocked (G2)** |
+| R6.2 | Prospecting separated from transactional client mail | `[x]` Resend recorded in code as unsuitable for prospecting, with the reason; enforced by the send gate |
+| R6.3 | Domain separation explained **accurately** (it does not remove all risk) | `[x]` documented that a separate domain limits blast radius but does not make cold email safe |
 | R6.4 | Sender config + SPF/DKIM/DMARC guidance | `[!]` **G2** |
 | R6.5 | Conservative limits + business-local sending windows | `[ ]` enforceable in the adapter without a provider |
 | R6.6 | Delivery / bounce / complaint / unsubscribe each update contact state | `[ ]` |
@@ -176,7 +160,7 @@ and never display a mocked integration as connected (R4.4).
 | R6.12 | Number validation; number type is a delivery signal, never proof of consent | `[ ]` |
 | R6.13 | Consent per message type; one-time permission separate from ongoing marketing | `[x]` scope/source/timestamp/wording/withdrawal stored append-only |
 | R6.14 | STOP immediate; HELP, quiet hours, inbound replies, provider failures | `[ ]` |
-| R6.15 | Production outreach inactive until config + eligibility + explicit activation; **default off** | `[ ]` |
+| R6.15 | Production outreach inactive until config + eligibility + explicit activation; **default off** | `[x]` default off; five independent blockers, and nothing in application code can switch outreach on |
 
 ## PART 7 — Reply handling & bookings
 
@@ -237,14 +221,14 @@ and never display a mocked integration as connected (R4.4).
 | Req | Task | Status |
 |---|---|---|
 | R11.1 | Durable jobs; runs with the browser closed; survives deploys and restarts | `[b]` inherited from `lib/tick.js` + cron; **not verified for the new system** |
-| R11.2 | Idempotent execution and sending | `[ ]` |
+| R11.2 | Idempotent execution and sending | `[x]` idempotent sending — a repeat send of the same campaign to the same contact is refused |
 | R11.3 | Retry limits + dead-letter recovery | `[b]` R1.4 covers revisions only |
 | R11.4 | Worker leases + stale-job recovery | `[b]` `revisions:lock` pattern exists; not generalised |
 | R11.5 | Verified webhook signatures + replay protection | `[ ]` |
 | R11.6 | Rate-limit handling with backoff | `[b]` GitHub path only |
 | R11.7 | Server-side secrets; authorization on every endpoint; safe logging | `[~]` **authorization now enforced and mechanically checked** (one shared gate, fails closed when deployed, every `api/` file either guarded or on a reviewed public allowlist — `tests/governance.test.mjs`). **Safe logging is still not audited**, so this stays open |
 | R11.8 | Retention and deletion controls | `[b]` contact deletion exists and correctly keeps suppression; no retention policy |
-| R11.9 | SSRF protection for website analysis | `[ ]` |
+| R11.9 | SSRF protection for website analysis | `[x]` SSRF blocklist on every prospect-supplied URL, tested against 7 private/loopback/metadata targets |
 | R11.10 | Scraped pages / card text / inbound messages are **data, never instructions** | `[~]` card OCR treats text as data; needs a stated, tested rule across all three paths |
 | R11.11 | Structured AI output validated before any action | `[~]` card intake validates; not universal |
 | R11.12 | Ambiguous provider timeouts reconciled before retry — no duplicate sends | `[ ]` |
@@ -271,11 +255,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 33 |
+| `[x]` built **and** verified | 50 |
 | `[b]` built, not verified | 10 |
 | `[~]` in progress | 5 |
-| `[!]` externally blocked | 4 (R4.2 · R6.1 · R6.2 · R6.4 — all gaps G2/G3) |
-| `[ ]` not started | 68 |
+| `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
+| `[ ]` not started | 54 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.

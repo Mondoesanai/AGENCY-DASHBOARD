@@ -1,0 +1,132 @@
+// R2.3 / R2.9 — the Acquisition screens.
+// Render functions are pure, so these drive them directly and assert on what a
+// person would actually read. The recurring theme: empty must never be dressed
+// up as a finished zero, and nothing may claim an integration it does not have.
+import { check, section, done } from './world.mjs';
+import {
+  TABS, renderShell, renderBody, renderContacts, renderIntake,
+  renderProspects, renderAcqSettings, renderReadiness, fieldCell, SEGMENT_LABEL,
+} from '../public/acquisition.js';
+
+const has = (html, s) => String(html).includes(s);
+
+// ---------------------------------------------------------------------------
+section('A1  the section has the four workflows, not a placeholder');
+check('four tabs', TABS.length === 4, String(TABS.length));
+check('contacts, intake, prospects and settings', TABS.map((t) => t.id).join(',') === 'contacts,intake,prospects,settings');
+const shell = renderShell('contacts');
+check('the shell marks the active tab', /data-acq="contacts" class="on"/.test(shell), shell.slice(0, 200));
+check('and leaves a body to fill', has(shell, 'id="acqBody"'));
+
+// ---------------------------------------------------------------------------
+section('A2  empty is "we have not looked", never a confident zero');
+let html = renderContacts({ contacts: [] });
+check('no contacts says so plainly', has(html, 'No contacts yet'));
+check('and says where they would come from', /Add contacts/.test(html));
+check('it does not render an empty table that looks like a result', !has(html, '<table'));
+
+html = renderProspects({ prospects: [] });
+check('no prospects says nothing has been searched', has(html, 'Nothing searched yet'));
+check('and explicitly distinguishes that from "none exist"', /not the same as there being no businesses/.test(html));
+check('discovery is still offered', has(html, 'acqDiscoverBtn'));
+
+html = renderProspects({ loading: true });
+check('loading is its own state', has(html, 'Loading prospects'));
+
+// ---------------------------------------------------------------------------
+section('A3  the prospect list reports observations, not conclusions');
+const prospects = [
+  { name: 'Lone Star Flooring', city: 'Dallas', industry: 'flooring', qualification: { segment: 'no-site-found' }, web: { observation: "I couldn't find a website linked from your OpenStreetMap listing." }, evidence: { sourceUrl: 'https://www.openstreetmap.org/node/1' } },
+  { name: 'Metroplex Floors', city: 'Plano', industry: 'flooring', qualification: { segment: 'has-site' }, web: { observation: 'The listed website loads and matches this business (business name).' }, evidence: {} },
+];
+html = renderProspects({ prospects, targetingStatus: 'draft', attribution: '© OpenStreetMap contributors, ODbL 1.0' });
+check('the not-found segment is labelled as "No website found"', has(html, SEGMENT_LABEL['no-site-found']));
+check('the label says FOUND, not "has no website"', !/has no website/i.test(html));
+check("the exact observation wording is shown to the operator", has(html, "couldn&#39;t find a website linked"));
+check('a working site is a separate segment', has(html, SEGMENT_LABEL['has-site']));
+check('segment counts are summarised', /No website found: 1/.test(html));
+check('the OSM source link is offered as evidence', has(html, 'openstreetmap.org/node/1'));
+check('the licence attribution is displayed', has(html, 'ODbL'));
+check('a draft targeting state is called out', /Targeting is still a draft/.test(html));
+check('and it states discovery never contacts anyone', /never contacts anyone/.test(html));
+
+// ---------------------------------------------------------------------------
+section('A4  low-confidence OCR is marked, never silently used');
+check('a clean field renders plainly', fieldCell({ value: 'info@acme.com', needsReview: false }) === 'info@acme.com');
+check('a shaky field is flagged for a human', /check/.test(fieldCell({ value: 'tnfo@acme.com', needsReview: true })));
+check('an empty field is a dash, not a blank lie', /—/.test(fieldCell(null)));
+check('values are HTML-escaped', /&lt;script&gt;/.test(fieldCell({ value: '<script>' })));
+
+html = renderIntake({ scan: { note: 'Nothing has been saved yet.', cards: [{ name: { value: 'Pat Lee' }, email: { value: 'pat@x.com', needsReview: true }, review: [{ field: 'email' }] }] } });
+check('the scan result says nothing is saved yet', /Nothing has been saved yet/.test(html));
+check('fields needing a check are named', /Unsure about: email/.test(html));
+check('and saving is an explicit button, not automatic', has(html, 'acqCommitCards'));
+check('the relationship question is asked, not assumed', has(html, 'Where did you meet them?'));
+check('"same networking group" is offered as distinct from having met', /we have not met/.test(html));
+
+// ---------------------------------------------------------------------------
+section('A5  CSV preview promises what import will do');
+html = renderIntake({ csvPreview: { willImport: 12, skipped: [{ reason: 'invalid email' }] } });
+check('the preview states the count', /12 row\(s\) would be imported/.test(html));
+check('it says nothing is written yet', /Nothing has been written yet/.test(html));
+check('skipped rows give a reason', /invalid email/.test(html));
+check('importing is a separate explicit action', has(html, 'acqCommitCsv'));
+
+// ---------------------------------------------------------------------------
+section('A6  pricing is shown as unset, never as zero');
+let state = {
+  settings: { pricing: { configured: false, buildPrice: null, monthlyFee: null, includes: ['Hosting', 'Unlimited revisions'] }, targeting: { status: 'draft', source: 'development assumption', geography: { label: 'DFW' }, weeklyVolume: 25, exclusions: { minYearsInBusiness: 2 }, industries: [{ label: 'Flooring' }] } },
+  pricingBlocker: 'Pricing is not set (build price and monthly fee missing), so no message may quote a price.',
+  readiness: { provider: 'instantly', connected: false, ready: false, blockers: [{ text: 'No Instantly API key.' }, { text: 'No separate sending domain configured.' }] },
+};
+html = renderAcqSettings(state);
+check('the unset price shows a "not set" placeholder, not 0', /placeholder="not set"/.test(html));
+check('the value is empty rather than 0', !/value="0"/.test(html));
+check('the blocker is shown', /no message may quote a price/.test(html));
+check('what the monthly fee covers is listed', /Unlimited revisions/.test(html));
+check('targeting draft status is visible', /Status: <b>draft<\/b>/.test(html));
+check('and framed as not a decision to contact anyone', /not a decision to contact anyone/.test(html));
+check('confirming targeting is a deliberate separate button', has(html, 'acqConfirmTargeting'));
+
+state.settings.pricing = { configured: true, buildPrice: 2500, monthlyFee: 197, includes: [] };
+html = renderAcqSettings(state);
+check('a configured price says messages may quote it', /may quote this/.test(html));
+check('and the real figures are shown', /value="2500"/.test(html) && /value="197"/.test(html));
+
+// ---------------------------------------------------------------------------
+section('A7  a disconnected provider never reads as connected (R2.9)');
+html = renderReadiness({ provider: 'instantly', connected: false, ready: false, blockers: [{ text: 'No Instantly API key.' }] });
+check('it says not connected', /not connected/.test(html));
+check('it does not say ready', !/>ready</.test(html));
+check('the blockers are listed for the owner', /No Instantly API key/.test(html));
+check('and it states sending cannot happen', /cannot send/.test(html));
+check('while making clear these are decisions, not bugs', /none of it is a bug/.test(html));
+
+html = renderReadiness({ provider: 'instantly', connected: true, ready: false, blockers: [{ text: 'Outreach has not been switched on.' }] });
+check('connected-but-not-activated is its own state', /connected, not activated/.test(html));
+
+html = renderReadiness({ provider: 'instantly', connected: true, ready: true, blockers: [] });
+check('only a fully ready provider says sending is live', /Sending is live/.test(html));
+
+// ---------------------------------------------------------------------------
+section('A8  the body router covers every tab');
+for (const t of TABS) {
+  const out = renderBody(t.id, { contacts: [], prospects: [], settings: state.settings, readiness: state.readiness });
+  check(`${t.id} renders something`, typeof out === 'string' && out.length > 40, t.id);
+  check(`${t.id} does not render "undefined"`, !/undefined/.test(out), out.slice(0, 120));
+}
+check('an unknown tab is handled', /Unknown tab/.test(renderBody('nope', {})));
+
+// ---------------------------------------------------------------------------
+section('A9  an opted-out contact stays visible, with its state');
+html = renderContacts({ contacts: [
+  { id: '1', name: { value: 'Pat' }, email: { value: 'pat@x.com' }, optedOutAt: Date.now() },
+  { id: '2', name: { value: 'Sam' }, email: { value: 'sam@x.com' }, emailStatus: 'hard_bounce' },
+  { id: '3', name: { value: 'Dana' }, email: { value: 'dana@x.com' } },
+] });
+check('an opted-out contact is shown as opted out', /opted out/.test(html));
+check('a bounced address is shown as bounced', /bounced/.test(html));
+check('a usable one is shown as emailable', /emailable/.test(html));
+check('and it explains why opted-out records are kept', /deleting the record would lose the opt-out/.test(html));
+
+done();

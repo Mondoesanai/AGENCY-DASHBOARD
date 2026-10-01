@@ -14,9 +14,10 @@ Verification levels used throughout:
 | **L3 staging-live** | Executed against a real external provider in a non-production or safe context. |
 | **L4 production-observed** | Observed working on live production data. |
 
-Last updated: 2026-10-01 · Suite totals at this date: **740 automated checks, 0 failing**
+Last updated: 2026-10-01 · Suite totals at this date: **955 automated checks, 0 failing**
 (revision-state 46 · contacts 54 · card-intake 50 · budget 42 · inbox 85 · agent 101 ·
-platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44) plus **48 supervisor
+platform 59 · reports 31 · repo-audit 94 · flows 103 · governance 31 · nav 44 · discovery 107 ·
+outreach 46 · acquisition-ui 62) plus **67 supervisor
 isolation checks, 0 failing**.
 
 > Correction, same day: this line previously read "450". That was an addition error on my
@@ -196,3 +197,57 @@ covers every screen, so it stays open and unticked until the rest of Part 2 is b
 2. The money and receipts panels moved into Settings, so opening them from the header had to route there first; otherwise they rendered inside a hidden section and the button appeared to do nothing.
 
 **Not verified:** no cross-browser or real-mobile check has been run (R12.7). Only a desktop viewport was inspected.
+
+---
+
+## R4 — Discovery and qualification (G3)
+
+Suite: `tests/discovery.test.mjs`, 107 checks.
+
+| Req | Check performed | Level | Result |
+|---|---|---|---|
+| R4.2 | The source's terms permit collection, **storage** and outreach use | **L3** | Official policy read, not assumed. Google Places states "You must not pre-fetch, cache, or store Places API content beyond the allowed exceptions", with place ID the only field storable indefinitely — it therefore **fails the storage requirement and is not used**. OpenStreetMap via Overpass is used instead: ODbL 1.0 permits storage, adaptation and commercial use with attribution, and imposes no field-of-use restriction. Attribution is carried on every stored prospect and shown in the UI. |
+| R4.1 | Geography, industries, exclusions and weekly volume are editable | L1+L2 | `lib/settings.js` + a Targeting screen. Verified that a Chicago business and an untargeted trade both fall outside the configured targeting. |
+| R4.3 | Source adapter layer, provider swappable | L1 | `createOverpassAdapter` takes an injected fetch, so all 107 checks run against fixtures. It needs no credential, so it is genuinely connected rather than a mock displayed as connected. |
+| R4.4 | A real adapter, never a mock shown as connected | L1 | The Overpass adapter requires no credential, so it reports itself connected truthfully; the disconnected path is modelled separately and refuses every call. |
+| R4.6 | identity → real website → evidence → status | L1 | Four states: verified-present · not-linked-in-listing · inaccessible · uncertain. A page that loads but mentions nothing about the business is **uncertain**, not present. |
+| R4.7 | A missing listing link is not "no website" | **L1** | The wording is fixed in code: *"I couldn't find a website linked from your OpenStreetMap listing"*, carried with an explicit note that it is **NOT evidence the business has none**. A test asserts the phrase "has no website" cannot appear. |
+| R4.8 | Conservative crawling, no form submission | L1 | One page per prospect, 12s timeout, 300KB cap, no POSTs. |
+| R4.9 | Evidence stored, findings separate from hypotheses | L1 | Source URL, timestamp, raw OSM tags and licence stored per prospect; the observation string is kept apart from the derived segment. |
+| R4.10 | No unsupported performance claims | **L1** | Asserted that no output can contain a lost-revenue, conversion-rate or broken-form claim. |
+| R4.11 | No duplicate discovery | L1 | Identity key resolves domain → phone → name+city; the same business from two different sources collides deliberately. |
+| R11.9 | SSRF protection | L1 | localhost, 127.x, 10.x, 192.168.x, 172.16-31.x, 169.254.169.254, `file://` and non-standard ports all blocked before any fetch. |
+| R4.5 | Decision-makers only where evidence supports | — | **Not implemented.** |
+
+## R6 — Cold email (G2)
+
+Suite: `tests/outreach.test.mjs`, 46 checks.
+
+| Req | Check performed | Level | Result |
+|---|---|---|---|
+| R6.1 | A provider whose terms permit cold outreach | **L3** | Instantly selected, documented against its official v2 API (`https://api.instantly.ai/api/v2`, bearer auth, `POST /campaigns`, `POST /leads/bulk` max 1000/request, `PATCH /campaigns/:id/activate`, `GET /emails` at 20 req/min). **Account and API key remain externally blocked (G2).** |
+| R6.2 | Prospecting separated from transactional client mail | L1 | Resend is recorded **in code** as unsuitable for prospecting, with the reason (a complaint would endanger the account that delivers client reports). A test asserts that record stays. |
+| R6.3 | Domain separation explained accurately | L1 | Documented that a separate sending domain limits blast radius but does **not** make cold email safe or prevent account termination. |
+| R6.13 | Consent scopes honoured by the send gate | L1 | An opted-out contact is refused even when the provider, domain, pricing, targeting and owner switch are all correctly set — consent is checked first. |
+| R11.2 | Idempotent sending | L1 | A second send of the same campaign to the same contact is refused as already-sent; a different campaign is still allowed. |
+| R6.15 | Production outreach inactive by default | **L1** | Five independent blockers (credentials, sending domain, pricing, confirmed targeting, owner activation). Nothing in application code can set `outreach.active`; the test has to write storage directly to simulate the owner's switch, and it puts it back to off. |
+| — | Documented rate limits respected | L1 | 2,300 leads are split into 3 requests within the documented 1000 limit — **all 2,300 sent, none truncated**. A 429 is reported as transient, never as success. |
+
+## R2.3 / R2.9 — the Acquisition section
+
+Suite: `tests/acquisition-ui.test.mjs`, 62 checks, plus a real browser run.
+
+| Check | Level | Result |
+|---|---|---|
+| R2.3 | Four working screens over existing backends | L1 | Contacts · Add contacts (card OCR, CSV, manual) · Prospects · Targeting & pricing. The card-OCR and CSV backends existed and were tested but had **no way in** until now. |
+| Empty is never a confident zero | L1 | "No contacts yet" names where contacts come from; "Nothing searched yet" states explicitly that it is *not the same as there being no businesses to find*. |
+| Low-confidence OCR cannot become a contact silently | L1 | Flagged fields are marked, the scan says nothing is saved yet, and saving is a separate action that submits the human's corrections rather than the raw OCR. |
+| A disconnected provider never reads as connected | L1 | Three distinct states: not connected · connected, not activated · ready. |
+| Pricing unset renders as unset | L1 | A "not set" placeholder, never `0`. |
+| **Browser verification, desktop (1440) and mobile (390)** | **L2** | 5 nav buttons render; every tab shows exactly **one** section; **no horizontal overflow at either width**; **no JavaScript console errors** (only expected 404s where no local API exists). Screenshots captured for both. |
+
+### Found by the browser run, not by the test suite
+1. **Overview rendered zero characters when the feed failed.** The error message only ever landed in the Clients list, so Overview looked like a silent success. Fixed — it now shows the same message (R2.5).
+2. "Targeting & pricing" was clipped off the right edge at 390px. The tab row now wraps.
+
+**Still not verified:** no real device, no cross-browser run (Chrome only), and no screen reader pass.

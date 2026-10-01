@@ -95,6 +95,34 @@
   .mainnav .navbtn:active{transform:translateY(1px);}
   .mainnav .navbtn.on{color:var(--ink);border-bottom-color:var(--green-br);}
   @media (max-width:560px){ .mainnav{gap:0;} .mainnav .navbtn{padding:9px 10px;font-size:13px;} }
+  /* Acquisition screens */
+  .acq-panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:14px;}
+  .acq-panel h3{margin:0 0 6px;font:600 16px 'Fraunces',serif;}
+  .acq-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:10px;margin:10px 0;}
+  .acq-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);}
+  .acq-grid input,.acq-panel textarea,.acq-inline select{background:var(--surface2);border:1px solid var(--line);
+    border-radius:9px;color:var(--ink);padding:8px 10px;font:inherit;font-size:14px;width:100%;}
+  .acq-grid input:focus-visible,.acq-panel textarea:focus-visible{outline:2px solid var(--green-br);outline-offset:1px;}
+  .acq-inline{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:8px 0;flex-wrap:wrap;}
+  .acq-table{width:100%;border-collapse:collapse;font-size:13px;}
+  .acq-table th{text-align:left;color:var(--faint);font-weight:600;padding:7px 8px;border-bottom:1px solid var(--line);white-space:nowrap;}
+  .acq-table td{padding:8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:top;}
+  .acq-table tr:hover td{background:rgba(255,255,255,.03);}
+  .acq-card{border:1px solid var(--line);border-radius:11px;padding:12px;margin:10px 0;background:var(--surface2);}
+  .acq-card-h{display:flex;align-items:center;gap:8px;margin-bottom:4px;}
+  .acq-blockers{margin:8px 0 0 18px;color:var(--muted);font-size:13px;line-height:1.7;}
+  .pill.sm{font-size:11px;padding:2px 7px;}
+  .pill.neg{background:rgba(240,144,111,.14);color:var(--neg);}
+  .pill.warn{background:rgba(234,181,74,.14);color:var(--warn);}
+  .note.warn{color:var(--warn);} .note.neg{color:var(--neg);}
+  .acq-tabs{position:static;border:0;padding:0;margin:0 0 12px;}
+  @media (max-width:560px){
+    .acq-table{display:block;overflow-x:auto;}
+    /* the four tab labels do not fit one phone-width row — wrap them rather
+       than clipping "Targeting & pricing" off the right edge */
+    .acq-tabs{flex-wrap:wrap;gap:4px;}
+    .acq-tabs button{font-size:13px;padding:7px 10px;}
+  }
   .fin-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px 20px;}
   .fin-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:14px;}
   .fin-grid .b{background:var(--surface2);border:1px solid var(--line);border-radius:11px;padding:12px 13px;}
@@ -340,21 +368,7 @@
     <p class="note" id="footNote"></p>
   </section>
 
-  <section id="view-acquisition" hidden>
-    <div class="section-h"><h2>Acquisition</h2></div>
-    <!-- R2.9: an unbuilt section must say so plainly rather than render an
-         empty state that looks like "no prospects yet". -->
-    <div class="note" style="line-height:1.7">
-      <b>Not built yet.</b> This is where prospecting, contacts, campaigns, conversations
-      and bookings will live. Nothing here is connected and no outreach can be sent.
-      <br /><br />
-      Already built and tested underneath, but with no screen yet: contact storage with
-      consent and opt-out handling, business-card and CSV import, and the spend ledger.
-      <br /><br />
-      Two decisions are needed before any of it can send: a cold-email provider on a
-      separate sending domain, and a discovery data source whose terms permit outreach.
-    </div>
-  </section>
+  <section id="view-acquisition" hidden></section>
 
   <section id="view-automations" hidden>
     <div class="section-h"><h2>Automations</h2></div>
@@ -612,7 +626,12 @@ async function load(){
     data=await r.json();
     if(!data.sites) throw 0;
   }catch{
-    $('#sites').innerHTML='<div class="loading">Could not reach the API. If this is a fresh deploy, give it a minute.</div>';
+    // R2.5 — Overview must not render as a silent blank when the feed fails.
+    // Browser verification caught this: the error only ever landed in the
+    // Clients list, so Overview showed literally nothing and read as "all fine".
+    const msg='<div class="loading">Could not reach the API. If this is a fresh deploy, give it a minute.</div>';
+    $('#sites').innerHTML=msg;
+    $('#overview').innerHTML=msg;
     return;
   }
   STATE=data;
@@ -2379,14 +2398,100 @@ setInterval(()=>{
   $$('.rev-next-ct').forEach(el=>el.textContent=revVal);
 },1000);
 
+/* ---------- R2.3 Acquisition section ---------- */
+// Screens over backends that already existed but had no way in: card OCR, CSV
+// import, contacts with consent, discovery, and the sending gate. Nothing here
+// can send — the only send path is server-side and refuses unless outreach has
+// been switched on.
+let ACQ = { tab: 'contacts', loading: false };
+let acqMod = null;
+async function acqApi(q, body){
+  const u=`/api/admin?do=${q}&secret=${encodeURIComponent(key())}`;
+  const opt=body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'};
+  const r=await fetch(u,opt);
+  if(r.status===401){ toast('Enter your password first.','err'); return {ok:false,error:'locked'}; }
+  return r.json().catch(()=>({ok:false,error:'bad response'}));
+}
+async function renderAcq(){
+  const host=$('#view-acquisition'); if(!host||!acqMod) return;
+  host.innerHTML=acqMod.renderShell(ACQ.tab);
+  $('#acqTabs').onclick=(e)=>{ const b=e.target.closest('[data-acq]'); if(b){ ACQ.tab=b.dataset.acq; renderAcq(); } };
+  const body=$('#acqBody');
+  body.innerHTML=acqMod.renderBody(ACQ.tab, {...ACQ, loading:true});
+  if(ACQ.tab==='contacts'){ const j=await acqApi('contacts-list'); ACQ.contacts=j.contacts||[]; }
+  if(ACQ.tab==='prospects'){ const j=await acqApi('prospects-list'); ACQ.prospects=j.prospects||[]; ACQ.attribution=j.attribution; const s=await acqApi('settings-get'); ACQ.targetingStatus=s.settings?.targeting?.status; }
+  if(ACQ.tab==='settings'){ const j=await acqApi('settings-get'); ACQ.settings=j.settings; ACQ.pricingBlocker=j.pricingBlocker; const r=await acqApi('outreach-readiness'); ACQ.readiness=r.readiness; }
+  body.innerHTML=acqMod.renderBody(ACQ.tab, {...ACQ, loading:false});
+  wireAcq();
+}
+function wireAcq(){
+  $('#acqDiscoverBtn')?.addEventListener('click', async (e)=>{
+    e.target.disabled=true; $('#acqDiscoverNote').textContent='Searching OpenStreetMap…';
+    const j=await acqApi('discovery-run&max=25');
+    $('#acqDiscoverNote').textContent = j.ok ? `found ${j.found}, saved ${j.saved}, ${j.skippedAsDuplicate} already known` : (j.error||'failed');
+    e.target.disabled=false; if(j.ok) renderAcq();
+  });
+  $('#acqScanBtn')?.addEventListener('click', async (e)=>{
+    const files=[...($('#acqCardFiles')?.files||[])];
+    if(!files.length){ toast('Pick at least one photo.','err'); return; }
+    e.target.disabled=true; e.target.textContent='Reading…';
+    const images=await Promise.all(files.map(f=>new Promise((res)=>{
+      const r=new FileReader(); r.onload=()=>res({base64:String(r.result).split(',')[1],mimeType:f.type}); r.readAsDataURL(f);
+    })));
+    const j=await acqApi('cards-scan',{images});
+    ACQ.scan = j.ok ? j : {error:j.error||'could not read the photos'};
+    e.target.disabled=false; e.target.textContent='Read the cards'; renderAcq();
+  });
+  $('#acqCommitCards')?.addEventListener('click', async ()=>{
+    // take the human's corrections from the inputs, not the raw OCR
+    const cards=[...document.querySelectorAll('.acq-card')].map((el,i)=>{
+      const c={...(ACQ.scan.cards[i]||{})};
+      el.querySelectorAll('[data-f]').forEach(inp=>{ const v=inp.value.trim(); c[inp.dataset.f]= v?{value:v,confidence:1,source:'manual',needsReview:false}:null; });
+      return c;
+    });
+    const j=await acqApi('cards-commit',{cards,context:{relationship:$('#acqRelationship')?.value||'met_in_person'}});
+    toast(j.ok?`Saved ${cards.length} contact(s).`:'Could not save.',j.ok?'':'err');
+    if(j.ok){ ACQ.scan=null; ACQ.tab='contacts'; renderAcq(); }
+  });
+  $('#acqPreviewBtn')?.addEventListener('click', async ()=>{
+    const j=await acqApi('csv-preview',{csv:$('#acqCsv').value});
+    ACQ.csvPreview=j.ok?j:null; if(!j.ok) toast(j.error||'Could not read that CSV.','err'); renderAcq();
+  });
+  $('#acqCommitCsv')?.addEventListener('click', async ()=>{
+    const j=await acqApi('csv-import',{csv:$('#acqCsv').value});
+    toast(j.ok?`Imported ${j.imported||0}.`:'Import failed.',j.ok?'':'err');
+    if(j.ok){ ACQ.csvPreview=null; ACQ.tab='contacts'; renderAcq(); }
+  });
+  $('#acqManualSave')?.addEventListener('click', async ()=>{
+    const f=(v)=>v?{value:v,confidence:1,source:'manual',needsReview:false}:null;
+    const contact={source:'manual',name:f($('#m_name').value.trim()),businessName:f($('#m_business').value.trim()),email:f($('#m_email').value.trim()),phone:f($('#m_phone').value.trim())};
+    if(!contact.name&&!contact.email){ toast('A name or an email is needed.','err'); return; }
+    const j=await acqApi('contacts-save',{contact});
+    toast(j.ok?'Added.':'Could not add.',j.ok?'':'err'); if(j.ok){ ACQ.tab='contacts'; renderAcq(); }
+  });
+  $('#acqSavePricing')?.addEventListener('click', async ()=>{
+    const j=await acqApi('settings-save',{patch:{pricing:{buildPrice:$('#p_build').value,monthlyFee:$('#p_monthly').value}}});
+    toast(j.ok?'Pricing saved.':'Could not save.',j.ok?'':'err'); renderAcq();
+  });
+  const saveTargeting=async(status)=>{
+    const j=await acqApi('settings-save',{patch:{targeting:{status,weeklyVolume:$('#t_volume').value,geography:{label:$('#t_area').value},exclusions:{minYearsInBusiness:Number($('#t_years').value)||2}}}});
+    toast(j.ok?(status==='confirmed'?'Targeting confirmed.':'Saved as draft.'):'Could not save.',j.ok?'':'err'); renderAcq();
+  };
+  $('#acqSaveTargeting')?.addEventListener('click',()=>saveTargeting('draft'));
+  $('#acqConfirmTargeting')?.addEventListener('click',()=>saveTargeting('confirmed'));
+}
+
 /* ---------- R2.1 top-level navigation ---------- */
 // Loaded as a module so the routing logic is testable in node. `go` lets the
 // rest of the page send you to a section — opening the money panel, for
 // instance, has to land you on Settings or the panel renders out of sight.
 let goView = null;
 import('/nav.js')
-  .then((nav) => {
-    goView = nav.initNav(document);
+  .then(async (nav) => {
+    acqMod = await import('/acquisition.js').catch(() => null);
+    goView = nav.initNav(document, {
+      onChange: (v) => { if (v === 'acquisition' && acqMod) renderAcq(); },
+    });
     window.IWgo = (v) => (goView ? goView(v) : null);
   })
   .catch(() => {
