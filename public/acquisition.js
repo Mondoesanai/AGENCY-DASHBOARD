@@ -121,6 +121,9 @@ export function renderIntake(state) {
                  .join('')}
              </div>
              ${c.review.length ? `<div class="note warn">Unsure about: ${c.review.map((r) => esc(r.field)).join(', ')} — correct these before saving.</div>` : ''}
+             ${c.injectionFlag ? `<div class="note neg">⚠ This card contains text that reads like an instruction to the software
+                  (${c.injectionFlag.patterns.map(esc).join('; ')}). It was treated as ordinary text and nothing was acted on,
+                  but check the card before saving this contact.</div>` : ''}
            </div>`
            )
            .join('')}
