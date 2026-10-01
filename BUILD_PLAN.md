@@ -100,12 +100,12 @@ Last updated: 2026-10-01
 - [ ] Calendly/scheduler integration via verified webhooks; cancel/reschedule; attribution to contact/source/campaign/variant
 
 ## PART 8 — Budget controls
-- [ ] Cost ledger: discovery, enrichment, verification, AI, lookup, messaging, infra allocation
+- [x] Cost ledger: 7 categories, append-only daily ledger + per-category monthly totals — `lib/budget.js`, 42 tests — 2026-10-01
 - [ ] Estimated vs reserved vs reconciled actuals
-- [~] Atomic pre-job reservation primitive done (`store.reserve`, proven concurrency-safe by test); ledger + reconcile still to build
-- [ ] Discretionary jobs stop at exhaustion; reply ingestion/opt-outs/monitoring always run; reserve for live conversations
-- [ ] Period/spent/reserved/remaining/next-reset display; no weekly+monthly double count; explicit rollover
-- [ ] Honest statement about provider charges the app cannot cap
+- [x] Atomic pre-job reservation, concurrency-safe (25-worker race test), reconcile + release + crash-safe wrapper — 2026-10-01
+- [x] Discretionary jobs stop at exhaustion; essentials (reply/opt-out/monitoring/webhook) bypass the cap but are still recorded; configurable conversation reserve (default 20%) — 2026-10-01
+- [x] Period/spent/reserved/remaining/next-reset in `budgetStatus()`; weekly+monthly are two windows over the same money (not summed); rollover explicit, defaults off — UI still to render in Part 2
+- [x] `uncappableNote()` — states plainly that subscriptions/in-flight usage/late-posting charges cannot be capped by the app — 2026-10-01
 
 ## PART 9 — Controlled experimentation
 - [ ] Variant storage, assignment, outcomes; baseline/holdout
@@ -138,4 +138,5 @@ Last updated: 2026-10-01
 - **2026-10-01** — Inventory done. Constraints table written.
 - **2026-10-01** — ROOT CAUSE FOUND for the repeat-failure bug: `agentStatus()` returns a flat list of decline reasons mixing permanent config problems (no repo linked, no token, no permission) with self-resolving ones (pacing, monthly budget). `runAgentCycle` returned `{skipped:true}` for all of them and `recordAttempt` just logged "not eligible yet" — no failure counted, nothing blocked, no recovery shown. A ticket on a repo-less site was therefore retried on EVERY tick forever (seen live on Renewity). Fixed with an explicit state machine + reason classifier. 46 unit + 2 end-to-end regression tests.
 - **2026-10-01** — Part 3 data model: `lib/contacts.js` (normalisation, confidence-tagged fields, append-only consent, eligibility gate, dedup/merge, opt-out suppression that survives deletion + re-import). Added `store.del/srem/reserve`; `reserve` is the concurrency-safe budget primitive for Part 8. Test caught a real bug: dedup compared BUSINESS names, which flags every colleague as their coworker — now compares person names.
+- **2026-10-01** — Part 8 budget ledger: cents-based (no float drift), UTC period keys, reserve→run→reconcile with atomic INCR so 25 concurrent workers cannot overspend one allowance, double-reconcile guard for retried workers, crash-safe release, conversation reserve, essential bypass, pause.
 - **2026-10-01** — Suite: revision-state 46, inbox 73, agent 101, platform 59, reports 31 — all green.
