@@ -194,4 +194,73 @@ const badJob = await getJob(bad.job.id);
 check('an unknown prospect dies rather than retrying forever', badJob.state === JOB_STATE.DEAD, badJob.state);
 check('and says it was permanent', /permanent failure/.test(badJob.deadReason || ''), badJob.deadReason);
 
+// ---------------------------------------------------------------------------
+section('J11  R11.6 — a rate limit is a deferral, not a failure');
+// The provider saying "not right now" says nothing about whether the work can
+// succeed. Counting 429s against the attempt budget would retire perfectly good
+// jobs during a busy hour — five of them and the work is dead.
+const rl = await enqueue({ type: 'rate-limited-thing', payload: {}, maxAttempts: 3 });
+let rlNow = Date.now();
+await claim({ worker: 'w', now: rlNow, types: ['rate-limited-thing'] });
+check('the claim counted an attempt', (await getJob(rl.job.id)).attempts === 1);
+
+f = await fail(rl.job.id, 'HTTP 429', { now: rlNow, rateLimited: true });
+check('it is reported as rate limited, not failed', f.rateLimited === true, JSON.stringify(f).slice(0, 140));
+check('THE ATTEMPT IS GIVEN BACK', (await getJob(rl.job.id)).attempts === 0, String((await getJob(rl.job.id)).attempts));
+check('the job is requeued, not dead', (await getJob(rl.job.id)).state === JOB_STATE.QUEUED);
+check('with a future runAt', (await getJob(rl.job.id)).runAt > rlNow);
+check('and the rate limit is counted separately', (await getJob(rl.job.id)).rateLimitedCount === 1);
+
+// many rate limits in a row must never exhaust the budget
+for (let i = 0; i < 10; i++) {
+  rlNow += 10 * MIN;
+  await claim({ worker: 'w', now: rlNow, types: ['rate-limited-thing'] });
+  await fail(rl.job.id, 'HTTP 429', { now: rlNow, rateLimited: true });
+}
+const afterMany = await getJob(rl.job.id);
+check('ten rate limits do not kill a 3-attempt job', afterMany.state === JOB_STATE.QUEUED, afterMany.state);
+check('attempts are still zero', afterMany.attempts === 0, String(afterMany.attempts));
+check('but the rate limits are visible', afterMany.rateLimitedCount === 11, String(afterMany.rateLimitedCount));
+
+// a REAL failure after a rate limit still counts
+rlNow += 10 * MIN;
+await claim({ worker: 'w', now: rlNow, types: ['rate-limited-thing'] });
+f = await fail(rl.job.id, 'genuine error', { now: rlNow });
+check('a real failure still consumes an attempt', (await getJob(rl.job.id)).attempts === 1, String((await getJob(rl.job.id)).attempts));
+check('and schedules a normal retry', f.retryIn > 0 && !f.rateLimited);
+
+// ---------------------------------------------------------------------------
+section('J12  Retry-After is honoured when the provider gives one');
+const ra = await enqueue({ type: 'rate-limited-thing', payload: {} });
+const raNow = Date.now();
+await claim({ worker: 'w', now: raNow, types: ['rate-limited-thing'] });
+f = await fail(ra.job.id, 'HTTP 429', { now: raNow, rateLimited: true, retryAfterSec: 120 });
+check('the wait comes from Retry-After', f.retryIn === 120000, String(f.retryIn));
+check('and it records that the provider was obeyed', f.honouredRetryAfter === true);
+check('the runAt reflects it', (await getJob(ra.job.id)).runAt === raNow + 120000);
+
+await claim({ worker: 'w', now: raNow + 200000, types: ['rate-limited-thing'] });
+f = await fail(ra.job.id, 'HTTP 429', { now: raNow + 200000, rateLimited: true });
+check('with no Retry-After it falls back to our own backoff', f.honouredRetryAfter === false && f.retryIn > 0, JSON.stringify(f).slice(0, 120));
+
+// ---------------------------------------------------------------------------
+section('J13  a handler can signal a rate limit, and the sweep stops');
+let calls = 0;
+const limitHandlers = {
+  'rate-limited-thing': async () => {
+    calls++;
+    const e = new Error('provider says slow down');
+    e.rateLimited = true;
+    e.retryAfterSec = 30;
+    throw e;
+  },
+};
+// three jobs of the same type, all due
+for (let i = 0; i < 3; i++) await enqueue({ type: 'rate-limited-thing', payload: { i }, idempotencyKey: `rl-${i}` });
+calls = 0;
+const sweep = await drain({ handlers: limitHandlers, max: 5, now: Date.now() + 60 * MIN, types: ['rate-limited-thing'] });
+check('the sweep stops at the first rate limit', calls === 1, String(calls));
+check('and reports it as deferred, not failed', sweep.deferred === 1 && sweep.failed === 0, JSON.stringify(sweep));
+check('carrying on would just hit the same limit again', sweep.ran === 0);
+
 done();
