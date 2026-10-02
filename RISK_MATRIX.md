@@ -78,10 +78,12 @@ actually run by the suite, so a row cannot claim coverage that does not exist.
 
 ## Gaps — stated rather than hidden
 
-* **R12.2's send leg** is exercised only in the refusal direction, because
-  outreach is deliberately inactive. The path from a permitted send to a
-  provider has never run end to end, and cannot until the owner switches
-  sending on.
+* **R12.2's send leg now runs end to end**, with the gate satisfied inside one
+  test section, against a fixture transport and a `.invalid` recipient, and
+  with outreach switched back off and asserted off afterwards. What is still
+  unproven is the **real** provider: no message has ever reached an actual
+  sending service, and none can until the owner connects one (see G2 in
+  `OWNER_SETUP.md`).
 * **R12.6's soak has not been run.** The procedure and its refusal exist; seven
   real days have not elapsed, and there is no staging deployment yet.
 * **R6.4** (SPF/DKIM/DMARC) is blocked on owner action G2 and is unverifiable

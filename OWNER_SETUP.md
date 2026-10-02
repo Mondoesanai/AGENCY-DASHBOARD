@@ -104,16 +104,16 @@ only part of R3.6 outstanding.
    complete before then.
 2. **Switch outreach on** — a deliberate, separate action. Nothing in the
    system can do it, and until it happens the send gate refuses every message.
-3. Two verification gaps close only after those: the send path from a permitted
-   send to a provider (R12.2) has never run end to end, and SPF/DKIM/DMARC
-   (R6.4) cannot be checked without a sending domain. Both are recorded as open
-   in `RISK_MATRIX.md`.
+3. One verification gap closes only after those: **no message has ever reached a
+   real sending service.** The send path itself is now tested end to end against
+   a fixture, but SPF/DKIM/DMARC (R6.4) and real delivery cannot be checked
+   without a sending domain. Recorded as open in `RISK_MATRIX.md`.
 
 ---
 
 ## What is waiting on the shelf
 
-**58 commits are unpushed.** Pushing triggers a production deployment, and the
+**59 commits are unpushed.** Pushing triggers a production deployment, and the
 instruction was to hold deployment pending, so they are sitting in the local
 branch. Nothing is lost; say the word and they go.
 

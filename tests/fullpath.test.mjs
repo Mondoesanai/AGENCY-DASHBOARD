@@ -211,6 +211,162 @@ const bad = await failing.fetchImpl('https://api.example.invalid/send', { body: 
 check('and it can be told to fail, for the paths that handle that', bad.ok === false && bad.status === 502);
 
 // ---------------------------------------------------------------------------
+section('F3b → worker → provider: the send leg, with the gate satisfied');
+//
+// NOTHING IS SENT TO ANYONE HERE, and that is worth being precise about rather
+// than asserting as a slogan. Four things make it true, and each is checked:
+//
+//   1. The transport is the fixture. The real provider is never contacted,
+//      because `fetchImpl` never reaches the network.
+//   2. The recipient is a `.invalid` address. That TLD is reserved by RFC 2606
+//      precisely so it can never resolve — even a bug that bypassed the
+//      fixture would have nowhere to deliver.
+//   3. The store is in-memory, enforced by the guard at the top of this file.
+//   4. `outreach.active` is switched on INSIDE this section and switched back
+//      off at the end, and the gate is asserted to refuse again afterwards.
+//
+// Why do it at all: until now the send leg was only ever exercised in the
+// refusal direction, so "the gate refuses" was proven and "the path works when
+// permitted" was not. Those are different claims, and a gate is only
+// interesting if there is a path behind it that would otherwise run.
+const { getSettings, saveSettings } = await import('../lib/settings.js');
+const settingsBefore = await getSettings();
+check('outreach starts OFF, as it has been for this whole build',
+  settingsBefore.outreach.active === false, JSON.stringify(settingsBefore.outreach));
+
+await saveSettings({
+  pricing: { buildPrice: 2500, monthlyFee: 250 },
+  targeting: { status: 'confirmed', source: 'confirmed for this test only' },
+});
+// the sender identity has its own writer — `saveSettings` deliberately does
+// not merge it, which is why passing it there silently did nothing
+const { saveSender } = await import('../lib/settings.js');
+await saveSender({
+  name: 'Test Owner',
+  business: 'Inspiring Websites LLC',
+  postalAddress: '1 Test Street, Plano TX 75001',
+  replyTo: 'owner@outreach.example.invalid',
+});
+// `active` is deliberately not settable through saveSettings' merge, so it is
+// written directly — which is itself the point: switching sending on is not
+// something a patch can do by accident.
+const liveSettings = JSON.parse(JSON.stringify(await getSettings()));
+liveSettings.outreach = { active: true, reason: 'switched on inside one test section, against a fixture transport' };
+await store.set('settings:business', JSON.stringify(liveSettings));
+
+const liveEnv = {
+  INSTANTLY_API_KEY: 'fixture-key-not-a-real-one',
+  OUTREACH_FROM_DOMAIN: 'outreach.example.invalid',
+  PUBLIC_BASE_URL: api.origin,
+  UNSUBSCRIBE_SECRET: 'fullpath-unsub-secret',
+};
+
+const liveReadiness = await sendReadiness({ env: liveEnv });
+check('with everything configured, sending is READY', liveReadiness.ready === true,
+  JSON.stringify(liveReadiness.blockers.map((b) => b.code)));
+
+// the message is built by the real composer, not hand-written
+const { composeCold } = await import('../lib/campaigns.js');
+const composed = await composeCold(
+  {
+    name: 'Full Path Roofing',
+    contactName: 'Pat',
+    email: PROSPECT,
+    // the real constant, not a guess at its value — a wrong status makes the
+    // composer refuse for a reason that has nothing to do with the send path
+    web: { status: (await import('../lib/discovery.js')).WEB_STATUS.NOT_LINKED },
+  },
+  { owner: { name: 'Test Owner', business: 'Inspiring Websites LLC', postalAddress: '1 Test Street, Plano TX 75001' } }
+);
+check('the real composer produced a message', composed.ok !== false, JSON.stringify(composed).slice(0, 200));
+check('it carries a subject', !!composed.subject, String(composed.subject));
+check('and a body', !!composed.body, String(composed.body || '').slice(0, 80));
+
+// CAN-SPAM, at the point the message is built: without a real name, business
+// and postal address there is no lawful message to send, so the composer must
+// refuse rather than leave the gate to catch it later
+const noIdentity = await composeCold(
+  { name: 'Full Path Roofing', contactName: 'Pat', email: PROSPECT,
+    web: { status: (await import('../lib/discovery.js')).WEB_STATUS.NOT_LINKED } },
+  { owner: { name: 'Test Owner', business: 'Inspiring Websites LLC' } } // no postal address
+);
+check('a message with no postal address is refused at composition', noIdentity.ok === false,
+  JSON.stringify(noIdentity).slice(0, 160));
+check('and the refusal says why', /postal address|CAN-SPAM/i.test(noIdentity.reason || ''), noIdentity.reason);
+const noName = await composeCold(
+  { name: 'Full Path Roofing', contactName: 'Pat', email: PROSPECT,
+    web: { status: (await import('../lib/discovery.js')).WEB_STATUS.NOT_LINKED } },
+  { owner: { business: 'Inspiring Websites LLC', postalAddress: '1 Test Street, Plano TX 75001' } }
+);
+check('and one with no sender name is refused too', noName.ok === false, JSON.stringify(noName).slice(0, 160));
+
+const liveFixture = providerFixture();
+const liveContact = { id: found ? found.id : 'fullpath-live', email: { value: PROSPECT }, business: 'Full Path Roofing' };
+const sentLive = await sendProspectEmail({
+  contact: liveContact,
+  campaignId: 'fullpath-live',
+  message: { subject: composed.subject, body: composed.body, html: composed.html || '' },
+  env: liveEnv,
+  fetchImpl: liveFixture.fetchImpl,
+});
+
+check('the send is PERMITTED and goes through', sentLive && sentLive.sent === true, JSON.stringify(sentLive).slice(0, 220));
+check('exactly one outbound call was made', liveFixture.sent.length === 1, String(liveFixture.sent.length));
+// every read of the recorded call is guarded: when the send is refused there is
+// no call at all, and an unguarded `.payload` turns a clean failure into a
+// crash that stops the rest of this file running
+const call = liveFixture.sent[0] || null;
+const payload = JSON.stringify((call && call.payload) || {});
+check('it went to the provider adapter, not anywhere else', !!call && /instantly|example\.invalid/i.test(call.url),
+  (call && call.url) || 'no call recorded');
+check('addressed to the prospect', payload.includes(PROSPECT), payload.slice(0, 200));
+check('the recipient is a .invalid address, which can never resolve', /\.invalid$/.test(PROSPECT), PROSPECT);
+check('it carries a one-click unsubscribe header', /List-Unsubscribe/i.test(payload), payload.slice(0, 300));
+check('with the one-click POST header Gmail and Yahoo require',
+  /List-Unsubscribe-Post/i.test(payload), payload.slice(0, 300));
+// the TEMPLATE VARIABLE as well as the header: the headers build their own URL,
+// so checking only that the payload mentions this origin somewhere passes even
+// when the link merged into the message body is empty
+check('and the message body gets a usable unsubscribe link',
+  new RegExp(`"unsubscribe_url":"${api.origin.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^"]+"`).test(payload),
+  payload.slice(0, 400));
+
+// the attempt is on record, so a crash mid-send leaves evidence
+const { getSendAttempt } = await import('../lib/outreach-email.js');
+const attempt = await getSendAttempt(`fullpath-live:${liveContact.id}`);
+check('the attempt was recorded', !!attempt, JSON.stringify(attempt));
+check('and settled as confirmed rather than left in flight', !!attempt && attempt.state === 'confirmed', attempt && attempt.state);
+// The record has to have been opened BEFORE the request, so a process killed
+// mid-send leaves evidence that something may have gone out. The outcome write
+// merges over whatever was there, so it alone would produce a record with no
+// `contactId` — those fields exist only because the pre-write ran.
+check('the record was opened before the request, not only after it',
+  !!attempt && attempt.contactId === liveContact.id && attempt.campaignId === 'fullpath-live',
+  JSON.stringify(attempt));
+
+// sending the same campaign step again must not produce a second message
+const secondTry = await sendProspectEmail({
+  contact: liveContact,
+  campaignId: 'fullpath-live',
+  message: { subject: composed.subject, body: composed.body, html: composed.html || '' },
+  env: liveEnv,
+  fetchImpl: liveFixture.fetchImpl,
+});
+check('a repeat send is refused', secondTry && secondTry.sent !== true, JSON.stringify(secondTry).slice(0, 180));
+check('and NO second outbound call was made', liveFixture.sent.length === 1, String(liveFixture.sent.length));
+
+// --- switch it back off, and prove it ---------------------------------------
+await store.set('settings:business', JSON.stringify(settingsBefore));
+const settingsAfter = await getSettings();
+check('outreach is switched back OFF', settingsAfter.outreach.active === false, JSON.stringify(settingsAfter.outreach));
+const refusedAgain = await sendReadiness({ env: liveEnv });
+check('and the gate refuses again', refusedAgain.ready === false,
+  JSON.stringify(refusedAgain.blockers.map((b) => b.code)));
+check('naming the outreach switch as the reason',
+  refusedAgain.blockers.some((b) => b.code === 'outreach-off'),
+  JSON.stringify(refusedAgain.blockers.map((b) => b.code)));
+
+// ---------------------------------------------------------------------------
 section('F4  → webhook: a complaint arrives and is applied');
 // the signature is the only thing between a stranger and a record the owner
 // acts on, so the unsigned case is tested first

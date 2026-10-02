@@ -274,7 +274,7 @@ and never display a mocked integration as connected (R4.4).
 | Req | Task | Status |
 |---|---|---|
 | R12.1 | Risk-based test matrix executed; failures fixed and rechecked | `[x]` `RISK_MATRIX.md` — 37 risks ranked by harm, each naming the tests that cover it, kept honest by `tests/riskmatrix.test.mjs` |
-| R12.2 | Full-path tests browser → API → storage → worker → provider fixture → webhook → dashboard | `[~]` `tests/fullpath.test.mjs` + `tests/harness/local-api.mjs` — the whole path runs over a real socket with auth enforced; the **send** leg is exercised only in the refusal direction, because outreach is deliberately inactive |
+| R12.2 | Full-path tests browser → API → storage → worker → provider fixture → webhook → dashboard | `[x]` `tests/fullpath.test.mjs` + `tests/harness/local-api.mjs` — the whole path over a real socket with auth enforced, **including the send leg with the gate satisfied**, against a fixture transport and a `.invalid` recipient, with outreach switched back off and asserted off |
 | R12.3 | The 14 priority scenarios | `[x]` all fourteen, **each verified by negative control rather than by grep** (2026-10-02): revision eligibility/recovery/classification · duplicate imports · ambiguous OCR · suppression + consent enforcement · budget exhaustion under concurrency · a real website missed by a listing · reply/opt-out during a queued send · duplicate + out-of-order webhooks · ambiguous send timeouts · worker restarts · booking cancel/reschedule · cross-account authorization · malicious URLs + prompt injection · provider outages and rate limits |
 | R12.4 | Load test: thousands of contacts, concurrent jobs, webhook bursts, large imports, card batches | `[x]` `tests/load.test.mjs` — all five measured by store-operation count, not wall-clock |
 | R12.5 | Accelerated simulated 7-day operation, labelled as simulated | `[x]` `tests/sevenday.test.mjs` — five invariants checked 29 times across seven simulated days, and the run prints that it is **simulated** and that no real time elapsed |
@@ -291,9 +291,9 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 118 |
+| `[x]` built **and** verified | 119 |
 | `[b]` built, not verified | 0 |
-| `[~]` in progress | 1 |
+| `[~]` in progress | 0 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
 | `[ ]` not started | 0 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
@@ -476,4 +476,13 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
   Writing it surfaced something I would not have noticed otherwise. I had added a rule that every severe risk must be covered by at least two independent test files — the severe band being where a single point of failure matters most — and three rows failed it. One was genuinely under-cited and `contacts` covers it independently. **The other two are real concentrations**: cross-account authorization rests entirely on `crossaccount`, and "an erased person can be reconstructed" entirely on `retention`. The tempting fix was to cite loosely-related files until the rule went green, which would have hidden exactly the thing the rule exists to find. Instead they are marked `(single)`, the rule accepts a declared single-point, and both are listed in the gaps — so the concentration is visible rather than papered over.
 
   Five negative controls, all biting: naming a test that does not exist, deleting the gaps section, a single-covered severe risk that stops declaring itself, a gap that stops saying why, and the plan disagreeing with the matrix. One earlier version of the test shelled out to the runner to check which files are executed — which, since the test is itself in the suite, recursed until the run had to be killed; it now checks the runner's inclusion rule instead.
+- **2026-10-02** — R12.2 closed: the send leg now runs end to end. Until today this was the one gap — the path from a *permitted* send to a provider had never executed, because outreach is deliberately inactive and every attempt was refused. "The gate refuses" and "the path works when permitted" are different claims, and a gate is only interesting if there is a path behind it that would otherwise run.
+
+  It runs now without sending anything to anyone, and that is worth being precise about rather than asserting as a slogan. Four things make it true and each is checked in the test: the transport is the fixture, so the real provider is never contacted; the recipient is a `.invalid` address, a TLD reserved by RFC 2606 precisely so it can never resolve, so even a bug bypassing the fixture would have nowhere to deliver; the store is in-memory, enforced by the guard at the top of the file; and `outreach.active` is switched on inside that one section and switched back off at the end, with the gate asserted to refuse again afterwards and to name the outreach switch as the reason.
+
+  The leg itself: the real composer builds the message, the gate permits it, exactly **one** outbound call reaches the transport, addressed to the prospect, carrying `List-Unsubscribe`, the one-click POST header Gmail and Yahoo require, and a usable unsubscribe link in the body — then the attempt is settled as confirmed, and a repeat send is refused with **no second call**.
+
+  Seven negative controls; three bit immediately and four did not. **Three of those four were weak assertions of mine.** Checking that the payload mentioned this origin *somewhere* passed with the body's unsubscribe link emptied, because the headers build their own URL — it now matches the `unsubscribe_url` variable specifically. Asserting merely that an attempt record existed passed with the pre-request write deleted, because the outcome write creates one too — it now asserts the `contactId` and `campaignId` that only the pre-write puts there, which is the actual promise: a process killed mid-send leaves evidence. And the composer's CAN-SPAM identity check could be deleted entirely without failing anything, because the test always supplied a complete identity — it now composes with a missing postal address and with a missing name, and asserts both are refused.
+
+  The fourth is not a defect and is worth recording as such: removing the reconciliation skip did not let a second message out, because `maySend`'s already-sent check catches it independently. Removing **both** fails the test, so the property is genuinely covered — two guards, not one weak one.
 - **NEXT:** R4.1/R4.3 discovery settings + source adapter.

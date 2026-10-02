@@ -135,16 +135,24 @@ section('R5  the gaps are stated, not quietly dropped');
 // that has stopped being honest. These three are known and must stay visible
 // until they are genuinely closed.
 check('there is a gaps section', /##\s*Gaps/i.test(doc));
-check('the send leg is named as unexercised', /send leg[\s\S]{0,200}refusal direction/i.test(doc));
+// The send leg runs end to end as of 2026-10-02, so the gap moved rather than
+// closing: no message has ever reached a REAL provider, and none can until the
+// owner connects one. These assertions were updated when that changed — and
+// the test failing at that moment is the mechanism working, not a nuisance.
+check('the real provider is named as still unproven',
+  /no message has ever reached an actual sending service/i.test(doc.replace(/\s+/g, ' ')));
+check('and it points at the owner action that unblocks it', /G2/.test(doc) && /OWNER_SETUP/.test(doc));
 check('the soak is named as not run', /soak has not been run/i.test(doc));
 check('the externally blocked item is named', /R6\.4/.test(doc));
-check('and the gaps say WHY, not just THAT', /outreach is deliberately inactive/i.test(doc) && /owner action/i.test(doc));
+check('and the gaps say WHY, not just THAT', /owner action/i.test(doc) && /until the owner connects one/i.test(doc.replace(/\s+/g, ' ')));
 
 // the gaps have to match the plan: a gap closed here but open there, or the
 // reverse, means one of the two documents is lying
 const plan = readFileSync(join(ROOT, 'BUILD_PLAN.md'), 'utf8');
 const planRow = (id) => plan.split('\n').find((l) => l.startsWith(`| ${id} |`)) || '';
-check('the plan agrees R12.2 is partial', /`\[~\]`/.test(planRow('R12.2')), planRow('R12.2').slice(0, 90));
+check('the plan agrees R12.2 is done', /`\[x\]`/.test(planRow('R12.2')), planRow('R12.2').slice(0, 90));
+check('and that it was done against a fixture, not a real provider',
+  /fixture/i.test(planRow('R12.2')), planRow('R12.2').slice(0, 160));
 check('the plan agrees R6.4 is blocked', /`\[!\]`/.test(planRow('R6.4')), planRow('R6.4').slice(0, 90));
 check('the plan agrees the soak itself has not been run', /has NOT been run|not been run/i.test(planRow('R12.6')),
   planRow('R12.6').slice(0, 120));
