@@ -1,0 +1,200 @@
+// A real HTTP server running the REAL API handlers, for R12.2.
+//
+// Every test before this one called a library function directly. That proves
+// the library works and proves nothing about the path the browser actually
+// takes, which is where this build has repeatedly been wrong: a button with no
+// handler, a route reporting a refusal as a success, a module imported and
+// never called. Those are all invisible to a unit test and all obvious the
+// first time a request travels the whole way.
+//
+// So this mounts `api/admin.js` and `api/collect.js` — the real files Vercel
+// deploys, not copies — behind a real socket, beside the real `public/`
+// directory. The only things faked are the ones that would otherwise reach
+// outside this machine: the outbound provider call and the clock.
+//
+// What this deliberately does NOT do is reimplement any part of the handlers.
+// The moment this file contains product logic it stops being a harness and
+// starts being a second implementation that can agree with a broken one.
+
+import { createServer } from 'node:http';
+import { readFile } from 'node:fs/promises';
+import { extname, join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const PUBLIC = join(HERE, '..', '..', 'public');
+
+const TYPES = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+};
+
+/** Adapt Node's response to the `res.status().json()` shape the handlers use. */
+function vercelRes(res, record) {
+  let code = 200;
+  const out = {
+    status(c) { code = c; return out; },
+    setHeader(k, v) { res.setHeader(k, v); return out; },
+    json(body) {
+      record({ code, body });
+      res.writeHead(code, { 'content-type': 'application/json; charset=utf-8' });
+      res.end(JSON.stringify(body));
+      return out;
+    },
+    send(body) {
+      record({ code, body });
+      if (!res.headersSent) res.writeHead(code);
+      res.end(typeof body === 'string' ? body : String(body));
+      return out;
+    },
+    end(body) {
+      record({ code, body: body ?? null });
+      if (!res.headersSent) res.writeHead(code);
+      res.end(body);
+      return out;
+    },
+    redirect(where) {
+      record({ code: 302, body: where });
+      res.writeHead(302, { location: where });
+      res.end();
+      return out;
+    },
+  };
+  return out;
+}
+
+const readBody = (req) =>
+  new Promise((resolve) => {
+    const chunks = [];
+    req.on('data', (c) => chunks.push(c));
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      if (!raw) return resolve({});
+      try {
+        resolve(JSON.parse(raw));
+      } catch {
+        // form posts: the unsubscribe one-click POST is form-encoded
+        const o = {};
+        for (const [k, v] of new URLSearchParams(raw)) o[k] = v;
+        resolve(o);
+      }
+    });
+  });
+
+/**
+ * Start the server.
+ *
+ * Returns the port, a log of every request that went through (so a test can
+ * assert what the BROWSER actually called, not what it believes it called),
+ * and a stop function.
+ */
+export async function startLocalApi({ port = 0, extraRoutes = {} } = {}) {
+  const [admin, collect] = await Promise.all([
+    import('../../api/admin.js').then((m) => m.default),
+    import('../../api/collect.js').then((m) => m.default),
+  ]);
+
+  const calls = [];
+
+  const server = createServer(async (req, res) => {
+    const url = new URL(req.url, 'http://localhost');
+    const path = url.pathname;
+
+    if (path.startsWith('/api/')) {
+      const query = Object.fromEntries(url.searchParams);
+      const body = req.method === 'GET' ? {} : await readBody(req);
+      const entry = { method: req.method, path, query, at: Date.now(), code: null };
+      calls.push(entry);
+      const vreq = { method: req.method, query, body, headers: req.headers, url: req.url };
+      const vres = vercelRes(res, ({ code, body: out }) => {
+        entry.code = code;
+        entry.ok = !!(out && out.ok);
+        entry.response = out;
+      });
+      // `extraRoutes` exists for ONE purpose: proving this harness reports a
+      // crashing handler as a crash. Without a route that can be made to throw
+      // on demand, that catch block below is never executed, and a harness
+      // that quietly turns a 500 into `{ok: false}` would make every
+      // full-path test built on it agree with a broken product.
+      const handler = extraRoutes[path] || (path === '/api/collect' ? collect : path === '/api/admin' ? admin : null);
+      if (!handler) {
+        entry.code = 404;
+        res.writeHead(404, { 'content-type': 'application/json' });
+        return res.end(JSON.stringify({ ok: false, error: 'no such function' }));
+      }
+      try {
+        await handler(vreq, vres);
+      } catch (e) {
+        // A handler that throws is a real failure and must look like one. It
+        // must NOT be rendered as a tidy {ok:false}, because then a crash and
+        // a refusal are indistinguishable to the caller — which is exactly the
+        // confusion this whole harness exists to remove.
+        entry.code = 500;
+        entry.threw = String(e && e.message ? e.message : e);
+        if (!res.headersSent) res.writeHead(500, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'handler threw', detail: entry.threw }));
+      }
+      return;
+    }
+
+    // static, from the real public/ directory
+    const file = path === '/' ? 'index.html' : path.replace(/^\//, '');
+    try {
+      const buf = await readFile(join(PUBLIC, file));
+      res.writeHead(200, { 'content-type': TYPES[extname(file)] || 'application/octet-stream' });
+      res.end(buf);
+    } catch {
+      res.writeHead(404);
+      res.end('not found');
+    }
+  });
+
+  await new Promise((resolve) => server.listen(port, resolve));
+  const actual = server.address().port;
+
+  return {
+    port: actual,
+    origin: `http://localhost:${actual}`,
+    calls,
+    /** every API call the browser made, newest last */
+    called: (name) => calls.filter((c) => c.query && c.query.do === name),
+    stop: () => new Promise((resolve) => server.close(resolve)),
+  };
+}
+
+/**
+ * A stand-in for the sending provider.
+ *
+ * It accepts, records and can be told to fail. Nothing in the test suite may
+ * reach a real provider: that is not a style preference, it is the difference
+ * between a test run and sending mail to strangers.
+ */
+export function providerFixture({ failWith = null } = {}) {
+  const sent = [];
+  const fetchImpl = async (url, opts = {}) => {
+    let payload = {};
+    try {
+      payload = JSON.parse(opts.body || '{}');
+    } catch { /* keep the raw body below */ }
+    sent.push({ url: String(url), payload, raw: opts.body || '' });
+    if (failWith) {
+      return {
+        ok: false,
+        status: failWith.status || 500,
+        async json() { return { message: failWith.message || 'provider error' }; },
+        async text() { return failWith.message || 'provider error'; },
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      async json() { return { id: `fixture-${sent.length}` }; },
+      async text() { return JSON.stringify({ id: `fixture-${sent.length}` }); },
+    };
+  };
+  return { sent, fetchImpl };
+}
