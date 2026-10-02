@@ -103,10 +103,43 @@ export default async function handler(req, res) {
     case 'experiments-list': {
       const { listExperiments, tally } = await import('../lib/experiments.js');
       const { primaryBreakdown } = await import('../lib/outcomes.js');
+      const { secondaryBreakdown, harmWarnings } = await import('../lib/secondary.js');
+      const { rankingStatement, rankVariants } = await import('../lib/ranking.js');
       const exps = await listExperiments();
       const withCounts = [];
-      for (const e of exps) withCounts.push({ experiment: e, primary: primaryBreakdown(await tally(e.id)) });
+      for (const e of exps) {
+        const t = await tally(e.id);
+        const primary = primaryBreakdown(t);
+        const secondary = secondaryBreakdown(t);
+        // R9.4 — every report carries what may and may not order variants, and
+        // what an open actually measures. Built from the real counts so the
+        // statement cannot drift from the numbers beside it.
+        const opens = Number(await store.get('delivery:count:opened').catch(() => 0)) || 0;
+        const human = (secondary.arms || []).reduce((n, a) => n + (a.counts['click-human'] || 0), 0);
+        const filtered = (secondary.arms || []).reduce((n, a) => n + (a.counts['click-filtered'] || 0), 0);
+        withCounts.push({
+          experiment: e,
+          primary,
+          secondary,
+          harm: harmWarnings(secondary),
+          ranking: rankingStatement({ opens, humanClicks: human, filteredClicks: filtered }),
+          // the ordering the dashboard may show, by the one metric that counts
+          orderedBy: rankVariants(primary, 'qualified-positive-reply'),
+        });
+      }
       return res.status(200).json({ ok: true, experiments: withCounts });
+    }
+    // R9.4 — ordering by an arbitrary metric goes through the gate, so a caller
+    // asking for "opens" is refused with the reason rather than quietly served
+    // something else.
+    case 'experiment-rank': {
+      const { listExperiments, tally } = await import('../lib/experiments.js');
+      const { primaryBreakdown } = await import('../lib/outcomes.js');
+      const { rankVariants } = await import('../lib/ranking.js');
+      const t = await tally(req.query.id);
+      if (!t.ok) return res.status(404).json(t);
+      const out = rankVariants(primaryBreakdown(t), String(req.query.metric || ''));
+      return res.status(out.ok ? 200 : 400).json(out);
     }
     case 'experiment-create': {
       const { createExperiment } = await import('../lib/experiments.js');
