@@ -278,7 +278,7 @@ and never display a mocked integration as connected (R4.4).
 | R12.3 | The 14 priority scenarios | `[x]` all fourteen, **each verified by negative control rather than by grep** (2026-10-02): revision eligibility/recovery/classification · duplicate imports · ambiguous OCR · suppression + consent enforcement · budget exhaustion under concurrency · a real website missed by a listing · reply/opt-out during a queued send · duplicate + out-of-order webhooks · ambiguous send timeouts · worker restarts · booking cancel/reschedule · cross-account authorization · malicious URLs + prompt injection · provider outages and rate limits |
 | R12.4 | Load test: thousands of contacts, concurrent jobs, webhook bursts, large imports, card batches | `[x]` `tests/load.test.mjs` — all five measured by store-operation count, not wall-clock |
 | R12.5 | Accelerated simulated 7-day operation, labelled as simulated | `[x]` `tests/sevenday.test.mjs` — five invariants checked 29 times across seven simulated days, and the run prints that it is **simulated** and that no real time elapsed |
-| R12.6 | Real 7-day staging soak **procedure** prepared (7 real days claimed only after they elapse) | `[ ]` |
+| R12.6 | Real 7-day staging soak **procedure** prepared (7 real days claimed only after they elapse) | `[x]` the **procedure** is prepared: `SOAK.md` + `node tests/soak.mjs`, which refuses to report a window complete until seven real days have elapsed. **The soak itself has NOT been run** — that needs seven actual days and cannot start until there is a staging deployment |
 | R12.7 | Build, lint, integration and browser checks, desktop + mobile | `[x]` `node tests/preflight.mjs` — one gate: parse, import, project rules, the suite, and the real page at 1440×900 and 390×844 |
 | R12.8 | A green build is never equated with functional verification | `[x]` enforced by the L0–L4 levels in `VERIFICATION_REPORT.md` |
 
@@ -291,11 +291,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 116 |
+| `[x]` built **and** verified | 117 |
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 2 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 1 |
+| `[ ]` not started | 0 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -460,4 +460,13 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
   Two defects in the gate itself, both mine, both the same shape as things I have fixed elsewhere. The import check passed Windows paths straight to `import()`, where `C:/...` is read as a URL with scheme `C:` — so every module "failed" for a reason that had nothing to do with it. And the gate ran the suite through `execFileSync`, which **throws** on a non-zero exit, so a real test failure made the gate die with a stack trace instead of reporting a failure: useless exactly when it matters. The credential scan also flagged `tests/security.test.mjs`, which deliberately contains a fake `ghp_…` to prove the redaction masks it — so the scan covers shipped code, and separately asserts it can still see that fixture, because a scanner that cannot spot a token it is handed would not spot a real one.
 
   Six negative controls, all biting: a syntax error, a bad import, a planted credential, an orphan front-end module, a failing test, and the tombstone regression. Two of the six were malformed first — one appended a failing check **after** `done()`, which calls `process.exit`, so it never ran at all.
+- **2026-10-02** — R12.6. The deliverable here is the procedure and the refusal, not a finished soak, and the distinction is the whole requirement. A soak is the one check in this plan that cannot be accelerated: it exists for the faults that only appear over real elapsed days, and every one of them is silent at the moment it happens — a scheduler that quietly stops at 3am, a token that expires on day six, a cron that fires twice across a daylight-saving boundary, a retry backoff that only misbehaves on the fourth attempt two days in. None of those raise an error. They produce silence, and silence is what a soak is for.
+
+  So the failure being guarded against is not technical. It is somebody — realistically me, given that I spent today building an accelerated simulated week for R12.5 — running seven simulated days, seeing green, and writing "soak complete" in the plan. `tests/soak.mjs` therefore computes elapsed time from the **wall clock**, records the start once, refuses to overwrite a running window, and reports `NOT_YET` until the seventh real day arrives. There is deliberately no flag, argument or environment variable that shortens it, and a state file claiming `complete: true` is ignored because completeness is computed rather than read.
+
+  Two further things it insists on, both of which make the difference between a soak and a wait. **Seven days of nobody looking is a delay**, so coverage is tracked per day and any day without an observation is named; two observations on one day cover one day, not two. And **an observation that reached nothing is a problem, not a clean row** — the quietest way for this to be worthless is a script that runs daily, fails to reach the deployment, and records seven tidy passes.
+
+  Five negative controls, all biting: reading completeness from the state, shortening the window, hiding missing days, recording an unreachable target as clean, and ignoring a stalled worker. `SOAK.md` carries the procedure itself — what to deploy, what is watched daily, what counts as a pass (all three of elapsed, observed, and no problems), what counts as an abort, and that outreach stays off throughout because the soak observes the machinery rather than sending anything to anyone.
+
+  **The soak has not been run.** It needs a staging deployment, and deployment is being held pending as instructed. The row records the procedure as prepared and says plainly that seven days have not elapsed.
 - **NEXT:** R4.1/R4.3 discovery settings + source adapter.
