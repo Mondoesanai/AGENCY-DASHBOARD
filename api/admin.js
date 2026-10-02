@@ -161,6 +161,28 @@ export default async function handler(req, res) {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       return res.status(200).json(await createExperiment(body));
     }
+    // R9.7 — the ledger, the bounds, the undo, and the one reassignment path.
+    case 'optimisation-log': {
+      const { listChanges, getBounds } = await import('../lib/optimisation-log.js');
+      return res.status(200).json({ ok: true, changes: await listChanges({ limit: Number(req.query.limit) || 50 }), bounds: await getBounds() });
+    }
+    case 'optimisation-bounds': {
+      const { setBounds } = await import('../lib/optimisation-log.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      return res.status(200).json({ ok: true, bounds: await setBounds(body.bounds || body, { by: 'owner' }) });
+    }
+    case 'optimisation-revert': {
+      const { revertExperimentChange } = await import('../lib/experiments.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await revertExperimentChange(body.changeId || req.query.changeId);
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
+    case 'experiment-reassign': {
+      const { reassign } = await import('../lib/experiments.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await reassign({ experimentId: body.experimentId, contactId: body.contactId, toVariantId: body.toVariantId, by: 'owner', reason: body.reason || '' });
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
     case 'experiment-state': {
       const { setExperimentState } = await import('../lib/experiments.js');
       const body = req.body && typeof req.body === 'object' ? req.body : {};
