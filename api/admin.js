@@ -169,7 +169,17 @@ export default async function handler(req, res) {
     case 'optimisation-bounds': {
       const { setBounds } = await import('../lib/optimisation-log.js');
       const body = req.body && typeof req.body === 'object' ? req.body : {};
-      return res.status(200).json({ ok: true, bounds: await setBounds(body.bounds || body, { by: 'owner' }) });
+      const out = await setBounds(body.bounds || body, { by: 'owner' });
+      // a refusal comes back as { ok: false }; reporting that as the new bounds
+      // would tell the caller their change applied when it did not
+      if (out && out.ok === false) return res.status(400).json(out);
+      return res.status(200).json({ ok: true, bounds: out });
+    }
+    // R9.8 — the six things optimisation may never touch, with their reasons,
+    // so the interface can state them rather than the owner taking it on faith.
+    case 'optimisation-prohibitions': {
+      const { describe } = await import('../lib/prohibition.js');
+      return res.status(200).json({ ok: true, domains: describe() });
     }
     case 'optimisation-revert': {
       const { revertExperimentChange } = await import('../lib/experiments.js');

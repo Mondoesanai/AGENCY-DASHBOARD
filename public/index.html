@@ -112,6 +112,16 @@
   .auto-h{display:flex;align-items:center;gap:9px;font-size:13.5px;}
   .auto-t{font-size:13px;margin-top:4px;}
   .auto-row .faint{font-size:12px;margin-top:4px;line-height:1.55;}
+  /* R9.7 — one row per recorded change. Automatic ones are marked, because a
+     change nobody chose to make is the one worth finding. */
+  .change-row{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line);
+    border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;}
+  .change-row.tone-warn{border-left-color:var(--warn);}
+  .change-h{display:flex;align-items:center;gap:9px;font-size:13.5px;flex-wrap:wrap;}
+  .change-row .faint{font-size:12px;margin-top:4px;line-height:1.55;}
+  .change-undo{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:8px;}
+  .prohibit-row{border-top:1px solid var(--line);padding-top:8px;margin-top:8px;font-size:13px;}
+  .prohibit-row .faint{font-size:12px;margin-top:3px;line-height:1.55;}
   /* R2.8 — the five primary actions. Equal weight: none of them is the one
      the dashboard wants you to press, so none of them is louder. */
   .actions-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:0 0 26px;}
@@ -461,6 +471,11 @@
     <!-- R2.6 — what is actually running, from real check-ins, plus the pause. -->
     <div id="autoPanel"></div>
     <div id="revWidget"></div>
+    <!-- R9.7 + R9.8 — the change history, the owner's limits, and the six
+         things no experiment may vary. A ledger nothing reads cannot answer
+         "what changed and what was it before?", which is the whole point. -->
+    <div class="section-h"><h2>Experiment changes</h2></div>
+    <div id="optPanel"></div>
   </section>
 
   <section id="view-settings" hidden>
@@ -2721,6 +2736,44 @@ async function setAutomationPaused(paused){
   const t=$('#nextSeoVal'); if(t) t.textContent=autoRanText();
 }
 
+/* ---------- R9.7 + R9.8 the optimisation ledger ----------------------------
+   Reading the log needs the password, because the entries carry before/after
+   values from inside experiments. A failed read renders as a failed read: the
+   one thing this panel must never do is show an empty history as "no changes",
+   since that is exactly the question someone opens it to answer. */
+let OPT_MOD=null, OPT_DATA=null, OPT_ERROR='', OPT_BUSY=false, OPT_BUSY_ID='';
+import('/optimisation.js').then((m)=>{ OPT_MOD=m; renderOptPanel(); }).catch(()=>{ OPT_MOD=null; });
+
+async function loadOptimisation(){
+  if(!key()){ OPT_DATA=null; OPT_ERROR='Unlock with the password to read the change history.'; renderOptPanel(); return; }
+  let j=null,p=null;
+  try{ j=await acqApi('optimisation-log'); }catch{ j=null; }
+  try{ p=await acqApi('optimisation-prohibitions'); }catch{ p=null; }
+  if(j&&j.ok){
+    OPT_DATA={changes:j.changes||[],bounds:j.bounds||null,domains:(p&&p.ok&&p.domains)||[]};
+    OPT_ERROR='';
+  } else {
+    OPT_DATA=null; OPT_ERROR=(j&&j.error)||'the change history did not answer';
+  }
+  renderOptPanel();
+}
+
+function renderOptPanel(){
+  const host=$('#optPanel'); if(!host||!OPT_MOD) return;
+  host.innerHTML=OPT_MOD.renderOptimisation(OPT_DATA,{error:OPT_ERROR,busy:OPT_BUSY,busyId:OPT_BUSY_ID});
+  OPT_MOD.wireOptimisation(host,{ undo:(id)=>undoOptChange(id), retry:()=>loadOptimisation() });
+}
+
+async function undoOptChange(id){
+  const k=needKey(); if(!k||!id) return;
+  if(!confirm('Put this change back?\n\nThe previous value is restored and the undo is itself recorded in the history.')) return;
+  OPT_BUSY=true; OPT_BUSY_ID=id; renderOptPanel();
+  const j=await acqApi('optimisation-revert',{changeId:id});
+  OPT_BUSY=false; OPT_BUSY_ID='';
+  if(!(j&&j.ok)) alert((j&&j.error)||'That change could not be put back.');
+  loadOptimisation();
+}
+
 /* ---------- R2.3 Acquisition section ---------- */
 // Screens over backends that already existed but had no way in: card OCR, CSV
 // import, contacts with consent, discovery, and the sending gate. Nothing here
@@ -2886,7 +2939,7 @@ import('/nav.js')
     goView = nav.initNav(document, {
       onChange: (v) => {
         if (v === 'acquisition' && acqMod) renderAcq();
-        if (v === 'automations') loadAutomation(); // refresh the check-ins on arrival
+        if (v === 'automations') { loadAutomation(); loadOptimisation(); } // refresh the check-ins and the ledger on arrival
       },
     });
     window.IWgo = (v) => (goView ? goView(v) : null);
@@ -2908,6 +2961,7 @@ loadSysHealth();
   startRevPoll();
   loadAttentionReplies(); // only does anything once a password is present
   loadAutomation();           // R2.6 — real check-ins for the tile and the panel
+  loadOptimisation();         // R9.7 — the ledger, which says so if it cannot be read
 })();
 </script>
 </body>
