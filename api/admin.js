@@ -97,6 +97,40 @@ export default async function handler(req, res) {
       await setPaused({ paused: body.paused === true, by: 'owner', reason: body.reason || '' });
       return res.status(200).json({ ok: true, automation: await automationStatus() });
     }
+    // R9.1 / R9.2 — experiments, and the two outcomes only the owner can
+    // assert. Gated, because an unauthenticated "we made a sale" would be the
+    // easiest number in the system to poison.
+    case 'experiments-list': {
+      const { listExperiments, tally } = await import('../lib/experiments.js');
+      const { primaryBreakdown } = await import('../lib/outcomes.js');
+      const exps = await listExperiments();
+      const withCounts = [];
+      for (const e of exps) withCounts.push({ experiment: e, primary: primaryBreakdown(await tally(e.id)) });
+      return res.status(200).json({ ok: true, experiments: withCounts });
+    }
+    case 'experiment-create': {
+      const { createExperiment } = await import('../lib/experiments.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      return res.status(200).json(await createExperiment(body));
+    }
+    case 'experiment-state': {
+      const { setExperimentState } = await import('../lib/experiments.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      return res.status(200).json(await setExperimentState(body.id, body.state));
+    }
+    case 'record-sale': {
+      const { recordPrimaryOutcome, PRIMARY } = await import('../lib/outcomes.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await recordPrimaryOutcome({
+        experimentId: body.experimentId,
+        contactId: body.contactId,
+        outcome: PRIMARY.RECORDED_SALE,
+        source: 'owner',
+        amount: body.amount,
+        evidence: { note: body.note || '' },
+      });
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
     // R6.11 — the SMS adapter and its A2P registration, built and deliberately
     // left disconnected. Reading is gated like the rest of acquisition.
     case 'sms-readiness': {
