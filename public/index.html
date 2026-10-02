@@ -2628,6 +2628,9 @@ function renderOverviewAttention(){
     replies: ATT_REPLIES || undefined,
     // R2.6 — a stopped worker belongs at the top of what needs you
     automation: AUTO_STATUS || undefined,
+    // R9.9 — outreach stopping itself is invisible otherwise: nothing errors,
+    // messages simply stop going out
+    deliverability: DELIV || undefined,
     generatedAt: STATE.generatedAt,
   });
   host.innerHTML=ATT.renderAttention(ATT_RESULT,{expanded:ATT_EXPANDED});
@@ -2734,6 +2737,19 @@ async function setAutomationPaused(paused){
   else { AUTO_ERROR=(j&&j.error)||'the pause did not take effect'; }
   renderAutomationPanel();
   const t=$('#nextSeoVal'); if(t) t.textContent=autoRanText();
+}
+
+/* ---------- R9.9 the deliverability trip -----------------------------------
+   Left undefined until it has genuinely been read, so "nothing wrong" is never
+   inferred from "not yet asked" — buildAttention lists an unchecked area
+   rather than silently passing it. */
+let DELIV = null;
+async function loadDeliverability(){
+  if(!key()) return;                         // reading the numbers needs the password
+  let j=null;
+  try{ j=await acqApi('deliverability'); }catch{ j=null; }
+  DELIV = (j&&j.ok) ? { result:j.result, stop:j.stop } : null;
+  renderOverviewAttention();
 }
 
 /* ---------- R9.7 + R9.8 the optimisation ledger ----------------------------
@@ -2962,6 +2978,7 @@ loadSysHealth();
   loadAttentionReplies(); // only does anything once a password is present
   loadAutomation();           // R2.6 — real check-ins for the tile and the panel
   loadOptimisation();         // R9.7 — the ledger, which says so if it cannot be read
+  loadDeliverability();       // R9.9 — only does anything once a password is present
 })();
 </script>
 </body>

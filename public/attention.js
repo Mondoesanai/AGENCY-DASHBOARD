@@ -46,8 +46,16 @@ export const KIND_RANK = Object.freeze({
   'no-repo': 2,
   'report-overdue': 3,
   'trial-ending': 4,
-  'reply-waiting': 5,
+  // R9.9 — outreach stopping itself ranks above a waiting reply but below
+  // every paying client's item, for the reason stated above: client work the
+  // business already owes comes before chasing new business. It is here rather
+  // than lower because nothing else will start sending again, and nothing
+  // about the dashboard otherwise looks wrong while it is stopped.
+  'deliverability-stopped': 5,
+  'reply-waiting': 6,
+  'deliverability-unknown': 8,
   'automation-paused': 9,
+  'deliverability-warn': 14,
   'request-retrying': 10,
   'audit-failed': 11,
   'traffic-drop': 12,
@@ -260,6 +268,47 @@ export function buildAttention(input = {}) {
     }
   } else {
     notChecked.push('automation');
+  }
+
+  // ---- the deliverability trip (R9.9) --------------------------------------
+  // Outreach stopping itself is the one thing here the owner cannot find out
+  // any other way: nothing breaks, nothing errors, messages simply stop going.
+  // It belongs at the top of what needs you, because only the owner can start
+  // it again and nothing will do it for them.
+  if (input.deliverability) {
+    checked.push('deliverability');
+    const d = input.deliverability;
+    if (d.stop && d.stop.stopped) {
+      items.push({
+        id: 'deliverability:stopped',
+        kind: 'deliverability-stopped',
+        severity: 'act',
+        title: 'Outreach stopped itself',
+        detail: `${d.stop.reason || 'A deliverability threshold was crossed.'} Client site work is unaffected. Sending stays stopped until you start it again.`,
+        action: { label: 'Open acquisition', view: 'acquisition' },
+      });
+    } else if (d.stop && d.stop.known === false) {
+      items.push({
+        id: 'deliverability:unknown',
+        kind: 'deliverability-unknown',
+        severity: 'watch',
+        title: 'Whether outreach was stopped cannot be read',
+        detail: 'Sending is being held until it can be. This is not the same as sending being fine.',
+        action: { label: 'Open acquisition', view: 'acquisition' },
+      });
+    } else if (d.result && d.result.worst === 'warn') {
+      const w = (d.result.signals || []).find((x) => x.level === 'warn');
+      items.push({
+        id: 'deliverability:warn',
+        kind: 'deliverability-warn',
+        severity: 'watch',
+        title: 'Deliverability is worth watching',
+        detail: `${w ? w.reason : ''} Nothing has been stopped.`.trim(),
+        action: { label: 'Open acquisition', view: 'acquisition' },
+      });
+    }
+  } else {
+    notChecked.push('deliverability');
   }
 
   // ---- the feed itself -----------------------------------------------------

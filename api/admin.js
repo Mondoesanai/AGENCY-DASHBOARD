@@ -175,6 +175,18 @@ export default async function handler(req, res) {
       if (out && out.ok === false) return res.status(400).json(out);
       return res.status(200).json({ ok: true, bounds: out });
     }
+    // R9.9 — the deliverability trip: what the numbers are, and the one way
+    // back. Starting again is an owner action and has no automatic equivalent.
+    case 'deliverability': {
+      const { check, stopState } = await import('../lib/deliverability.js');
+      return res.status(200).json({ ok: true, result: await check(), stop: await stopState() });
+    }
+    case 'deliverability-resume': {
+      const { clearStop } = await import('../lib/deliverability.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await clearStop({ by: 'owner', note: body.note || '' });
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
     // R9.8 — the six things optimisation may never touch, with their reasons,
     // so the interface can state them rather than the owner taking it on faith.
     case 'optimisation-prohibitions': {

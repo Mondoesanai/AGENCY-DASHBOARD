@@ -46,12 +46,18 @@ const healthyAutomation = () => ({
   anyUnknown: false,
   allOk: true,
 });
+/** R9.9 — read, and nothing wrong with it. */
+const healthyDeliverability = () => ({
+  stop: { known: true, stopped: false },
+  result: { worst: 'ok', signals: [], totals: { delivered: 200, bounced: 0, complained: 0, unsubscribed: 0, known: true, days: 14 } },
+});
 const clean = (over = {}) => ({
   sites: [site()],
   portfolio: {},
   tickets: [],
   replies: [],
   automation: healthyAutomation(),
+  deliverability: healthyDeliverability(),
   generatedAt: NOW - 60e3,
   now: NOW,
   ...over,
@@ -333,6 +339,59 @@ check('a paused automation does not also report its workers as stalled', r.items
 r = buildAttention({ sites: [site()], tickets: [], replies: [], now: NOW });
 check('automation not loaded is listed as unchecked, not assumed healthy', r.notChecked.includes('automation'), JSON.stringify(r.notChecked));
 check('and that blocks the all-clear', r.allClear === false);
+
+// ---------------------------------------------------------------------------
+section('A10b  outreach stopping itself (R9.9)');
+// This is the one item here the owner cannot find out any other way: nothing
+// errors and nothing looks broken, messages simply stop going out.
+r = buildAttention(clean({
+  deliverability: {
+    stop: { known: true, stopped: true, by: 'automatic', reason: 'hard bounces: 90 of 300 in the last 14 days (30.0%). What to do: check where these addresses came from.' },
+    result: { worst: 'pause', signals: [], totals: {} },
+  },
+}));
+let d = r.items.find((i) => i.kind === 'deliverability-stopped');
+check('a self-stop is raised', !!d, JSON.stringify(r.items.map((i) => i.kind)));
+check('as something to act on', !!d && d.severity === 'act');
+check('it carries the numbers that stopped it', !!d && /90 of 300/.test(d.detail), d && d.detail);
+check('and what to do about it', !!d && /where these addresses came from/.test(d.detail));
+check('it says client work is unaffected', !!d && /Client site work is unaffected/.test(d.detail));
+check('and that nothing will restart it for them', !!d && /until you start it again/.test(d.detail));
+check('it blocks the all-clear', r.allClear === false);
+
+// it ranks below a paying client's stuck work and above chasing new business
+r = buildAttention(clean({
+  tickets: [ticket({ state: 'blocked', needsOwner: true })],
+  replies: [{ id: 'r1', from: 'a@b.com', subject: 'yes', kind: 'interested', needsOwner: true, at: NOW - 3600e3 }],
+  deliverability: { stop: { known: true, stopped: true, reason: 'bad' }, result: { worst: 'pause', signals: [] } },
+}));
+const actKinds = r.items.filter((i) => i.severity === 'act').map((i) => i.kind);
+check("a stuck client request still comes first", actKinds.indexOf('request-stuck') < actKinds.indexOf("deliverability-stopped"), JSON.stringify(actKinds));
+check("and the self-stop comes before a waiting reply", actKinds.indexOf("deliverability-stopped") < actKinds.indexOf("reply-waiting"), JSON.stringify(actKinds));
+
+// unreadable is not fine
+r = buildAttention(clean({ deliverability: { stop: { known: false, stopped: false }, result: { worst: 'unknown', signals: [] } } }));
+d = r.items.find((i) => i.kind === 'deliverability-unknown');
+check('an unreadable stop flag is raised', !!d, JSON.stringify(r.items.map((i) => i.kind)));
+check('and says it is not the same as fine', !!d && /not the same as sending being fine/.test(d.detail));
+check('it is not raised as an emergency', !!d && d.severity === 'watch');
+
+// a warning is a warning, not a stop
+r = buildAttention(clean({
+  deliverability: {
+    stop: { known: true, stopped: false },
+    result: { worst: 'warn', signals: [{ level: 'warn', reason: 'hard bounces: 2 of 25 (8.0%)' }] },
+  },
+}));
+d = r.items.find((i) => i.kind === 'deliverability-warn');
+check('a warning is raised', !!d);
+check('as something to watch, not act on', !!d && d.severity === 'watch');
+check('and says nothing has been stopped', !!d && /Nothing has been stopped/.test(d.detail), d && d.detail);
+check('a healthy deliverability raises nothing', buildAttention(clean()).items.filter((i) => /^deliverability/.test(i.kind)).length === 0);
+
+r = buildAttention({ sites: [site()], tickets: [], replies: [], automation: healthyAutomation(), now: NOW });
+check('deliverability not loaded is listed as unchecked, not assumed fine', r.notChecked.includes('deliverability'), JSON.stringify(r.notChecked));
+check('and that blocks the all-clear too', r.allClear === false);
 
 // ---------------------------------------------------------------------------
 section('A11  client-supplied text cannot inject');
