@@ -140,6 +140,26 @@ for (const [name, spec] of Object.entries(INTEGRATIONS)) {
 const all = await allStatuses({}, Date.now());
 check('with no environment at all, nothing claims to work', all.every((i) => i.state === STATE.NOT_CONFIGURED),
   all.filter((i) => i.state !== STATE.NOT_CONFIGURED).map((i) => `${i.name}:${i.state}`).join(','));
+check('and every integration is reported, not just the configured ones', all.length === Object.keys(INTEGRATIONS).length);
+
+// allStatuses must report all four states from real recorded evidence, not
+// just the empty case — this is the function the settings screen renders.
+await clear('github'); await clear('instantly'); await clear('resend'); await clear('twilio');
+await recordSuccess('github');
+await recordFailure('resend', 'http 403 forbidden');
+const FOUR = { GITHUB_TOKEN: 'g', INSTANTLY_API_KEY: 'k', RESEND_API_KEY: 'r', REPORT_FROM: 'f' };
+const mixed = await allStatuses(FOUR, Date.now());
+const by = Object.fromEntries(mixed.map((i) => [i.name, i]));
+check('a proven integration is reported working', by.github.state === STATE.WORKING, by.github.state);
+check('a credential with no proof is reported configured', by.instantly.state === STATE.CONFIGURED, by.instantly.state);
+check('a rejected credential is reported failing', by.resend.state === STATE.FAILING, by.resend.state);
+check('a missing credential is reported not-configured', by.twilio.state === STATE.NOT_CONFIGURED, by.twilio.state);
+check('all four states appear in one listing', new Set(mixed.map((i) => i.state)).size === 4,
+  [...new Set(mixed.map((i) => i.state))].join(','));
+check('each carries its own evidence sentence', mixed.every((i) => typeof i.evidence === 'string' && i.evidence.length > 10),
+  mixed.filter((i) => !i.evidence).map((i) => i.name).join(','));
+check('and the failing one carries the provider error', /403/.test(by.resend.lastError), by.resend.lastError);
+await clear('github'); await clear('resend');
 
 await clear('instantly'); await clear('github');
 done();
