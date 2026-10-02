@@ -105,10 +105,13 @@ export default async function handler(req, res) {
       const { primaryBreakdown } = await import('../lib/outcomes.js');
       const { secondaryBreakdown, harmWarnings } = await import('../lib/secondary.js');
       const { rankingStatement, rankVariants } = await import('../lib/ranking.js');
+      const { sampleSizeStatement } = await import('../lib/significance.js');
       const exps = await listExperiments();
       const withCounts = [];
       for (const e of exps) {
         const t = await tally(e.id);
+        // one more look at this experiment
+        const looks = Number(await store.incr(`experiment:looks:${e.id}`, 1).catch(() => 0)) || 0;
         const primary = primaryBreakdown(t);
         const secondary = secondaryBreakdown(t);
         // R9.4 — every report carries what may and may not order variants, and
@@ -125,6 +128,18 @@ export default async function handler(req, res) {
           ranking: rankingStatement({ opens, humanClicks: human, filteredClicks: filtered }),
           // the ordering the dashboard may show, by the one metric that counts
           orderedBy: rankVariants(primary, 'qualified-positive-reply'),
+          // R9.5 — every report answers "can I believe this yet?" before
+          // anyone reads the counts. Looks are recorded because checking
+          // repeatedly and stopping at the first apparent difference is its
+          // own way of manufacturing a result.
+          certainty: sampleSizeStatement({
+            arms: (primary.arms || []).map((a) => ({
+              variantId: a.variantId,
+              assigned: a.assigned,
+              successes: a.rungs?.['qualified-positive-reply'] || 0,
+            })),
+            looks,
+          }),
         });
       }
       return res.status(200).json({ ok: true, experiments: withCounts });
