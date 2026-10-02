@@ -276,7 +276,7 @@ and never display a mocked integration as connected (R4.4).
 | R12.1 | Risk-based test matrix executed; failures fixed and rechecked | `[~]` 450 automated checks green; matrix not complete |
 | R12.2 | Full-path tests browser → API → storage → worker → provider fixture → webhook → dashboard | `[~]` `tests/fullpath.test.mjs` + `tests/harness/local-api.mjs` — the whole path runs over a real socket with auth enforced; the **send** leg is exercised only in the refusal direction, because outreach is deliberately inactive |
 | R12.3 | The 14 priority scenarios | `[x]` all fourteen, **each verified by negative control rather than by grep** (2026-10-02): revision eligibility/recovery/classification · duplicate imports · ambiguous OCR · suppression + consent enforcement · budget exhaustion under concurrency · a real website missed by a listing · reply/opt-out during a queued send · duplicate + out-of-order webhooks · ambiguous send timeouts · worker restarts · booking cancel/reschedule · cross-account authorization · malicious URLs + prompt injection · provider outages and rate limits |
-| R12.4 | Load test: thousands of contacts, concurrent jobs, webhook bursts, large imports, card batches | `[~]` `tests/load.test.mjs` — contacts, concurrent claims, webhook bursts and same-domain imports all measured by store-operation count; **card batches not yet covered** |
+| R12.4 | Load test: thousands of contacts, concurrent jobs, webhook bursts, large imports, card batches | `[x]` `tests/load.test.mjs` — all five measured by store-operation count, not wall-clock |
 | R12.5 | Accelerated simulated 7-day operation, labelled as simulated | `[ ]` |
 | R12.6 | Real 7-day staging soak **procedure** prepared (7 real days claimed only after they elapse) | `[ ]` |
 | R12.7 | Build, lint, integration and browser checks, desktop + mobile | `[ ]` |
@@ -291,9 +291,9 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 113 |
+| `[x]` built **and** verified | 114 |
 | `[b]` built, not verified | 0 |
-| `[~]` in progress | 3 |
+| `[~]` in progress | 2 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
 | `[ ]` not started | 3 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
@@ -443,4 +443,5 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
   My first measurement was misleading in a way worth recording: the original fixture gave all 2,000 contacts the same domain, which is **not** realistic — free-mail hosts are already excluded from domain matching, so gmail prospects never collide. Re-run with distinct domains the insert cost is flat and nothing is wrong. The quadratic case is real but narrower than my first number implied, and reporting that first number without re-measuring would have overstated it badly.
 
   Eight negative controls, all biting, including one on the measurement itself — if the operation counter silently stopped counting, every cost assertion would pass for the wrong reason. Two controls were malformed by me: one keyed the lease token on `attempts`, which the outage path decrements, so the token repeated and permanently blocked re-claiming (caught by the existing outage tests, not by this one); the other was a no-op guarded by a flag nothing set. **`[~]` not `[x]`**: card batches are not covered yet.
+- **2026-10-02** — R12.4 closed with card batches. The batch is already capped at twelve, which matters more than it looks: every card in a batch is a billed model call, so an unbounded batch is an unbounded bill as well as an unbounded wait, and the refusal names the cap rather than failing vaguely. Saving a full batch of twelve against a table already holding several thousand contacts costs a small multiple of one insert — measured, with the table size asserted first so the number is not quietly taken on an empty store. Both controls bite: removing the cap, and making the save read the whole table.
 - **NEXT:** R4.1/R4.3 discovery settings + source adapter.

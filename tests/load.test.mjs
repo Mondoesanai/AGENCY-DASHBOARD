@@ -161,6 +161,37 @@ check('fifty different events are all fresh', distinct.filter((d) => d.fresh).le
   String(distinct.filter((d) => d.fresh).length));
 
 // ---------------------------------------------------------------------------
+section('L7  a batch of business cards is bounded, and costs the batch not the table');
+const { scanCards, saveCards } = await import('../lib/card-intake.js');
+
+// the cap exists because every card in a batch is a billed model call, so an
+// unbounded batch is an unbounded bill as well as an unbounded wait
+const tooMany = await scanCards(Array.from({ length: 13 }, () => ({ base64: 'x', mimeType: 'image/jpeg' })));
+check('a batch larger than the cap is refused', tooMany.ok === false, JSON.stringify(tooMany).slice(0, 120));
+check('and says what the cap is, rather than failing vaguely', /max 12/.test(tooMany.error || ''), tooMany.error);
+check('nothing was read from the refused batch', (tooMany.cards || []).length === 0);
+check('an empty batch is refused too', (await scanCards([])).ok === false);
+check('and a non-array is survivable', (await scanCards(null)).ok === false);
+
+// saving a full batch: measured against a table that already holds thousands
+const batch = Array.from({ length: 12 }, (_, i) => ({
+  name: { value: `Card Person ${i}`, confidence: 0.9, source: 'card' },
+  email: { value: `card${i}@cardbiz${i}.example`, confidence: 0.9, source: 'card' },
+  businessName: { value: `Card Biz ${i}`, confidence: 0.9, source: 'card' },
+}));
+const tableSize = (await listContacts({ limit: 1 })).total;
+check('the table is already large, so this is not a cost measured on an empty store', tableSize >= 2000, String(tableSize));
+
+reset();
+const saved = await saveCards(batch, { relationship: 'met_in_person', collectedAt: new Date().toISOString() });
+const costBatch = total();
+check('the batch is saved', Array.isArray(saved) ? saved.length === 12 : (saved.results || saved).length === 12,
+  JSON.stringify(saved).slice(0, 120));
+check('and costs the BATCH, not the table', costBatch < 12 * 20,
+  `${costBatch} operations for 12 cards against ${tableSize} existing contacts`);
+check('which is a small multiple of one insert', costBatch / 12 < 20, String(costBatch / 12));
+
+// ---------------------------------------------------------------------------
 section('L6  the measurement itself is real');
 // If the counter were broken, every check above would pass for the wrong
 // reason — so it gets its own proof.
