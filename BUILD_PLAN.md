@@ -275,7 +275,7 @@ and never display a mocked integration as connected (R4.4).
 |---|---|---|
 | R12.1 | Risk-based test matrix executed; failures fixed and rechecked | `[~]` 450 automated checks green; matrix not complete |
 | R12.2 | Full-path tests browser → API → storage → worker → provider fixture → webhook → dashboard | `[~]` `tests/fullpath.test.mjs` + `tests/harness/local-api.mjs` — the whole path runs over a real socket with auth enforced; the **send** leg is exercised only in the refusal direction, because outreach is deliberately inactive |
-| R12.3 | The 14 priority scenarios | `[~]` **done**: revision eligibility/recovery/classification · duplicate imports · ambiguous OCR · suppression + consent enforcement · budget exhaustion under concurrency · cross-account authorization (`tests/crossaccount.test.mjs`) · reply/opt-out during a queued send (`tests/sendrace.test.mjs`) · provider outages and rate limits (`tests/outage.test.mjs`) · duplicate + out-of-order webhooks · ambiguous send timeouts · booking cancel/reschedule · malicious URLs + prompt injection · a real website missed by a listing — **each of the last five re-verified by negative control on 2026-10-02, not by grep**. **Not done**: worker restarts |
+| R12.3 | The 14 priority scenarios | `[x]` all fourteen, **each verified by negative control rather than by grep** (2026-10-02): revision eligibility/recovery/classification · duplicate imports · ambiguous OCR · suppression + consent enforcement · budget exhaustion under concurrency · a real website missed by a listing · reply/opt-out during a queued send · duplicate + out-of-order webhooks · ambiguous send timeouts · worker restarts · booking cancel/reschedule · cross-account authorization · malicious URLs + prompt injection · provider outages and rate limits |
 | R12.4 | Load test: thousands of contacts, concurrent jobs, webhook bursts, large imports, card batches | `[ ]` |
 | R12.5 | Accelerated simulated 7-day operation, labelled as simulated | `[ ]` |
 | R12.6 | Real 7-day staging soak **procedure** prepared (7 real days claimed only after they elapse) | `[ ]` |
@@ -291,9 +291,9 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 112 |
+| `[x]` built **and** verified | 113 |
 | `[b]` built, not verified | 0 |
-| `[~]` in progress | 3 |
+| `[~]` in progress | 2 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
 | `[ ]` not started | 4 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
@@ -427,4 +427,9 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
   So: 5xx, 408 and a bare network error are now outages, which give the attempt back; 401/403/404 stay permanent, and **400/422 join them**, because retrying an identical malformed request three times spends the budget on something that cannot work. The part worth arguing about is the **cap**. "Give the attempt back" must not mean "for ever": a provider that 500s permanently would otherwise produce a job that retries silently and never surfaces, and an invisible stuck job is worse than a dead one, because a dead one can be seen. Eight deferrals, then it fails normally and dies with a reason.
 
   Nine negative controls, eight biting immediately. The ninth found a gap in my own test: I asserted `runOne` reports a *recovered* job correctly but never drove it down the outage path, so "an outage is reported as a failure" went unnoticed — the dashboard would have shown work failing during an outage that was merely waiting. It now runs both paths and contrasts them with a permanent error. My first version of the cap test also reported a false failure: the clock advanced one second a round while the backoff is minutes, so the job was never re-claimed, which looks identical to the cap not working.
+- **2026-10-02** — R12.3 complete, with the last scenario being worker restarts. A worker that dies mid-job is covered at three points: the lease is a deadline rather than a lock, so a dead worker's job becomes reclaimable instead of stranded; the attempt count and history carry across the reclaim; and the idempotency check runs **after the claim and before the handler**, which is the ordering that matters, because the dangerous crash is the one between a side effect and the completion write. Both controls bite — stretching the lease expiry strands the job, and disabling the idempotency check repeats the side effect on restart.
+
+  Getting there needed a fix in the test file rather than the code. The lease control first came back as a **crash** rather than a failure: when a lease wrongly never expires there is no job to read, and `c2.job.attempts` threw, which stopped the rest of the file running and turned a precise signal into a stack trace. That is the same unguarded-dereference problem this build has now hit six times, and it is worth naming as a habit rather than a series of accidents: **every read of a value that can legitimately be absent gets guarded in a test, because the whole point of a control is a clean, specific failure.** Five dereferences on `claim()` results are now guarded.
+
+  That closes all fourteen. Worth stating plainly how much of this requirement was already satisfied before today: nine of the fourteen were covered by tests written earlier and simply never ticked off, and I only found that out by breaking each promise. The plan had been understating its own progress, which is a less dangerous error than overstating it, but it is still an error — and three of my first-round controls were malformed in ways that would have had me "fixing" working code.
 - **NEXT:** R4.1/R4.3 discovery settings + source adapter.

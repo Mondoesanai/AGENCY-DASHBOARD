@@ -34,10 +34,13 @@ section('J3  a lease is a deadline, not a lock — a dead worker loses nothing')
 const t0 = Date.now();
 let c = await claim({ worker: 'worker-A', now: t0, types: ['send-email'] });
 check('a worker claims a due job', c.job !== null, JSON.stringify(c).slice(0, 120));
-check('the job is leased', c.job.state === JOB_STATE.LEASED);
-check('the lease names the worker', c.job.lease.worker === 'worker-A');
-check('and has an expiry', c.job.lease.until > t0);
-check('claiming counts an attempt', c.job.attempts === 1);
+// a claim can legitimately return no job, so every read of it is guarded: an
+// unguarded dereference turns "nothing was claimed" into a crash, and a crash
+// stops the remaining sections running at all
+check('the job is leased', !!c.job && c.job.state === JOB_STATE.LEASED);
+check('the lease names the worker', !!c.job?.lease && c.job.lease.worker === 'worker-A');
+check('and has an expiry', !!c.job?.lease && c.job.lease.until > t0);
+check('claiming counts an attempt', !!c.job && c.job.attempts === 1);
 
 // worker-A dies here. It never completes, never fails.
 let c2 = await claim({ worker: 'worker-B', now: t0 + 1000, types: ['send-email'] });
@@ -47,8 +50,12 @@ check('a second worker cannot steal a LIVE lease', c2.job?.id !== c.job.id, JSON
 c2 = await claim({ worker: 'worker-B', now: t0 + DEFAULTS.leaseMs + 1000, types: ['send-email'] });
 check('once the lease expires the job is reclaimable', c2.job?.id === c.job.id, JSON.stringify(c2).slice(0, 140));
 check('and it is marked as a reclaim, not a fresh start', c2.reclaimed === true);
-check('the attempt count carries over', c2.job.attempts === 2);
-check('the history records the reclaim', c2.job.history.some((h) => h.event === 'lease-reclaimed'));
+// guarded: when a lease wrongly never expires there is no job here at all, and
+// an unguarded `.attempts` turns a clean failure into a crash that stops the
+// rest of this file running — which has cost a usable signal repeatedly in
+// this build
+check('the attempt count carries over', !!c2.job && c2.job.attempts === 2, JSON.stringify(c2.job && c2.job.attempts));
+check('the history records the reclaim', !!c2.job && (c2.job.history || []).some((h) => h.event === 'lease-reclaimed'));
 
 // ---------------------------------------------------------------------------
 section('J4  retries back off, then go to the dead letter — never silence');
