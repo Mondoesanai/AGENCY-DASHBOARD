@@ -87,6 +87,7 @@ Two rules that bind both the builder and the supervisor:
 | **G3** | Discovery data source | R4.2, R4.4 | The source's terms must permit storage *and* outreach use. Requires credentials. |
 | **G4** | Service area, industries, weekly volume | R4.1 | Owner's targeting choice. |
 | **G5** | Voice-note capture path | R3.6 (text notes done; voice not) | Needs a decision on recording/transcription route. |
+| **G6** | A real postal address that receives post, and `PUBLIC_BASE_URL` + `UNSUBSCRIBE_SECRET` in Vercel | R6.9 — every cold message, and the one-click unsubscribe link | CAN-SPAM requires a physical address in every commercial message, and a placeholder is exactly what the law is about. The unsubscribe link needs a public URL to point at and a secret to sign with, or it would be forgeable. The sending gate lists all three and refuses until they are set. |
 
 **Standing rule while blocked:** build the adapter, ship it **disconnected**, test against fixtures,
 and never display a mocked integration as connected (R4.4).
@@ -189,7 +190,7 @@ and never display a mocked integration as connected (R4.4).
 | R6.6 | Delivery / bounce / complaint / unsubscribe each update contact state | `[x]` delivery, bounce, complaint and unsubscribe each update contact state; a soft bounce deliberately does not suppress |
 | R6.7 | Reply ingestion + thread matching to contact and campaign | `[x]` `lib/threading.js` — matched by `In-Reply-To`/`References` against recorded sends; an undecidable campaign stays unknown |
 | R6.8 | Global suppression across all campaigns | `[x]` suppression is global — a complaint stops every campaign, not only the one that caused it |
-| R6.9 | CAN-SPAM: accurate identity, postal address, working unsubscribe | `[x]` `lib/unsubscribe.js` — signed per-address one-click link (RFC 8058), GET never unsubscribes, identity checked beyond "not blank" |
+| R6.9 | CAN-SPAM: accurate identity, postal address, working unsubscribe | `[x]` mechanism complete and verified: `lib/unsubscribe.js` — signed per-address one-click link (RFC 8058), GET never unsubscribes, identity checked beyond "not blank". **The real postal address is still an owner input** — sending stays blocked until it is supplied, which is the correct behaviour and is tested |
 | R6.10 | No fabricated engagement, no domain rotation, no filter evasion | `[ ]` prohibition to encode |
 | R6.11 | SMS adapter + registration modelled, **left disconnected** | `[ ]` owner decision: OFF |
 | R6.12 | Number validation; number type is a delivery signal, never proof of consent | `[ ]` |
