@@ -273,7 +273,7 @@ and never display a mocked integration as connected (R4.4).
 
 | Req | Task | Status |
 |---|---|---|
-| R12.1 | Risk-based test matrix executed; failures fixed and rechecked | `[~]` 450 automated checks green; matrix not complete |
+| R12.1 | Risk-based test matrix executed; failures fixed and rechecked | `[x]` `RISK_MATRIX.md` — 37 risks ranked by harm, each naming the tests that cover it, kept honest by `tests/riskmatrix.test.mjs` |
 | R12.2 | Full-path tests browser → API → storage → worker → provider fixture → webhook → dashboard | `[~]` `tests/fullpath.test.mjs` + `tests/harness/local-api.mjs` — the whole path runs over a real socket with auth enforced; the **send** leg is exercised only in the refusal direction, because outreach is deliberately inactive |
 | R12.3 | The 14 priority scenarios | `[x]` all fourteen, **each verified by negative control rather than by grep** (2026-10-02): revision eligibility/recovery/classification · duplicate imports · ambiguous OCR · suppression + consent enforcement · budget exhaustion under concurrency · a real website missed by a listing · reply/opt-out during a queued send · duplicate + out-of-order webhooks · ambiguous send timeouts · worker restarts · booking cancel/reschedule · cross-account authorization · malicious URLs + prompt injection · provider outages and rate limits |
 | R12.4 | Load test: thousands of contacts, concurrent jobs, webhook bursts, large imports, card batches | `[x]` `tests/load.test.mjs` — all five measured by store-operation count, not wall-clock |
@@ -291,9 +291,9 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 117 |
+| `[x]` built **and** verified | 118 |
 | `[b]` built, not verified | 0 |
-| `[~]` in progress | 2 |
+| `[~]` in progress | 1 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
 | `[ ]` not started | 0 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
@@ -469,4 +469,11 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
   Five negative controls, all biting: reading completeness from the state, shortening the window, hiding missing days, recording an unreachable target as clean, and ignoring a stalled worker. `SOAK.md` carries the procedure itself — what to deploy, what is watched daily, what counts as a pass (all three of elapsed, observed, and no problems), what counts as an abort, and that outreach stays off throughout because the soak observes the machinery rather than sending anything to anyone.
 
   **The soak has not been run.** It needs a staging deployment, and deployment is being held pending as instructed. The row records the procedure as prepared and says plainly that seven days have not elapsed.
+- **2026-10-02** — R12.1, the risk matrix. Ranked by **harm first, likelihood second**, because the point of ranking is to decide what must not be got wrong and a rare catastrophe outranks a frequent annoyance — and harm is read from the person who suffers it, so "severe" means a real person is contacted after saying stop, has their data exposed, or is told something untrue, while a burned sending domain is only "high".
+
+  The obvious failure of a document like this is that it is a document. A test file gets renamed, the row naming it keeps saying "covered", and the matrix quietly becomes a list of reassurances about tests that no longer exist — by which point it is the only record of what anyone thought was covered. So `tests/riskmatrix.test.mjs` parses it and checks that every named file exists, that every named file is one the runner will actually execute, and that the gaps section is still there and still says **why**. It also cross-checks the gaps against `BUILD_PLAN.md`, so a requirement marked done in one document and open in the other fails.
+
+  Writing it surfaced something I would not have noticed otherwise. I had added a rule that every severe risk must be covered by at least two independent test files — the severe band being where a single point of failure matters most — and three rows failed it. One was genuinely under-cited and `contacts` covers it independently. **The other two are real concentrations**: cross-account authorization rests entirely on `crossaccount`, and "an erased person can be reconstructed" entirely on `retention`. The tempting fix was to cite loosely-related files until the rule went green, which would have hidden exactly the thing the rule exists to find. Instead they are marked `(single)`, the rule accepts a declared single-point, and both are listed in the gaps — so the concentration is visible rather than papered over.
+
+  Five negative controls, all biting: naming a test that does not exist, deleting the gaps section, a single-covered severe risk that stops declaring itself, a gap that stops saying why, and the plan disagreeing with the matrix. One earlier version of the test shelled out to the runner to check which files are executed — which, since the test is itself in the suite, recursed until the run had to be killed; it now checks the runner's inclusion rule instead.
 - **NEXT:** R4.1/R4.3 discovery settings + source adapter.
