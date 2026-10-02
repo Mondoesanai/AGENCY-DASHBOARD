@@ -277,7 +277,7 @@ and never display a mocked integration as connected (R4.4).
 | R12.2 | Full-path tests browser → API → storage → worker → provider fixture → webhook → dashboard | `[~]` `tests/fullpath.test.mjs` + `tests/harness/local-api.mjs` — the whole path runs over a real socket with auth enforced; the **send** leg is exercised only in the refusal direction, because outreach is deliberately inactive |
 | R12.3 | The 14 priority scenarios | `[x]` all fourteen, **each verified by negative control rather than by grep** (2026-10-02): revision eligibility/recovery/classification · duplicate imports · ambiguous OCR · suppression + consent enforcement · budget exhaustion under concurrency · a real website missed by a listing · reply/opt-out during a queued send · duplicate + out-of-order webhooks · ambiguous send timeouts · worker restarts · booking cancel/reschedule · cross-account authorization · malicious URLs + prompt injection · provider outages and rate limits |
 | R12.4 | Load test: thousands of contacts, concurrent jobs, webhook bursts, large imports, card batches | `[x]` `tests/load.test.mjs` — all five measured by store-operation count, not wall-clock |
-| R12.5 | Accelerated simulated 7-day operation, labelled as simulated | `[ ]` |
+| R12.5 | Accelerated simulated 7-day operation, labelled as simulated | `[x]` `tests/sevenday.test.mjs` — five invariants checked 29 times across seven simulated days, and the run prints that it is **simulated** and that no real time elapsed |
 | R12.6 | Real 7-day staging soak **procedure** prepared (7 real days claimed only after they elapse) | `[ ]` |
 | R12.7 | Build, lint, integration and browser checks, desktop + mobile | `[ ]` |
 | R12.8 | A green build is never equated with functional verification | `[x]` enforced by the L0–L4 levels in `VERIFICATION_REPORT.md` |
@@ -291,11 +291,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 114 |
+| `[x]` built **and** verified | 115 |
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 2 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 3 |
+| `[ ]` not started | 2 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -444,4 +444,13 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 
   Eight negative controls, all biting, including one on the measurement itself — if the operation counter silently stopped counting, every cost assertion would pass for the wrong reason. Two controls were malformed by me: one keyed the lease token on `attempts`, which the outage path decrements, so the token repeated and permanently blocked re-claiming (caught by the existing outage tests, not by this one); the other was a no-op guarded by a flag nothing set. **`[~]` not `[x]`**: card batches are not covered yet.
 - **2026-10-02** — R12.4 closed with card batches. The batch is already capped at twelve, which matters more than it looks: every card in a batch is a billed model call, so an unbounded batch is an unbounded bill as well as an unbounded wait, and the refusal names the cap rather than failing vaguely. Saving a full batch of twelve against a table already holding several thousand contacts costs a small multiple of one insert — measured, with the table size asserted first so the number is not quietly taken on an empty store. Both controls bite: removing the cap, and making the save read the whole table.
+- **2026-10-02** — R12.5. A simulated week is worth very little if it only checks the end state: a week where everything happened to work out can hide a day where an invariant was violated and quietly repaired. So five invariants are checked **after every step**, not at the end, and the run reports how many times it looked — 29 across seven days — because "the invariants held" means nothing without that number.
+
+  The invariants are promises made elsewhere in the build: nobody who opted out is contactable from the moment they opt out; no message is sent while outreach is off; no contact is offered the same campaign step twice; a suppressed address is suppressed everywhere rather than in one campaign; and the deliverability stop, once tripped, is never cleared by automation. The week runs twenty prospects through real enrolment, lets two of them unsubscribe through the real one-click handler on days 1 and 3, drains the real job queue each day, and on day 5 feeds in 300 deliveries and 90 bounces — which trips the real deliverability stop, as it should.
+
+  **The first version was much weaker than it looked, and the controls said so.** Every send was refused `not-ready` because outreach is off, so nothing ever advanced and the no-duplicate-step invariant was satisfied by a week in which nothing happened. The simulation now applies the CONSEQUENCE of a send through the real `markStepSent` — the step recorded exactly as a successful send would record it, without any send — so the due list genuinely moves (20 → 15 → 10, then back up as follow-ups fall due), 35 steps advance across the week, and the invariant has something to be true about. There is now an explicit assertion that the week advanced work at all, because a simulation that does nothing passes every check in it.
+
+  A second control found the same shape of problem in the outreach-off invariant: with an empty environment the gate refuses for five other reasons too, so **deleting the outreach switch entirely left the test green**. The invariant now requires the refusal to cite `outreach-off` specifically.
+
+  Eight negative controls, all biting after those two fixes. And the label is part of the deliverable rather than a comment: the run prints that it is a simulation, that no real time elapsed, and that no real message was sent, and the test asserts the week ran on the controlled clock rather than the wall clock. **This is not R12.6.** A seven-day simulation is not a seven-day soak, that one needs seven actual days, and nothing here may be read as having done it.
 - **NEXT:** R4.1/R4.3 discovery settings + source adapter.
