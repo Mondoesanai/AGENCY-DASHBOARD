@@ -163,7 +163,11 @@ export function renderIntake(state) {
     <h3>Scan business cards</h3>
     <p class="note">One or many cards per photo, front and back. Nothing is saved until you press save —
       the scan only proposes, so a misread never becomes a contact on its own.</p>
-    <input type="file" id="acqCardFiles" accept="image/*" multiple />
+    <!-- R2.7 — this was the one control on the whole dashboard a screen reader
+         announced as just "file upload button" with no idea what it wanted. -->
+    <label class="acq-inline" for="acqCardFiles">Photos of the cards</label>
+    <input type="file" id="acqCardFiles" accept="image/*" multiple
+      aria-label="Choose photos of business cards to scan" />
     <label class="acq-inline">Where did you meet them?
       <select id="acqRelationship">
         <option value="met_in_person">I met them in person</option>
@@ -264,7 +268,9 @@ export function renderProspects(state) {
       const seg = p.qualification?.segment || 'uncertain';
       const web = p.web || {};
       return `<tr>
-        <td><input type="checkbox" class="pr_pick" value="${esc(p.id)}" ${p.email ? '' : 'disabled title="No email on the listing"'} /></td>
+        <td><input type="checkbox" class="pr_pick" value="${esc(p.id)}"
+          aria-label="Select ${esc(p.name || 'this business')}"
+          ${p.email ? '' : 'disabled title="No email on the listing"'} /></td>
         <td>${esc(p.name)}</td>
         <td>${esc(p.city || '')}</td>
         <td>${esc(p.industry || '')}</td>

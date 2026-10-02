@@ -13,6 +13,11 @@
   :root{
     --bg:#0f1311; --surface:#1a221e; --surface2:#232d28; --ink:#f6f9f6;
     --muted:#c2ccc5; --faint:#93a099; --line:#3a463f;
+    /* R2.7 — --line is a separator and is deliberately quiet (1.65:1). The
+       border of something you type into is a user interface component and has
+       to reach 3:1 (WCAG 1.4.11), so controls use --line-strong. The focus
+       ring is one colour everywhere rather than two near-identical greens. */
+    --line-strong:#7d8f85; --focus:#77dbaa;
     --green:#46a878; --green-br:#77dbaa; --green-soft:#1e3a2d;
     --pos:#77dbaa; --neg:#f0906f; --warn:#eab54a;
     --shadow:0 1px 2px rgba(0,0,0,.35), 0 14px 36px rgba(0,0,0,.4);
@@ -24,9 +29,26 @@
   h1,h2,h3{font-family:"Fraunces",Georgia,serif;font-weight:600;letter-spacing:-0.02em;margin:0;}
   a{color:var(--green-br);}
   button{font:inherit;cursor:pointer;}
-  input,textarea,select{font:inherit;color:var(--ink);background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px;}
+  input,textarea,select{font:inherit;color:var(--ink);background:var(--surface2);border:1px solid var(--line-strong);border-radius:9px;padding:8px 10px;}
   input::placeholder,textarea::placeholder{color:var(--faint);}
-  input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--green);outline-offset:1px;border-color:var(--green);}
+  input:focus-visible,textarea:focus-visible,select:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-color:var(--focus);}
+  /* R2.7 — the keyboard ring is drawn OUTSIDE the control, because against a
+     filled green button the ring colour is only 1.75:1. Outside, on the page
+     or card behind it, it is 8.5-11:1. */
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
+  /* R2.7 — 24px minimum for anything you have to hit (WCAG 2.5.8). Bare
+     checkboxes measured 13x13 and the delete button 22x22. */
+  input[type="checkbox"],input[type="radio"]{width:18px;height:18px;min-width:18px;accent-color:var(--green);
+    margin:3px;cursor:pointer;}
+  /* A checkbox inside its own label borrows the label's size as a hit target.
+     A bare one in a table cell does not, so that one carries the 24px itself. */
+  input.pr_pick{width:24px;height:24px;min-width:24px;margin:0;}
+  /* A link that stands alone as its own paragraph is a control, not a word in
+     a sentence, so it carries the 24px itself. */
+  .block > p > a:only-child{display:inline-flex;align-items:center;min-height:24px;}
+  .toggle{min-height:24px;}
+  .link{min-height:24px;display:inline-flex;align-items:center;}
+  .logitem button{min-width:24px;min-height:24px;}
   code{background:var(--surface2);padding:1px 5px;border-radius:5px;font-size:.9em;}
 
   .wrap{max-width:1180px;margin:0 auto;padding:22px 22px 110px;}
@@ -51,7 +73,7 @@
   .btn{border:1px solid var(--green);background:var(--green);color:#04120c;border-radius:10px;padding:9px 15px;font-weight:600;font-size:13px;transition:transform .14s cubic-bezier(.2,.9,.3,1.2),box-shadow .14s ease,filter .14s ease;box-shadow:0 2px 12px rgba(61,153,104,.28);}
   .btn:hover{transform:translateY(-1px);filter:brightness(1.08);}
   .btn:active{transform:translateY(0);}
-  .btn:focus-visible{outline:2px solid var(--green-br);outline-offset:2px;}
+  .btn:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .btn.ghost{background:var(--surface);color:var(--ink);border-color:var(--line);box-shadow:none;}
   .btn.ghost:hover{background:var(--surface2);}
   .btn.sm{padding:7px 12px;font-size:12.5px;}
@@ -126,7 +148,7 @@
     color:var(--muted);font:inherit;font-size:14px;font-weight:600;padding:9px 13px;cursor:pointer;
     border-radius:8px 8px 0 0;transition:color .14s ease, border-color .14s ease, background-color .14s ease;}
   .mainnav .navbtn:hover{color:var(--ink);background:rgba(255,255,255,.04);}
-  .mainnav .navbtn:focus-visible{outline:2px solid var(--green-br);outline-offset:2px;}
+  .mainnav .navbtn:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .mainnav .navbtn:active{transform:translateY(1px);}
   .mainnav .navbtn.on{color:var(--ink);border-bottom-color:var(--green-br);}
   @media (max-width:560px){ .mainnav{gap:0;} .mainnav .navbtn{padding:9px 10px;font-size:13px;} }
@@ -137,7 +159,7 @@
   .acq-grid label{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);}
   .acq-grid input,.acq-panel textarea,.acq-inline select{background:var(--surface2);border:1px solid var(--line);
     border-radius:9px;color:var(--ink);padding:8px 10px;font:inherit;font-size:14px;width:100%;}
-  .acq-grid input:focus-visible,.acq-panel textarea:focus-visible{outline:2px solid var(--green-br);outline-offset:1px;}
+  .acq-grid input:focus-visible,.acq-panel textarea:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .acq-block{display:block;font-size:12px;color:var(--muted);margin:8px 0;}
   .acq-block textarea{margin-top:4px;}
   .acq-inline{display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:8px 0;flex-wrap:wrap;}
@@ -190,7 +212,7 @@
   .sites{display:grid;gap:11px;}
   .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 18px;box-shadow:var(--shadow);display:grid;grid-template-columns:1.7fr 46px .9fr .9fr .6fr 88px auto;align-items:center;gap:16px;text-align:left;width:100%;border-left:3px solid transparent;transition:transform .14s cubic-bezier(.2,.9,.3,1.2),border-color .14s ease;color:var(--ink);}
   .card:hover{transform:translateY(-2px);border-left-color:var(--green);}
-  .card:focus-visible{outline:2px solid var(--green-br);outline-offset:2px;}
+  .card:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .card .name{font-weight:600;font-size:15px;}
   .card .url{color:var(--muted);font-size:12.5px;word-break:break-all;}
   .card .cell-k{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
@@ -275,7 +297,7 @@
   .field span{display:block;font-size:10.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px;}
   .field input,.field textarea,.field select{width:100%;font-size:14px;padding:9px 11px;border-radius:9px;border:1px solid var(--line);background:var(--surface2);color:var(--ink);}
   .field textarea{min-height:80px;resize:vertical;}
-  .field input:focus-visible,.field textarea:focus-visible{outline:2px solid var(--green);outline-offset:1px;border-color:var(--green);}
+  .field input:focus-visible,.field textarea:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-color:var(--focus);}
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .btn-row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
   .toggle{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--muted);margin:10px 0;}
@@ -1900,7 +1922,11 @@ function openDrawer(slug){
   $$('.dtabs button',$('#drawerIn')).forEach(b=>b.onclick=()=>switchPane(b.dataset.pane));
   switchPane(drawerPane);
   wireDrawer(s,bf);
+  // R2.7 — remember what opened it so closing can hand focus back, and move
+  // focus INTO the drawer so a keyboard user is where the content is.
+  _drawerOpener=document.activeElement&&document.activeElement!==document.body?document.activeElement:null;
   $('#scrim').classList.add('open'); $('#drawer').classList.add('open'); $('#drawer').setAttribute('aria-hidden','false');
+  requestAnimationFrame(()=>{ try{ ($('#drawerX')||$('#drawerIn')?.querySelector('button'))?.focus(); }catch{} });
 }
 
 function switchPane(name){
@@ -2280,9 +2306,30 @@ function askChurn(names){
   });
 }
 
-function closeDrawer(){ $('#scrim').classList.remove('open'); $('#drawer').classList.remove('open'); $('#drawer').setAttribute('aria-hidden','true'); }
+function closeDrawer(){
+  $('#scrim').classList.remove('open'); $('#drawer').classList.remove('open'); $('#drawer').setAttribute('aria-hidden','true');
+  // R2.7 — give the keyboard back what it was on. Without this, closing the
+  // drawer drops focus to the top of the document and a keyboard user has to
+  // tab all the way back to the client they were just looking at.
+  if(FOCUS) FOCUS.restoreFocus(_drawerOpener,{contains:(el)=>document.body.contains(el)});
+  _drawerOpener=null;
+}
 $('#scrim').addEventListener('click',closeDrawer);
 $('#drawerX').addEventListener('click',closeDrawer);
+
+/* R2.7 — the drawer is a modal: it covers the page behind a scrim, so Tab must
+   not walk out into content the user cannot see. Measured before this existed:
+   7 of 12 Tab presses from inside the open drawer landed behind it. */
+let _drawerOpener=null, FOCUS=null;
+import('/focus.js').then((m)=>{ FOCUS=m; }).catch(()=>{ FOCUS=null; });
+document.addEventListener('keydown',(e)=>{
+  if(e.key!=='Tab'||!FOCUS) return;
+  const drawer=$('#drawer');
+  FOCUS.handleModalTab(e,drawer,{
+    isOpen:!!drawer&&drawer.classList.contains('open'),
+    activeElement:document.activeElement,
+  });
+});
 document.addEventListener('keydown',e=>e.key==='Escape'&&(closeDrawer(),$('#modal').classList.remove('open'),$('#churnModal').classList.remove('open')));
 $('#refreshBtn').addEventListener('click',async()=>{
   const b=$('#refreshBtn');
