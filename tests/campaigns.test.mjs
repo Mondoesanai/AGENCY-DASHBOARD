@@ -230,7 +230,7 @@ section('C14  the rule bites on a real card-sourced contact');
 const { saveCards } = await import('../lib/card-intake.js');
 // a card scanned at an event: relationship recorded, NO sms consent given
 const cardRes = await saveCards(
-  [{ name: E('Casey Nguyen'), businessName: E('Nguyen Tile'), phone: E('214-555-0188'), email: E('casey@nguyentile.test') }],
+  [{ name: E('Casey Nguyen'), businessName: E('Nguyen Tile'), phone: E('214-867-5304'), email: E('casey@nguyentile.test') }],
   { relationship: 'met_in_person', event: 'Plano chamber breakfast' }
 );
 const carded = cardRes[0]?.contact || cardRes.results?.[0]?.contact || (Array.isArray(cardRes) ? cardRes[0] : null);

@@ -13,7 +13,7 @@ const clear = normaliseCard({
   name: { value: 'Dana Reyes', confidence: 0.99, uncertain: '' },
   businessName: { value: 'Reyes Roofing', confidence: 0.99, uncertain: '' },
   email: { value: 'dana@reyesroofing.com', confidence: 0.97, uncertain: '' },
-  phone: { value: '(214) 555-0143', confidence: 0.96, uncertain: '' },
+  phone: { value: '(214) 867-5305', confidence: 0.96, uncertain: '' },
 });
 check('a sharp card needs no review', reviewQueue(clear).length === 0, JSON.stringify(reviewQueue(clear)));
 const blurry = normaliseCard({
@@ -68,7 +68,7 @@ check('no SMS consent is recorded by default', effectiveConsent(cy, 'sms').scope
 const smsBlocked = await canContact(cy, { channel: 'sms', purpose: 'promotional' });
 check('a marketing text is refused', smsBlocked.ok === false, smsBlocked.reason);
 const withPermission = await saveCards(
-  [normaliseCard({ name: { value: 'Jo Ok', confidence: 0.95 }, businessName: { value: 'Ok Co', confidence: 0.95 }, email: { value: 'jo@okco.com', confidence: 0.95 }, phone: { value: '(214) 555-0170', confidence: 0.95 } })],
+  [normaliseCard({ name: { value: 'Jo Ok', confidence: 0.95 }, businessName: { value: 'Ok Co', confidence: 0.95 }, email: { value: 'jo@okco.com', confidence: 0.95 }, phone: { value: '(214) 867-5306', confidence: 0.95 } })],
   { relationship: 'met_in_person', smsConsent: { granted: true, scope: 'one_time_followup', source: 'verbal at meeting', wording: 'said to text her the preview link' } }
 );
 const jo = await getContact(withPermission[0].contact.id);
@@ -93,11 +93,11 @@ check('column headers are matched to fields', map.name === 0 && map.businessName
 section('K9  import preview writes nothing and tells the truth about each row');
 const csv = [
   'Name,Company,Email,Phone',
-  'Dana Reyes,Reyes Roofing,dana@reyesroofing.com,214-555-0143',
+  'Dana Reyes,Reyes Roofing,dana@reyesroofing.com,214-867-5305',
   'Cy Vance,Vance HVAC,cy@vancehvac.com,469-555-0188',
   'Broken Row,No Contact Co,,',
   'Bad Email,Oops Co,not-an-email,',
-  'Dana Reyes,Reyes Roofing,dana@reyesroofing.com,214-555-0143',
+  'Dana Reyes,Reyes Roofing,dana@reyesroofing.com,214-867-5305',
 ].join('\n');
 const before = (await listContacts({ limit: 500 })).total;
 const pv = await previewCsv(csv, null);

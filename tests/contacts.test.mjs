@@ -48,14 +48,14 @@ check('a spam complaint blocks future sends', (await canContact({ ...bizOk, emai
 check('no address at all is refused', (await canContact({ id: 'z' }, { channel: 'email' })).ok === false);
 
 section('C5  SMS consent is never inferred from silence');
-const smsNo = { id: 's1', phone: E('+19725550100'), phoneType: 'mobile', consentLog: [] };
+const smsNo = { id: 's1', phone: E('+19728675301'), phoneType: 'mobile', consentLog: [] };
 check('no consent → no promotional text', (await canContact(smsNo, { channel: 'sms', purpose: 'promotional' })).ok === false);
 check('no consent → not even a one-time follow-up', (await canContact(smsNo, { channel: 'sms', purpose: 'one_time_followup' })).ok === false);
-const smsOneTime = { id: 's2', phone: E('+19725550101'), phoneType: 'mobile', consentLog: [makeConsentRecord({ scope: 'one_time_followup', channel: 'sms', source: 'card' })] };
+const smsOneTime = { id: 's2', phone: E('+19728675302'), phoneType: 'mobile', consentLog: [makeConsentRecord({ scope: 'one_time_followup', channel: 'sms', source: 'card' })] };
 check('one-time permission allows the promised follow-up', (await canContact(smsOneTime, { channel: 'sms', purpose: 'one_time_followup' })).ok === true);
 const r5 = await canContact(smsOneTime, { channel: 'sms', purpose: 'promotional' });
 check('…but NOT ongoing marketing', r5.ok === false && /written consent/.test(r5.reason), r5.reason);
-const landline = { id: 's3', phone: E('+19725550102'), phoneType: 'landline', consentLog: [makeConsentRecord({ scope: 'promotional', channel: 'sms', source: 'form' })] };
+const landline = { id: 's3', phone: E('+19728675303'), phoneType: 'landline', consentLog: [makeConsentRecord({ scope: 'promotional', channel: 'sms', source: 'form' })] };
 check('a landline is refused even with consent', (await canContact(landline, { channel: 'sms', purpose: 'promotional' })).ok === false);
 
 section('C6  dedup: exact match merges, same-business does NOT');
