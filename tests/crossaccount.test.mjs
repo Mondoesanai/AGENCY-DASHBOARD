@@ -47,7 +47,7 @@ await store.set(`changelog:${B}`, JSON.stringify([{ date: '2026-09-01', text: SE
 await store.set(`report:${B}:latest`, JSON.stringify({ month: '2026-09', note: SECRET_FACT }));
 
 const api = await startLocalApi();
-const get = (path) => fetch(api.origin + path);
+const get = (path) => api.get(path);
 const tokA = reportToken(A);
 const tokB = reportToken(B);
 
@@ -58,7 +58,7 @@ let rA = await get(`/api/public-report?slug=${A}&t=${tokA}`);
 let rB = await get(`/api/public-report?slug=${B}&t=${tokB}`);
 check('Acme\'s own link opens Acme\'s report', rA.status === 200, String(rA.status));
 check('Beta\'s own link opens Beta\'s report', rB.status === 200, String(rB.status));
-const bodyB = await rB.text();
+const bodyB = rB.text;
 check('and Beta\'s report really does contain Beta\'s private line', bodyB.includes(SECRET_FACT),
   'without this, every check below would pass vacuously');
 
@@ -66,7 +66,7 @@ check('and Beta\'s report really does contain Beta\'s private line', bodyB.inclu
 section('X2  one client\'s token must not open another client\'s report');
 let r = await get(`/api/public-report?slug=${B}&t=${tokA}`);
 check('Acme\'s token on Beta\'s slug is refused', r.status === 403, String(r.status));
-let body = await r.text();
+let body = r.text;
 check('and nothing of Beta\'s comes back with the refusal', !body.includes(SECRET_FACT), body.slice(0, 160));
 
 r = await get(`/api/public-report?slug=${A}&t=${tokB}`);
@@ -74,7 +74,7 @@ check('and the same the other way round', r.status === 403, String(r.status));
 
 r = await get(`/api/public-report?slug=${B}`);
 check('no token at all is refused', r.status === 403, String(r.status));
-body = await r.text();
+body = r.text;
 check('with nothing leaked', !body.includes(SECRET_FACT));
 
 r = await get(`/api/public-report?slug=${B}&t=`);
@@ -88,7 +88,7 @@ check('a token with one character added is refused', r.status === 403, String(r.
 section('X3  the slug cannot be used to reach anything but a site');
 for (const bad of ['../admin', '%2e%2e%2fadmin', 'report:xa-beta:latest', 'suppress:email:someone@example.com', '*']) {
   r = await get(`/api/public-report?slug=${encodeURIComponent(bad)}&t=${reportToken(bad)}`);
-  body = await r.text();
+  body = r.text;
   check(`"${bad}" does not return a report`, r.status !== 200, `${r.status} ${body.slice(0, 80)}`);
   check(`"${bad}" leaks nothing`, !body.includes(SECRET_FACT));
 }
@@ -100,24 +100,24 @@ check('a valid token for a non-existent client is a 404, not somebody else\'s da
 section('X4  the admin surface is not a way round the report link');
 // the owner's routes carry client data; a report token must not open them
 r = await get(`/api/admin?do=contacts-list&secret=${tokB}`);
-let j = await r.json();
+let j = r.json || {};
 check('a report token is not an admin secret', j.ok === false, JSON.stringify(j).slice(0, 100));
 r = await get(`/api/finances?secret=${tokB}`);
-const fin = await r.text();
+const fin = r.text;
 check('and it does not open the finances endpoint', r.status !== 200 || !/revenue|profit/i.test(fin), `${r.status} ${fin.slice(0, 80)}`);
 
 // the site feed turns out to be password-gated too, which is stronger than
 // the "public list" it is described as elsewhere — so that is what gets
 // asserted, rather than the weaker thing I assumed before running it
 r = await get('/api/sites');
-let sites = await r.text();
+let sites = r.text;
 check('the site list is itself gated', r.status === 401, `${r.status} ${sites.slice(0, 80)}`);
 check('and leaks nothing while refusing', !sites.includes(SECRET_FACT), sites.slice(0, 120));
 r = await get(`/api/sites?secret=${tokB}`);
-sites = await r.text();
+sites = r.text;
 check('a report token does not open it either', r.status !== 200, `${r.status} ${sites.slice(0, 80)}`);
 r = await get(`/api/sites?secret=${process.env.CRON_SECRET}`);
-sites = await r.text();
+sites = r.text;
 check('the owner\'s secret does open it', r.status === 200, String(r.status));
 // and it genuinely carries every client's changelog — which is correct for the
 // owner's own feed, and is exactly why the gate above has to hold. Asserting
@@ -137,9 +137,9 @@ section('X5  with no secret on a deployment, the link does NOT fall open');
   delete process.env.CRON_SECRET;
   process.env.VERCEL = '1';
   const deployed = await startLocalApi();
-  const noTok = await fetch(`${deployed.origin}/api/public-report?slug=${B}`);
-  const anyTok = await fetch(`${deployed.origin}/api/public-report?slug=${B}&t=anything`);
-  const noTokBody = await noTok.text();
+  const noTok = await deployed.get(`/api/public-report?slug=${B}`);
+  const anyTok = await deployed.get(`/api/public-report?slug=${B}&t=anything`);
+  const noTokBody = noTok.text;
   await deployed.stop();
   process.env.CRON_SECRET = saved;
   if (savedVercel === undefined) delete process.env.VERCEL; else process.env.VERCEL = savedVercel;

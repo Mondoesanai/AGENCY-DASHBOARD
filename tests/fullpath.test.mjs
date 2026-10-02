@@ -66,30 +66,29 @@ const sign = (rawBody) => {
   const t = Math.floor(Date.now() / 1000);
   return `t=${t},v1=${crypto.createHmac('sha256', process.env.OUTREACH_WEBHOOK_KEY).update(`${t}.${rawBody}`).digest('hex')}`;
 };
-const post = (path, body, headers = {}) =>
-  fetch(api.origin + path, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', ...headers },
-    body: typeof body === 'string' ? body : JSON.stringify(body),
-  });
+// over node:http, not fetch — fetch keeps a connection pool that outlives the
+// response and trips a libuv assertion when the process exits, and world.mjs
+// replaces globalThis.fetch for the whole suite, so a test using it would be
+// going through that stub to reach its own server
+const post = (path, body, headers = {}) => api.post(path, body, headers);
 
 // ---------------------------------------------------------------------------
 section('F1  the gate is enforced over HTTP, not just in the function');
-let r = await fetch(`${api.origin}/api/admin?do=contacts-list`);
-let j = await r.json();
+let r = await api.get(`/api/admin?do=contacts-list`);
+let j = r.json || {};
 check('an admin call with no secret is refused', r.status !== 200 || j.ok === false, `${r.status} ${JSON.stringify(j).slice(0, 80)}`);
 check('and the refusal does not leak data', !JSON.stringify(j).includes('@'), JSON.stringify(j).slice(0, 100));
 
-r = await fetch(`${api.origin}/api/admin?do=contacts-list&secret=wrong`);
-j = await r.json();
+r = await api.get(`/api/admin?do=contacts-list&secret=wrong`);
+j = r.json || {};
 check('a wrong secret is refused too', j.ok === false, JSON.stringify(j).slice(0, 80));
 
-r = await fetch(`${api.origin}/api/admin?do=contacts-list&secret=${SECRET}`);
-j = await r.json();
+r = await api.get(`/api/admin?do=contacts-list&secret=${SECRET}`);
+j = r.json || {};
 check('the right secret is accepted', j.ok === true, JSON.stringify(j).slice(0, 120));
 
 // the two routes that are deliberately public must still work without it
-j = await fetch(`${api.origin}/api/admin?do=automation-status`).then((x) => x.json());
+j = (await api.get(`/api/admin?do=automation-status`)).json || {};
 check('automation status stays readable without the password', j.ok === true);
 check('because the Overview tile has to be honest before anyone unlocks', !!j.automation);
 
@@ -105,9 +104,9 @@ check('because the Overview tile has to be honest before anyone unlocks', !!j.au
   delete process.env.CRON_SECRET;
   process.env.VERCEL = '1';
   const locked = await startLocalApi();
-  const a = await fetch(`${locked.origin}/api/admin?do=contacts-list`).then((x) => x.json());
-  const b = await fetch(`${locked.origin}/api/admin?do=contacts-list&secret=anything`).then((x) => x.json());
-  const open = await fetch(`${locked.origin}/api/admin?do=automation-status`).then((x) => x.json());
+  const a = (await locked.get(`/api/admin?do=contacts-list`)).json || {};
+  const b = (await locked.get(`/api/admin?do=contacts-list&secret=anything`)).json || {};
+  const open = (await locked.get(`/api/admin?do=automation-status`)).json || {};
   await locked.stop();
   process.env.CRON_SECRET = savedSecret;
   if (savedVercel === undefined) delete process.env.VERCEL; else process.env.VERCEL = savedVercel;
@@ -117,7 +116,7 @@ check('because the Overview tile has to be honest before anyone unlocks', !!j.au
   check('neither response leaks a contact', !JSON.stringify([a, b]).includes('@'));
   check('while the deliberately public route still answers', open.ok === true, JSON.stringify(open).slice(0, 80));
   check('and the admin gate is back to enforced afterwards',
-    (await fetch(`${api.origin}/api/admin?do=contacts-list&secret=${SECRET}`).then((x) => x.json())).ok === true);
+    ((await api.get(`/api/admin?do=contacts-list&secret=${SECRET}`)).json || {}).ok === true);
 }
 
 // ---------------------------------------------------------------------------
@@ -163,7 +162,7 @@ const created = await page.evaluate(async (email) => {
 check('the browser created a contact through the real route', created.body && created.body.ok === true, JSON.stringify(created).slice(0, 200));
 
 const emailOf = (c) => String((c && c.email && c.email.value) || (c && c.email) || '').toLowerCase();
-const viaApi = await fetch(`${api.origin}/api/admin?do=contacts-list&secret=${SECRET}`).then((x) => x.json());
+const viaApi = (await api.get(`/api/admin?do=contacts-list&secret=${SECRET}`)).json || {};
 const found = (viaApi.contacts || []).find((c) => emailOf(c) === PROSPECT);
 check('and it is readable back through the API', !!found, `${(viaApi.contacts || []).length} contacts`);
 check('the harness saw the browser make that call, not the test', api.called('contacts-save').length === 1,
@@ -225,7 +224,7 @@ hook = await post('/api/collect?hook=delivery', raw, { 'x-webhook-signature': 't
 check('a stale or wrong signature is refused', hook.status === 401, String(hook.status));
 
 hook = await post('/api/collect?hook=delivery', raw, { 'x-webhook-signature': sign(raw) });
-let hookBody = await hook.json();
+let hookBody = hook.json || {};
 check('a correctly signed complaint is accepted', hook.status === 200 && hookBody.ok === true, `${hook.status} ${JSON.stringify(hookBody)}`);
 
 // storage: a complaint suppresses globally, because they did not complain
@@ -241,7 +240,7 @@ check('the complaint reached the deliverability window', totals.complained >= 1,
 // the same event again must not be applied twice
 const before = Number(await store.get('delivery:count:complained').catch(() => 0)) || 0;
 hook = await post('/api/collect?hook=delivery', raw, { 'x-webhook-signature': sign(raw) });
-hookBody = await hook.json();
+hookBody = hook.json || {};
 const after = Number(await store.get('delivery:count:complained').catch(() => 0)) || 0;
 check('a replayed webhook returns 200 so the provider stops retrying', hook.status === 200, String(hook.status));
 check('but is NOT counted twice', after === before, `${before} -> ${after}`);
@@ -254,10 +253,8 @@ check('but is NOT counted twice', after === before, `${before} -> ${after}`);
   delete process.env.OUTREACH_WEBHOOK_KEY;
   const unkeyed = await startLocalApi();
   const evt = JSON.stringify({ id: 'fp-evt-unkeyed', type: 'complained', email: 'unkeyed@example.invalid', at: Date.now() });
-  const noKey = await fetch(`${unkeyed.origin}/api/collect?hook=delivery`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-webhook-signature': `t=${Math.floor(Date.now() / 1000)},v1=${'a'.repeat(64)}` },
-    body: evt,
+  const noKey = await unkeyed.post('/api/collect?hook=delivery', evt, {
+    'x-webhook-signature': `t=${Math.floor(Date.now() / 1000)},v1=${'a'.repeat(64)}`,
   });
   await unkeyed.stop();
   process.env.OUTREACH_WEBHOOK_KEY = savedKey;
@@ -328,8 +325,8 @@ check('no page errors across the whole journey', pageErrors.length === 0, pageEr
 section('F6  a handler that throws looks like a failure, not a refusal');
 // the harness must not flatten a crash into a tidy {ok:false}: if it does,
 // every future full-path test reads a 500 as a polite "no"
-r = await fetch(`${api.origin}/api/admin?do=definitely-not-a-route&secret=${SECRET}`);
-j = await r.json().catch(() => ({}));
+r = await api.get(`/api/admin?do=definitely-not-a-route&secret=${SECRET}`);
+j = r.json || {};
 check('an unknown action is refused, not silently ok', j.ok !== true, `${r.status} ${JSON.stringify(j).slice(0, 120)}`);
 const threw = api.calls.filter((c) => c.threw);
 check('nothing in this journey threw', threw.length === 0, JSON.stringify(threw.map((c) => `${c.query && c.query.do}: ${c.threw}`)));
@@ -342,8 +339,8 @@ check('nothing in this journey threw', threw.length === 0, JSON.stringify(threw.
   const crashy = await startLocalApi({
     extraRoutes: { '/api/boom': async () => { throw new Error('deliberate crash'); } },
   });
-  const boom = await fetch(`${crashy.origin}/api/boom`, { method: 'POST', body: '{}' });
-  const body = await boom.json().catch(() => ({}));
+  const boom = await crashy.post('/api/boom', {});
+  const body = boom.json || {};
   const logged = crashy.calls.find((c) => c.path === '/api/boom');
   await crashy.stop();
   check('a handler that throws answers 500, not 200', boom.status === 500, String(boom.status));

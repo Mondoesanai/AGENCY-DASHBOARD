@@ -16,7 +16,7 @@
 // The moment this file contains product logic it stops being a harness and
 // starts being a second implementation that can agree with a broken one.
 
-import { createServer } from 'node:http';
+import { createServer, request as httpRequest } from 'node:http';
 import { readFile, readdir } from 'node:fs/promises';
 import { extname, join, dirname } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -170,9 +170,66 @@ export async function startLocalApi({ port = 0, extraRoutes = {} } = {}) {
   await new Promise((resolve) => server.listen(port, resolve));
   const actual = server.address().port;
 
+  /**
+   * Make a request, over `node:http` rather than `fetch`.
+   *
+   * Two reasons, both learned the hard way. `fetch` keeps a connection pool
+   * that outlives the response, and a test that makes two requests and then
+   * calls `process.exit()` trips a libuv assertion while that pool is torn
+   * down — the file prints "28 passed, 0 failed" and exits 127, which is green
+   * output from a failing process. And `tests/world.mjs` replaces
+   * `globalThis.fetch` with a stub for the whole suite, so a test using
+   * `fetch` here is quietly going through that stub to reach its own server.
+   * This goes straight to the socket and closes it.
+   */
+  const request = (path, { method = 'GET', headers = {}, body = null } = {}) =>
+    new Promise((resolve, reject) => {
+      const payload = body == null ? null : (typeof body === 'string' ? body : JSON.stringify(body));
+      const req = httpRequest(
+        {
+          host: 'localhost',
+          port: actual,
+          path,
+          method,
+          agent: false, // no pooling: the socket closes with the response
+          headers: {
+            ...(payload == null ? {} : { 'content-length': Buffer.byteLength(payload) }),
+            ...headers,
+          },
+        },
+        (res) => {
+          const chunks = [];
+          res.on('data', (c) => chunks.push(c));
+          res.on('end', () => {
+            const text = Buffer.concat(chunks).toString('utf8');
+            let json = null;
+            try { json = JSON.parse(text); } catch { /* not every response is JSON */ }
+            resolve({ status: res.statusCode, headers: res.headers, text, json });
+          });
+        }
+      );
+      req.on('error', reject);
+      if (payload != null) req.write(payload);
+      req.end();
+    });
+
   return {
     port: actual,
     origin: `http://localhost:${actual}`,
+    request,
+    get: (path, opts) => request(path, opts),
+    post: (path, body, headers) =>
+      request(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(headers || {}) },
+        body,
+      }),
+    form: (path, fields) =>
+      request(path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams(fields).toString(),
+      }),
     calls,
     /** every API call the browser made, newest last */
     called: (name) => calls.filter((c) => c.query && c.query.do === name),
