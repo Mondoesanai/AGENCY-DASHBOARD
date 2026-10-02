@@ -165,6 +165,9 @@
   .fin-row.r5{grid-template-columns:1.7fr .75fr .7fr .95fr .75fr;}
 
   .overview{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:30px;}
+  /* R2.5 — a message in the tile grid became a one-word-per-line column. Any
+     state that is not tiles spans the whole row. */
+  .overview > .loading,.overview > .note{grid-column:1/-1;}
   .stat{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 15px 14px;}
   .stat .k{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;}
   .stat .v{font-family:"Fraunces",serif;font-size:25px;font-weight:600;margin-top:6px;}
@@ -2548,14 +2551,35 @@ let REV_CONFIGURED = true;
 // import, contacts with consent, discovery, and the sending gate. Nothing here
 // can send — the only send path is server-side and refuses unless outreach has
 // been switched on.
-let ACQ = { tab: 'contacts', loading: false };
+let ACQ = { tab: 'contacts', loading: false, load: {} };
 let acqMod = null;
 async function acqApi(q, body){
   const u=`/api/admin?do=${q}&secret=${encodeURIComponent(key())}`;
   const opt=body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'};
-  const r=await fetch(u,opt);
-  if(r.status===401){ toast('Enter your password first.','err'); return {ok:false,error:'locked'}; }
-  return r.json().catch(()=>({ok:false,error:'bad response'}));
+  try{
+    const r=await fetch(u,opt);
+    if(r.status===401){ toast('Enter your password first.','err'); return {ok:false,error:'locked'}; }
+    return await r.json().catch(()=>({ok:false,error:'the server sent something this page could not read'}));
+  }catch(e){
+    // R2.5 — a network failure used to surface as an empty list. It is an
+    // error, and the panel has to say so.
+    return {ok:false,error:'the request did not reach the server'};
+  }
+}
+/* R2.5 — record how each panel's load actually went, so "none" and "could not
+   read" stop looking the same. `ACQ.load[key]` is what panelState() reads. */
+async function acqLoad(key, q){
+  const j=await acqApi(q);
+  ACQ.load[key] = j && j.ok!==false ? { error:'', configured:j.configured } : { error:(j&&j.error)||'the request was refused' };
+  return j||{};
+}
+/* R2.5 — readiness is the one answer that must never default to "live". When
+   the check does not answer, `readiness` stays undefined and the screens say
+   so; the error is kept separately so the settings panel can name it. */
+async function loadReadiness(){
+  const r=await acqApi('outreach-readiness');
+  if(r&&r.ok!==false&&r.readiness){ ACQ.readiness=r.readiness; ACQ.readinessError=''; }
+  else { ACQ.readiness=undefined; ACQ.readinessError=(r&&r.error)||'the readiness check did not answer'; }
 }
 async function renderAcq(){
   const host=$('#view-acquisition'); if(!host||!acqMod) return;
@@ -2563,13 +2587,15 @@ async function renderAcq(){
   $('#acqTabs').onclick=(e)=>{ const b=e.target.closest('[data-acq]'); if(b){ ACQ.tab=b.dataset.acq; renderAcq(); } };
   const body=$('#acqBody');
   body.innerHTML=acqMod.renderBody(ACQ.tab, {...ACQ, loading:true});
-  if(ACQ.tab==='contacts'){ const j=await acqApi('contacts-list'); ACQ.contacts=j.contacts||[]; }
-  if(ACQ.tab==='prospects'){ const j=await acqApi('prospects-list'); ACQ.prospects=j.prospects||[]; ACQ.attribution=j.attribution; const s=await acqApi('settings-get'); ACQ.targetingStatus=s.settings?.targeting?.status; const c=await acqApi('campaigns-list'); ACQ.campaigns=c.campaigns||[]; }
-  if(ACQ.tab==='inbox'){ const j=await acqApi('replies-list'); ACQ.replies=j.replies||[]; const m=await acqApi('reply-mode'); ACQ.replyMode=m.mode; }
-  if(ACQ.tab==='campaigns'){ const c=await acqApi('campaigns-list'); ACQ.campaigns=c.campaigns||[]; const r=await acqApi('outreach-readiness'); ACQ.readiness=r.readiness; }
-  if(ACQ.tab==='settings'){ const j=await acqApi('settings-get'); ACQ.settings=j.settings; ACQ.pricingBlocker=j.pricingBlocker; const r=await acqApi('outreach-readiness'); ACQ.readiness=r.readiness; }
+  if(ACQ.tab==='contacts'){ const j=await acqLoad('contacts','contacts-list'); ACQ.contacts=j.contacts||[]; }
+  if(ACQ.tab==='prospects'){ const j=await acqLoad('prospects','prospects-list'); ACQ.prospects=j.prospects||[]; ACQ.attribution=j.attribution; const s=await acqApi('settings-get'); ACQ.targetingStatus=s.settings?.targeting?.status; const c=await acqLoad('campaigns','campaigns-list'); ACQ.campaigns=c.campaigns||[]; }
+  if(ACQ.tab==='inbox'){ const j=await acqLoad('inbox','replies-list'); ACQ.replies=j.replies||[]; const m=await acqApi('reply-mode'); ACQ.replyMode=m.mode; }
+  if(ACQ.tab==='campaigns'){ const c=await acqLoad('campaigns','campaigns-list'); ACQ.campaigns=c.campaigns||[]; await loadReadiness(); }
+  if(ACQ.tab==='settings'){ const j=await acqLoad('settings','settings-get'); ACQ.settings=j.settings; ACQ.pricingBlocker=j.pricingBlocker; await loadReadiness(); const b=await acqApi('budget-status'); ACQ.budget=b.ok?b.budget:null; ACQ.budgetError=b.ok?'':(b.error||'could not read the budget'); }
   body.innerHTML=acqMod.renderBody(ACQ.tab, {...ACQ, loading:false});
   wireAcq();
+  // "Try again" on any error panel re-runs the load for that tab
+  $('#acqBody').addEventListener('click',(e)=>{ if(e.target.closest('[data-retry]')) renderAcq(); });
 }
 function wireAcq(){
   $('#acqDiscoverBtn')?.addEventListener('click', async (e)=>{

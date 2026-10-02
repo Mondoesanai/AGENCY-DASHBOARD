@@ -82,6 +82,12 @@ export default async function handler(req, res) {
     // ---- Acquisition (R3 contacts, R4 discovery, R6 sending readiness) ----
     case 'settings-get':
       return res.status(200).json({ ok: true, settings: await getSettings(), pricingBlocker: pricingBlocker(await getSettings()) });
+    // R8.8 — the budget state has been computed since it was built and shown
+    // nowhere. Period, spent, reserved, remaining, next reset, both windows.
+    case 'budget-status': {
+      const { budgetStatus } = await import('../lib/budget.js');
+      return res.status(200).json({ ok: true, budget: await budgetStatus() });
+    }
     case 'settings-save': {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const saved = await saveSettings(body.patch || body);

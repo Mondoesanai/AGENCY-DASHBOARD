@@ -43,10 +43,30 @@ export const CAMPAIGN_TYPE_LABEL = Object.freeze({
   'warm-card-followup': 'Warm — card / networking follow-up',
 });
 
+import { renderPanel, renderSuccess, PANEL } from './states.js';
+
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 const val = (f) => (f && typeof f === 'object' && 'value' in f ? f.value : f);
+
+/**
+ * R2.5 — which state a panel is in, from what the host recorded about the last
+ * fetch for it. `state.load[key]` is set by renderAcq; its absence means the
+ * host has not reported anything, in which case an empty array really is empty.
+ *
+ * The case that matters: loaded === false with an error. Before this, every
+ * panel turned a failed request into an empty list.
+ */
+export function panelState(state, key, rows) {
+  if (state.loading) return { status: PANEL.LOADING, error: '' };
+  const rec = state.load && state.load[key];
+  if (rec && rec.error) {
+    return { status: /locked|password|401/i.test(rec.error) ? PANEL.LOCKED : PANEL.ERROR, error: rec.error };
+  }
+  if (rec && rec.configured === false) return { status: PANEL.DISCONNECTED, error: '' };
+  return { status: (rows || []).length ? PANEL.READY : PANEL.EMPTY, error: '' };
+}
 
 /** A field a human still needs to look at is marked, not quietly used. */
 export function fieldCell(f) {
@@ -61,13 +81,15 @@ export function fieldCell(f) {
 
 export function renderContacts(state) {
   const rows = state.contacts || [];
-  if (state.loading) return '<div class="loading">Loading contacts…</div>';
-  if (!rows.length) {
-    return `<div class="note" style="line-height:1.7">
-      <b>No contacts yet.</b> This list fills from the <b>Add contacts</b> tab — scan business cards,
-      import a CSV, or add someone by hand. Nothing is imported automatically.
-    </div>`;
-  }
+  // R2.5 — a failed load used to render "No contacts yet", which is a false
+  // statement in a calm voice. It now has to say it could not read them.
+  const shell = renderPanel(panelState(state, 'contacts', rows), {
+    thing: 'contacts',
+    retryKey: 'contacts',
+    empty: `<b>No contacts yet.</b> This list fills from the <b>Add contacts</b> tab — scan business cards,
+      import a CSV, or add someone by hand. Nothing is imported automatically.`,
+  });
+  if (shell) return shell;
   const body = rows
     .map((c) => {
       const opted = c.optedOutAt || c.emailStatus === 'complained';
@@ -201,7 +223,10 @@ export const SEGMENT_LABEL = Object.freeze({
 
 export function renderProspects(state) {
   const rows = state.prospects || [];
-  if (state.loading) return '<div class="loading">Loading prospects…</div>';
+  const st = panelState(state, 'prospects', rows);
+  if (st.status === PANEL.LOADING || st.status === PANEL.ERROR || st.status === PANEL.LOCKED) {
+    return renderPanel(st, { thing: 'prospects', retryKey: 'prospects' });
+  }
 
   const head = `<div class="note" style="line-height:1.7">
     Discovery reads <b>OpenStreetMap</b> and checks whether each business has a working website.
@@ -212,8 +237,13 @@ export function renderProspects(state) {
     <span class="faint" id="acqDiscoverNote"></span></div>`;
 
   if (!rows.length) {
-    return `${head}<div class="note"><b>Nothing searched yet.</b> This is empty because discovery has
-      not run, which is not the same as there being no businesses to find.</div>`;
+    // the head carries the "Find businesses" button, so the empty state keeps
+    // it rather than replacing the only way out of being empty
+    return `${head}${renderPanel({ status: PANEL.EMPTY }, {
+      thing: 'prospects',
+      empty: `<b>Nothing searched yet.</b> This is empty because discovery has
+        not run, which is not the same as there being no businesses to find.`,
+    })}`;
   }
 
   const counts = rows.reduce((m, p) => { const s = p.qualification?.segment || 'uncertain'; m[s] = (m[s] || 0) + 1; return m; }, {});
@@ -264,7 +294,16 @@ export function renderProspects(state) {
 
 export function renderAcqSettings(state) {
   const s = state.settings;
-  if (!s) return '<div class="loading">Loading settings…</div>';
+  // R2.5 — settings that failed to load used to sit on "Loading settings…"
+  // forever, which is a spinner telling the owner a lie about what is happening.
+  if (!s) {
+    const sts = panelState(state, 'settings', []);
+    return renderPanel(sts.status === PANEL.EMPTY ? { status: PANEL.LOADING } : sts, {
+      thing: 'settings',
+      retryKey: 'settings',
+      loading: 'Loading settings…',
+    });
+  }
   const p = s.pricing;
   const t = s.targeting;
 
@@ -302,11 +341,86 @@ export function renderAcqSettings(state) {
 
   <div class="acq-panel">
     <h3>Sending</h3>
-    ${renderReadiness(state.readiness)}
+    ${renderReadiness(state.readiness, state.readinessError)}
+  </div>
+
+  <div class="acq-panel">
+    <h3>Spending</h3>
+    ${renderBudget(state.budget, state.budgetError)}
   </div>`;
 }
 
-export function renderReadiness(r) {
+const money = (cents) => (cents == null ? '—' : `$${(cents / 100).toFixed(2)}`);
+
+/**
+ * R8.8 — period, spent, reserved, remaining, next reset, for both windows.
+ *
+ * The thing this has to get across is that the two rows are NOT two budgets.
+ * A dollar spent appears in both, because they are two windows over the same
+ * money; adding them together would double count. The screen says so, rather
+ * than leaving the owner to work out why the numbers do not sum.
+ */
+export function renderBudget(b, error = '') {
+  if (error) {
+    return `<div class="note neg"><b>Could not read the spending state.</b> ${esc(error)}
+      <br />This is not a report of zero spending — nothing could be read.
+      <button class="btn sm ghost" data-retry="budget">Try again</button></div>`;
+  }
+  if (!b) return '<div class="loading">Reading the spending state…</div>';
+
+  const row = (w) => {
+    const unlimited = !w.enforced;
+    return `<tr>
+      <td><b>${esc(w.period === 'week' ? 'This week' : 'This month')}</b><div class="faint">${esc(w.key)}</div></td>
+      <td>${unlimited ? '<span class="faint">no limit set</span>' : money(w.limitCents)}</td>
+      <td>${money(w.spentCents)}</td>
+      <td>${money(w.reservedCents)}<div class="faint">jobs still running</div></td>
+      <td>${unlimited ? '<span class="faint">—</span>' : `<b>${money(w.remainingCents)}</b>`}</td>
+      <td>${esc(resetWords(w.resetsAt))}</td>
+    </tr>`;
+  };
+
+  const binding = b.bindingPeriod
+    ? `<div class="note">The <b>${esc(b.bindingPeriod === 'week' ? 'weekly' : 'monthly')}</b> limit is the one actually stopping work right now.</div>`
+    : `<div class="note warn"><b>No limit is set,</b> so nothing is capping what this app chooses to spend.
+       Spending is still recorded below — this is not a claim that nothing is being spent.</div>`;
+
+  return `
+    ${b.paused ? '<div class="note warn"><b>Automation is paused.</b> Nothing new will be started or charged until it is resumed.</div>' : ''}
+    ${binding}
+    <table class="acq-table">
+      <thead><tr><th>Window</th><th>Limit</th><th>Spent</th><th>Reserved</th><th>Remaining</th><th>Resets</th></tr></thead>
+      <tbody>${row(b.week)}${row(b.month)}</tbody>
+    </table>
+    <p class="note faint">These two rows are <b>two windows over the same money</b>, not two budgets —
+      a dollar spent today appears in both. Do not add them together.
+      ${b.week.conversationReserveCents ? `${money(b.week.conversationReserveCents)} of the weekly limit is held back for live conversations, so a reply never fails for want of budget.` : ''}</p>
+    <p class="note faint">${esc(b.uncappableNote || '')}</p>`;
+}
+
+/** "in 3 days" reads better than an ISO string, but keep the date too. */
+export function resetWords(iso, now = Date.now()) {
+  const t = Date.parse(iso || '');
+  if (Number.isNaN(t)) return 'unknown';
+  const mins = Math.round((t - now) / 60000);
+  if (mins <= 0) return 'now';
+  if (mins < 60) return `in ${mins} min`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 48) return `in ${hrs} hour${hrs === 1 ? '' : 's'}`;
+  return `in ${Math.round(hrs / 24)} days`;
+}
+
+export function renderReadiness(r, error = '') {
+  // R2.5 — a readiness check that failed used to sit on "Checking…" forever,
+  // which is a spinner claiming work is in progress when nothing is happening.
+  // It matters more here than elsewhere: this panel is the one that says
+  // whether outreach can send.
+  if (error) {
+    return `<div class="note neg"><b>Could not check whether sending is possible.</b> ${esc(error)}
+      <br />Treat this as unknown, not as ready — nothing is being sent either way, because sending
+      is refused server-side unless every check passes.
+      <button class="btn sm ghost" data-retry="readiness">Try again</button></div>`;
+  }
   if (!r) return '<div class="loading">Checking…</div>';
   const pill = r.ready
     ? '<span class="pill sm">ready</span>'
@@ -337,18 +451,30 @@ export function renderShell(activeTab) {
 // ---------------------------------------------------------------------------
 
 export function renderCampaigns(state) {
-  if (state.loading) return '<div class="loading">Loading campaigns…</div>';
   const list = state.campaigns || [];
+  const stc = panelState(state, 'campaigns', list);
+  if (stc.status === PANEL.LOADING || stc.status === PANEL.ERROR || stc.status === PANEL.LOCKED) {
+    return renderPanel(stc, { thing: 'campaigns', retryKey: 'campaigns' });
+  }
   const r = state.readiness;
 
   // The sending state belongs at the top of this screen, not buried in
   // settings: whether anything can actually go out is the first thing an
   // operator needs to know before building a campaign.
-  const gate = r && !r.ready
-    ? `<div class="note warn" style="line-height:1.7"><b>Nothing can be sent yet.</b>
+  // R2.5 — the worst state this screen could be in. When the readiness check
+  // has not answered, `r` is undefined, and this used to fall through to
+  // "Sending is live." — a false all-clear on the most consequential sentence
+  // in the app. Unknown is now its own answer.
+  const gate = !r
+    ? `<div class="note warn" style="line-height:1.7"><b>Whether anything can be sent is not known right now</b> —
+         the readiness check has not answered. This is not a green light.
+         Nothing goes out regardless: sending is refused server-side unless every check passes.
+         <button class="btn sm ghost" data-retry="readiness">Check again</button></div>`
+    : !r.ready
+      ? `<div class="note warn" style="line-height:1.7"><b>Nothing can be sent yet.</b>
          ${r.blockers.map((b) => esc(b.text)).join(' ')}
          <br />You can still build and preview campaigns — composing is safe, sending is what is gated.</div>`
-    : '<div class="note">Sending is live.</div>';
+      : '<div class="note">Sending is live.</div>';
 
   const preview = state.campaignPreview;
   const previewBlock = !preview
@@ -412,8 +538,11 @@ const DRAFT_STATUS_LABEL = Object.freeze({
 });
 
 export function renderInbox(state) {
-  if (state.loading) return '<div class="loading">Loading replies…</div>';
   const rows = state.replies || [];
+  const sti = panelState(state, 'inbox', rows);
+  if (sti.status === PANEL.LOADING || sti.status === PANEL.ERROR || sti.status === PANEL.LOCKED) {
+    return renderPanel(sti, { thing: 'replies', retryKey: 'inbox' });
+  }
   const mode = state.replyMode || 'draft-only';
 
   const modeBar = `<div class="note ${mode === 'automatic' ? 'warn' : ''}" style="line-height:1.7">
@@ -426,8 +555,11 @@ export function renderInbox(state) {
     </div>`;
 
   if (!rows.length) {
-    return `${modeBar}<div class="note"><b>No replies yet.</b> This fills as people answer. A reply
-      pauses that contact's follow-ups the moment it arrives, before anything else happens.</div>`;
+    return `${modeBar}${renderPanel(sti, {
+      thing: 'replies',
+      empty: `<b>No replies yet.</b> This fills as people answer. A reply
+        pauses that contact's follow-ups the moment it arrives, before anything else happens.`,
+    })}`;
   }
 
   const attention = rows.filter((r) => !r.handled && NEEDS_ATTENTION.has(r.kind));

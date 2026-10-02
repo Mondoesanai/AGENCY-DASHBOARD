@@ -10,6 +10,8 @@
 // their own, with the state machine's blocked reason rendered where the person
 // who can fix it will actually look (R1.5, which until now had no UI).
 
+import { renderPanel, renderRecovery, classify, PANEL } from './states.js';
+
 const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -37,20 +39,32 @@ export function needsOwner(tickets) {
 }
 
 export function renderClientRevisions(state) {
-  const { tickets = [], slug, loading = false, revisionsConfigured = true } = state;
-
-  if (loading) return '<div class="loading">Loading this client\'s requests…</div>';
-
-  if (!revisionsConfigured) {
-    return `<div class="note">The revision inbox is not connected, so change requests from this client
-      are not being picked up automatically. Nothing has been missed — there is simply nothing watching yet.</div>`;
-  }
-
+  const { tickets = [], slug, loading = false, revisionsConfigured = true, error = '' } = state;
   const mine = ticketsForSlug(tickets, slug);
-  if (!mine.length) {
-    return `<div class="note"><b>No change requests from this client.</b> When they email one in, it
-      appears here and on the Automations queue. An empty list means none have arrived — not that any were lost.</div>`;
-  }
+
+  // R2.5 — every non-ready state goes through the one shared shell. The error
+  // case is new: a failed revisions fetch used to render "No change requests
+  // from this client", which is a false statement in a reassuring voice.
+  const st = loading
+    ? { status: PANEL.LOADING }
+    : error
+      ? { status: PANEL.ERROR, error }
+      : !revisionsConfigured
+        ? { status: PANEL.DISCONNECTED }
+        : !mine.length
+          ? { status: PANEL.EMPTY }
+          : { status: PANEL.READY };
+
+  const shell = renderPanel(st, {
+    thing: 'this client’s change requests',
+    retryKey: 'client-revisions',
+    loading: "Loading this client's requests…",
+    disconnected: `The revision inbox is not connected, so change requests from this client
+      are not being picked up automatically. Nothing has been missed — there is simply nothing watching yet.`,
+    empty: `<b>No change requests from this client.</b> When they email one in, it
+      appears here and on the Automations queue. An empty list means none have arrived — not that any were lost.`,
+  });
+  if (shell) return shell;
 
   const stuck = needsOwner(mine);
   const head = stuck.length
@@ -64,12 +78,16 @@ export function renderClientRevisions(state) {
       const isStuck = t.state === 'blocked' || t.needsOwner;
       // R1.5 finally rendered: the actionable recovery text, next to the thing
       // that is stuck, for the person who can actually fix it.
+      // R2.5 — one implementation of the recovery block, shared with every
+      // other surface that shows a blocked item, so the wording cannot drift.
       const fix = t.blockedBy
-        ? `<div class="note warn" style="margin-top:6px">
-             <b>${esc(t.blockedBy.label || 'Needs attention')}</b>
-             ${t.blockedBy.hint ? `<br />${esc(t.blockedBy.hint)}` : ''}
-             ${t.blockedBy.action ? `<br /><button class="btn sm" data-fix="${esc(t.blockedBy.action)}" data-slug="${esc(slug)}">${esc(fixLabel(t.blockedBy.action))}</button>` : ''}
-           </div>`
+        ? renderRecovery({
+            label: t.blockedBy.label,
+            hint: t.blockedBy.hint,
+            action: t.blockedBy.action,
+            slug,
+            actionLabel: fixLabel(t.blockedBy.action),
+          })
         : '';
       return `<div class="acq-card">
         <div class="acq-card-h">
