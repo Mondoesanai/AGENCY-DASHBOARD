@@ -38,11 +38,20 @@ const site = (over = {}) => ({
 });
 const ticket = (over = {}) => ({ slug: 'acme', state: 'queued', at: NOW, summary: 'change the phone number', ...over });
 /** Everything loaded, nothing wrong — the baseline every check below moves off. */
+const worker = (over = {}) => ({ id: 'tick', label: 'Site improvements', status: 'ok', text: 'Last ran 2 minutes ago.', lastAt: NOW - 120e3, ...over });
+const healthyAutomation = () => ({
+  pause: { known: true, paused: false, at: null, by: '', reason: '' },
+  workers: [worker(), worker({ id: 'jobs', label: 'Outreach queue' })],
+  worst: 'ok',
+  anyUnknown: false,
+  allOk: true,
+});
 const clean = (over = {}) => ({
   sites: [site()],
   portfolio: {},
   tickets: [],
   replies: [],
+  automation: healthyAutomation(),
   generatedAt: NOW - 60e3,
   now: NOW,
   ...over,
@@ -294,6 +303,36 @@ root.click(target('[data-attn]', { dataset: { attn: 'no-such-item' } }));
 check('an id with no item does nothing rather than throwing', go.calls.length === 1);
 check('itemById finds a real one', itemById(r, 'no-repo:acme')?.kind === 'no-repo');
 check('and returns null for a stranger', itemById(r, 'nope') === null);
+
+// ---------------------------------------------------------------------------
+section('A12  a stopped worker is the first thing the owner sees (R2.6)');
+r = buildAttention(
+  clean({
+    tickets: [ticket({ state: 'blocked', blockedBy: { action: 'link-repo', label: 'Link it' } })],
+    automation: { ...healthyAutomation(), allOk: false, workers: [worker({ status: 'stalled', text: 'Last ran 2 days ago — well past its schedule.' })] },
+  })
+);
+check('a stalled worker is listed', r.items.some((i) => i.kind === 'automation-stalled'), JSON.stringify(r.items.map((i) => i.kind)));
+check('it needs the owner', r.items[0].severity === 'act');
+check('and outranks even a stuck client request', r.items[0].kind === 'automation-stalled', r.items[0].kind);
+check('because nothing else can resolve while it is down', /Nothing it does is happening/.test(r.items[0].detail));
+check('it carries the real silence, not a schedule', /2 days ago/.test(r.items[0].detail));
+
+r = buildAttention(clean({ automation: { ...healthyAutomation(), allOk: false, workers: [worker({ status: 'never', label: 'Outreach queue', text: 'Has never checked in.' })] } }));
+check('a worker that has never run is also flagged', r.items[0].kind === 'automation-stalled' && /never run/.test(r.items[0].title), r.items[0].title);
+
+r = buildAttention(clean({ automation: { ...healthyAutomation(), allOk: false, workers: [worker({ status: 'slow' })] } }));
+check('merely slow is not worth interrupting the owner', r.items.length === 0, JSON.stringify(r.items));
+
+r = buildAttention(clean({ automation: { ...healthyAutomation(), pause: { known: true, paused: true, by: 'owner', at: NOW - 3600e3, reason: '' } } }));
+check('a pause is reported so it is not forgotten', r.items[0].kind === 'automation-paused', JSON.stringify(r.items));
+check('but as a thing to look at, not an emergency', r.items[0].severity === 'watch');
+check('and says queued work is waiting, not lost', /waiting, not lost/.test(r.items[0].detail));
+check('a paused automation does not also report its workers as stalled', r.items.filter((i) => i.kind === 'automation-stalled').length === 0);
+
+r = buildAttention({ sites: [site()], tickets: [], replies: [], now: NOW });
+check('automation not loaded is listed as unchecked, not assumed healthy', r.notChecked.includes('automation'), JSON.stringify(r.notChecked));
+check('and that blocks the all-clear', r.allClear === false);
 
 // ---------------------------------------------------------------------------
 section('A11  client-supplied text cannot inject');

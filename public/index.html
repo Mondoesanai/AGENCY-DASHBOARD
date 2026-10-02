@@ -80,6 +80,16 @@
   .attn-d{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.55;}
   .attn-go{flex:0 0 auto;align-self:center;}
   .attn-more{margin:2px 0 0;}
+  /* R2.6 — one row per worker. The status word carries the meaning; the
+     left edge is only a second signal, never the only one. */
+  .auto-row{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line);
+    border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;}
+  .auto-row.tone-good{border-left-color:var(--green-br);}
+  .auto-row.tone-warn{border-left-color:var(--warn);}
+  .auto-row.tone-neg{border-left-color:var(--neg);}
+  .auto-h{display:flex;align-items:center;gap:9px;font-size:13.5px;}
+  .auto-t{font-size:13px;margin-top:4px;}
+  .auto-row .faint{font-size:12px;margin-top:4px;line-height:1.55;}
   .glance-h{font:600 12px/1 "Fraunces",serif;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0 0 10px;}
   .glance-h span{text-transform:none;letter-spacing:0;font-family:inherit;font-weight:400;font-size:12px;color:var(--faint);margin-left:8px;}
   @media(max-width:560px){
@@ -409,6 +419,8 @@
 
   <section id="view-automations" hidden>
     <div class="section-h"><h2>Automations</h2></div>
+    <!-- R2.6 — what is actually running, from real check-ins, plus the pause. -->
+    <div id="autoPanel"></div>
     <div id="revWidget"></div>
   </section>
 
@@ -1176,7 +1188,16 @@ function startRevPoll(){
 
 /* ---------- System health — proactive self-check, no password, always visible when something's actually wrong ---------- */
 let SYS_TICK=0;
-function autoRanText(){ return SYS_TICK?`ran ${agoStr(SYS_TICK)}`:'starting…'; }
+/* R2.6 — the tile used to read "starting…" whenever no tick had ever been
+   recorded, which is a reassuring label for a worker that may never have run.
+   It now reports what the heartbeats actually say, including paused and
+   stalled, and falls back to the raw tick time only while the status call is
+   still in flight. */
+function autoRanText(){
+  if(AUTO_MOD&&AUTO_STATUS){ return AUTO_MOD.headline(AUTO_STATUS).word; }
+  if(AUTO_ERROR) return 'cannot tell';
+  return SYS_TICK?`ran ${agoStr(SYS_TICK)}`:'checking…';
+}
 function renderSysPanel(){
   const panel=$('#sysPanel'); if(!panel) return;
   const list=(SYS_LAST&&SYS_LAST.ok&&SYS_LAST.issues)||[];
@@ -2506,6 +2527,8 @@ function renderOverviewAttention(){
     // never inferred from "not yet"
     tickets: REV_LOADED ? REV_TICKETS : undefined,
     replies: ATT_REPLIES || undefined,
+    // R2.6 — a stopped worker belongs at the top of what needs you
+    automation: AUTO_STATUS || undefined,
     generatedAt: STATE.generatedAt,
   });
   host.innerHTML=ATT.renderAttention(ATT_RESULT,{expanded:ATT_EXPANDED});
@@ -2545,6 +2568,46 @@ function RENDER_REVISIONS(slug){
   return CW.renderClientRevisions({ tickets: REV_TICKETS, slug, revisionsConfigured: REV_CONFIGURED });
 }
 let REV_CONFIGURED = true;
+
+/* ---------- R2.6 automation status + pause ---------------------------------
+   The status is read from the workers' own check-ins. Pausing is gated behind
+   the password because it changes what the machine does; reading is not,
+   because the Overview tile has to be honest before anyone unlocks. */
+let AUTO_MOD = null, AUTO_STATUS = null, AUTO_ERROR = '', AUTO_BUSY = false;
+import('/automation.js').then((m)=>{ AUTO_MOD=m; renderAutomationPanel(); }).catch(()=>{ AUTO_MOD=null; });
+
+async function loadAutomation(){
+  let j=null;
+  try{ j=await fetch('/api/admin?do=automation-status',{cache:'no-store'}).then(r=>r.json()); }catch{ j=null; }
+  if(j&&j.ok&&j.automation){ AUTO_STATUS=j.automation; AUTO_ERROR=''; }
+  else { AUTO_STATUS=null; AUTO_ERROR=(j&&j.error)||'the status check did not answer'; }
+  renderAutomationPanel();
+  // the Overview tile reads from the same answer, so the two cannot disagree
+  const t=$('#nextSeoVal'); if(t) t.textContent=autoRanText();
+  renderOverviewAttention(); // a stopped worker belongs in "what needs you"
+}
+
+function renderAutomationPanel(){
+  const host=$('#autoPanel'); if(!host||!AUTO_MOD) return;
+  host.innerHTML=AUTO_MOD.renderAutomation(AUTO_STATUS,{error:AUTO_ERROR,busy:AUTO_BUSY});
+  AUTO_MOD.wireAutomation(host,{
+    pause:()=>setAutomationPaused(true),
+    resume:()=>setAutomationPaused(false),
+    retry:()=>loadAutomation(),
+  });
+}
+
+async function setAutomationPaused(paused){
+  const k=needKey(); if(!k) return;
+  if(paused && !confirm('Pause automation?\n\nNew site work and outreach sending stop. Replies, opt-outs, client reports and billing emails carry on.')) return;
+  AUTO_BUSY=true; renderAutomationPanel();
+  const j=await acqApi('automation-pause',{paused,reason:paused?'paused from the dashboard':''});
+  AUTO_BUSY=false;
+  if(j&&j.ok&&j.automation){ AUTO_STATUS=j.automation; AUTO_ERROR=''; }
+  else { AUTO_ERROR=(j&&j.error)||'the pause did not take effect'; }
+  renderAutomationPanel();
+  const t=$('#nextSeoVal'); if(t) t.textContent=autoRanText();
+}
 
 /* ---------- R2.3 Acquisition section ---------- */
 // Screens over backends that already existed but had no way in: card OCR, CSV
@@ -2706,7 +2769,10 @@ import('/nav.js')
   .then(async (nav) => {
     acqMod = await import('/acquisition.js').catch(() => null);
     goView = nav.initNav(document, {
-      onChange: (v) => { if (v === 'acquisition' && acqMod) renderAcq(); },
+      onChange: (v) => {
+        if (v === 'acquisition' && acqMod) renderAcq();
+        if (v === 'automations') loadAutomation(); // refresh the check-ins on arrival
+      },
     });
     window.IWgo = (v) => (goView ? goView(v) : null);
   })
@@ -2726,6 +2792,7 @@ loadSysHealth();
   await loadRevWidget();
   startRevPoll();
   loadAttentionReplies(); // only does anything once a password is present
+  loadAutomation();           // R2.6 — real check-ins for the tile and the panel
 })();
 </script>
 </body>

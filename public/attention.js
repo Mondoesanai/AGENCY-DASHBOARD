@@ -39,11 +39,15 @@ const nameOf = (s) => s?.name || s?.client || s?.slug || 'a client';
 // client is already waiting on comes before chasing new business, and a cause
 // ("no repository linked") comes before the symptom it will produce.
 export const KIND_RANK = Object.freeze({
-  'request-stuck': 0,
-  'no-repo': 1,
-  'report-overdue': 2,
-  'trial-ending': 3,
-  'reply-waiting': 4,
+  // a worker that has stopped is above everything: while it is down, none of
+  // the other items can resolve themselves either
+  'automation-stalled': 0,
+  'request-stuck': 1,
+  'no-repo': 2,
+  'report-overdue': 3,
+  'trial-ending': 4,
+  'reply-waiting': 5,
+  'automation-paused': 9,
   'request-retrying': 10,
   'audit-failed': 11,
   'traffic-drop': 12,
@@ -226,6 +230,36 @@ export function buildAttention(input = {}) {
     }
   } else {
     notChecked.push('client sites');
+  }
+
+  // ---- the automation's own check-ins (R2.6) -------------------------------
+  if (input.automation) {
+    checked.push('automation');
+    const a = input.automation;
+    if (a.pause?.paused) {
+      items.push({
+        id: 'automation:paused',
+        kind: 'automation-paused',
+        severity: 'watch',
+        title: 'Automation is paused',
+        detail: 'You paused it, so no new site work or outreach is being started. Queued work is waiting, not lost.',
+        action: { label: 'Open automations', view: 'automations' },
+      });
+    } else {
+      for (const w of a.workers || []) {
+        if (w.status !== 'stalled' && w.status !== 'never') continue;
+        items.push({
+          id: `automation:${w.id}`,
+          kind: 'automation-stalled',
+          severity: 'act',
+          title: `${w.label} has ${w.status === 'never' ? 'never run' : 'stopped running'}`,
+          detail: `${w.text} Nothing it does is happening until this is fixed.`,
+          action: { label: 'Open automations', view: 'automations' },
+        });
+      }
+    }
+  } else {
+    notChecked.push('automation');
   }
 
   // ---- the feed itself -----------------------------------------------------

@@ -59,6 +59,14 @@ export default async function handler(req, res) {
     } catch { /* optional */ }
     return res.status(200).json(h);
   }
+  // R2.6 — automation status is last-ran timestamps and schedule names. Same
+  // trust level as system-health above (no client data, no money), and it has
+  // to load without a password or the Overview tile would show "unknown" to
+  // anyone who has not unlocked. PAUSING, which changes behaviour, is gated.
+  if (req.query.do === 'automation-status') {
+    const { automationStatus } = await import('../lib/heartbeat.js');
+    return res.status(200).json({ ok: true, automation: await automationStatus() });
+  }
   // GitHub throttles scheduled workflows hard (a "every 10 min" job actually
   // ran every 4-6 hours), so the automation can't depend on one scheduler.
   // This lets anything that's alive — the dashboard open in a browser, an
@@ -84,6 +92,13 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, settings: await getSettings(), pricingBlocker: pricingBlocker(await getSettings()) });
     // R8.8 — the budget state has been computed since it was built and shown
     // nowhere. Period, spent, reserved, remaining, next reset, both windows.
+    // R2.6 — the pause control. Gated: it changes what the machine does.
+    case 'automation-pause': {
+      const { setPaused, automationStatus } = await import('../lib/heartbeat.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      await setPaused({ paused: body.paused === true, by: 'owner', reason: body.reason || '' });
+      return res.status(200).json({ ok: true, automation: await automationStatus() });
+    }
     case 'budget-status': {
       const { budgetStatus } = await import('../lib/budget.js');
       return res.status(200).json({ ok: true, budget: await budgetStatus() });
