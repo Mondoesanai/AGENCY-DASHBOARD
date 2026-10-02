@@ -279,7 +279,7 @@ and never display a mocked integration as connected (R4.4).
 | R12.4 | Load test: thousands of contacts, concurrent jobs, webhook bursts, large imports, card batches | `[x]` `tests/load.test.mjs` — all five measured by store-operation count, not wall-clock |
 | R12.5 | Accelerated simulated 7-day operation, labelled as simulated | `[x]` `tests/sevenday.test.mjs` — five invariants checked 29 times across seven simulated days, and the run prints that it is **simulated** and that no real time elapsed |
 | R12.6 | Real 7-day staging soak **procedure** prepared (7 real days claimed only after they elapse) | `[ ]` |
-| R12.7 | Build, lint, integration and browser checks, desktop + mobile | `[ ]` |
+| R12.7 | Build, lint, integration and browser checks, desktop + mobile | `[x]` `node tests/preflight.mjs` — one gate: parse, import, project rules, the suite, and the real page at 1440×900 and 390×844 |
 | R12.8 | A green build is never equated with functional verification | `[x]` enforced by the L0–L4 levels in `VERIFICATION_REPORT.md` |
 
 ---
@@ -291,11 +291,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 115 |
+| `[x]` built **and** verified | 116 |
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 2 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 2 |
+| `[ ]` not started | 1 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -453,4 +453,11 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
   A second control found the same shape of problem in the outreach-off invariant: with an empty environment the gate refuses for five other reasons too, so **deleting the outreach switch entirely left the test green**. The invariant now requires the refusal to cite `outreach-off` specifically.
 
   Eight negative controls, all biting after those two fixes. And the label is part of the deliverable rather than a comment: the run prints that it is a simulation, that no real time elapsed, and that no real message was sent, and the test asserts the week ran on the controlled clock rather than the wall clock. **This is not R12.6.** A seven-day simulation is not a seven-day soak, that one needs seven actual days, and nothing here may be read as having done it.
+- **2026-10-02** — R12.7. The honest problem with this requirement is that this project has **no bundler and no linter**, so "build" and "lint" could easily have become a green tick over nothing. Each is defined as the strongest thing that is actually true here. **Build** means every module parses and every import resolves — there is no compile step, so without this a syntax error in an `api/` file is found by Vercel at deploy or by the first real request. **Lint** means the rules this project has actually broken: a test file the runner never runs, a credential in shipped code, a front-end module nothing loads. **Tests** is the suite through the honest runner, with crashes counted separately from failures. **Browser** is the real page in real Chrome at desktop and mobile, visiting every view, asserting no page errors and no horizontal overflow — the half that cannot be faked by reading source, and where every UI bug this build has actually shipped has lived.
+
+  It found a flaky test on its first run, which is the best possible argument for it existing. `retention.test.mjs` asserted that an erasure tombstone holds no personal data by scanning for the fixture's area code, **"214"** — three digits that a millisecond timestamp contains about a third of the time. The tombstone was `{"at":1790921486433,...}`; the test was red that afternoon and would have been green the next morning. A test that is sometimes red for no reason is a test people learn to ignore, which is worse than not having it. It now matches the identifying values in full, and a control confirms the assertion still bites when the tombstone really does keep the address.
+
+  Two defects in the gate itself, both mine, both the same shape as things I have fixed elsewhere. The import check passed Windows paths straight to `import()`, where `C:/...` is read as a URL with scheme `C:` — so every module "failed" for a reason that had nothing to do with it. And the gate ran the suite through `execFileSync`, which **throws** on a non-zero exit, so a real test failure made the gate die with a stack trace instead of reporting a failure: useless exactly when it matters. The credential scan also flagged `tests/security.test.mjs`, which deliberately contains a fake `ghp_…` to prove the redaction masks it — so the scan covers shipped code, and separately asserts it can still see that fixture, because a scanner that cannot spot a token it is handed would not spot a real one.
+
+  Six negative controls, all biting: a syntax error, a bad import, a planted credential, an orphan front-end module, a failing test, and the tombstone regression. Two of the six were malformed first — one appended a failing check **after** `done()`, which calls `process.exit`, so it never ran at all.
 - **NEXT:** R4.1/R4.3 discovery settings + source adapter.

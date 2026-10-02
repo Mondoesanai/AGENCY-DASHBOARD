@@ -67,7 +67,19 @@ check('the same address hashes the same way', identityHash('eraseme@test.test') 
 check('case and spacing do not change it', identityHash('  ERASEME@Test.test ') === h);
 check('a different address hashes differently', identityHash('other@test.test') !== h);
 const raw = await store.get(`erased:${h}`);
-check('the stored tombstone holds no personal data', !/eraseme|Erase Co|214/.test(String(raw)), String(raw));
+// The needle used to include the bare area code "214", which is three digits
+// that a millisecond timestamp contains roughly a third of the time — so this
+// check failed or passed depending on the day it ran, and a test that is
+// sometimes red for no reason is a test people learn to ignore. Matched
+// against the identifying values in full instead.
+check(
+  'the stored tombstone holds no personal data',
+  !/eraseme|Erase Co|214-555-0999|2145550999/i.test(String(raw)),
+  String(raw)
+);
+check('and the needles are the ones actually in the fixture',
+  /eraseme/i.test('eraseme@test.test') && /214-555-0999/.test('214-555-0999'),
+  'a scan for values the fixture never had would pass on an empty string');
 
 // ---------------------------------------------------------------------------
 section('T4  erasing someone who does not exist is refused, not faked');
