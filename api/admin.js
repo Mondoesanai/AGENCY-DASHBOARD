@@ -90,8 +90,6 @@ export default async function handler(req, res) {
     // ---- Acquisition (R3 contacts, R4 discovery, R6 sending readiness) ----
     case 'settings-get':
       return res.status(200).json({ ok: true, settings: await getSettings(), pricingBlocker: pricingBlocker(await getSettings()) });
-    // R8.8 — the budget state has been computed since it was built and shown
-    // nowhere. Period, spent, reserved, remaining, next reset, both windows.
     // R2.6 — the pause control. Gated: it changes what the machine does.
     case 'automation-pause': {
       const { setPaused, automationStatus } = await import('../lib/heartbeat.js');
@@ -99,6 +97,13 @@ export default async function handler(req, res) {
       await setPaused({ paused: body.paused === true, by: 'owner', reason: body.reason || '' });
       return res.status(200).json({ ok: true, automation: await automationStatus() });
     }
+    // R2.9 — what each integration has actually PROVEN, not what is configured.
+    case 'integrations': {
+      const { allStatuses } = await import('../lib/integrations.js');
+      return res.status(200).json({ ok: true, integrations: await allStatuses() });
+    }
+    // R8.8 — the budget state has been computed since it was built and shown
+    // nowhere. Period, spent, reserved, remaining, next reset, both windows.
     case 'budget-status': {
       const { budgetStatus } = await import('../lib/budget.js');
       return res.status(200).json({ ok: true, budget: await budgetStatus() });

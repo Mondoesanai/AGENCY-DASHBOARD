@@ -55,7 +55,27 @@ const fullEnv = { INSTANTLY_API_KEY: 'test-key', OUTREACH_FROM_DOMAIN: 'outreach
 // settings cannot activate outreach, so readiness must still fail on that alone
 rd = await sendReadiness({ env: fullEnv });
 check('with everything else set, the only blocker left is activation', rd.blockers.length === 1 && rd.blockers[0].code === 'outreach-off', JSON.stringify(rd.blockers));
-check('and it reads as connected but not activated', rd.displayStatus === 'connected, not activated', rd.displayStatus);
+// R2.9 — a key existing is not a connection. Until a real call to the provider
+// has succeeded, the screen says the credential is set and nothing more; it
+// used to read "connected, not activated" on the strength of an env var, which
+// would survive a revoked or mistyped key.
+check('a key with no proven call does not read as connected', rd.connected === false, JSON.stringify({ c: rd.connected, s: rd.displayStatus }));
+check('but the credential is reported as present', rd.credentialPresent === true);
+check('and it says exactly that', rd.displayStatus === 'key set, never confirmed', rd.displayStatus);
+check('the evidence state is named', rd.evidenceState === 'configured', rd.evidenceState);
+
+// once a real exchange has succeeded, it may say so
+{
+  const { recordSuccess } = await import('../lib/integrations.js');
+  await recordSuccess('instantly');
+  const proven = await sendReadiness({ env: fullEnv });
+  check('a proven integration reads as confirmed working', proven.connected === true && /confirmed working/.test(proven.displayStatus), proven.displayStatus);
+  const { recordFailure } = await import('../lib/integrations.js');
+  await recordFailure('instantly', 'http 401 unauthorized');
+  const broken = await sendReadiness({ env: fullEnv });
+  check('a key that the provider rejects stops reading as connected', broken.connected === false, JSON.stringify({ c: broken.connected, s: broken.displayStatus }));
+  check('and the real error is carried', /401/.test(broken.lastError), broken.lastError);
+}
 
 // force the owner switch on directly in storage (nothing in code may do this)
 const raw = JSON.parse(await store.get('settings:business'));

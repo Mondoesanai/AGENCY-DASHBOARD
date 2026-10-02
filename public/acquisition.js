@@ -354,6 +354,11 @@ export function renderAcqSettings(state) {
   <div class="acq-panel">
     <h3>Spending</h3>
     ${renderBudget(state.budget, state.budgetError)}
+  </div>
+
+  <div class="acq-panel">
+    <h3>Integrations</h3>
+    ${renderIntegrations(state.integrations, state.integrationsError)}
   </div>`;
 }
 
@@ -689,4 +694,64 @@ export function renderBookings(state) {
     </table>
     <p class="note faint">"Not attributed" means the booking is real but could not be tied to a campaign.
       It is shown as unknown rather than assigned to the most likely one.</p>`;
+}
+
+// ---------------------------------------------------------------------------
+// Integrations (R2.9 — a key existing is not a connection)
+//
+// Every integration used to be reported from one fact: is the environment
+// variable set? A key can be present and wrong — revoked, mistyped, pointed at
+// the wrong account, out of credit — and the dashboard would still show it as
+// connected. That is an invented integration.
+//
+// The middle state is the one that was missing and the one that matters:
+// "set up, never confirmed". It is not a failure and it is not a tick.
+// ---------------------------------------------------------------------------
+
+export const INTEGRATION_TONE = Object.freeze({
+  'not-configured': 'faint',
+  configured: 'warn',
+  working: 'good',
+  failing: 'neg',
+});
+
+export function renderIntegrations(list, error = '') {
+  if (error) {
+    return `<div class="note neg"><b>Could not read the integration status.</b> ${esc(error)}
+      <br />Treat every one of them as unknown — this is not a report that they are working.
+      <button class="btn sm ghost" data-retry="integrations">Try again</button></div>`;
+  }
+  if (!list) return '<div class="loading">Checking what is actually connected…</div>';
+  if (!list.length) return '<div class="note">No integrations are defined.</div>';
+
+  const rows = list
+    .map((i) => {
+      const tone = INTEGRATION_TONE[i.state] || 'warn';
+      return `<div class="auto-row tone-${esc(tone === 'faint' ? '' : tone)}">
+        <div class="auto-h">
+          <b>${esc(i.label)}</b>
+          <span class="pill sm ${esc(tone === 'good' ? '' : tone)}">${esc(stateWords(i.state))}</span>
+        </div>
+        <div class="auto-t">${esc(i.evidence || '')}</div>
+        <div class="faint">${esc(i.what || '')}</div>
+      </div>`;
+    })
+    .join('');
+
+  const unproven = list.filter((i) => i.state === 'configured').length;
+  const head = unproven
+    ? `<div class="note warn"><b>${unproven} integration${unproven === 1 ? ' has' : 's have'} a credential but no proof.</b>
+         A key can be set and still be wrong. None of them is shown as working until a real call succeeds.</div>`
+    : '<div class="note">Each line below is what the last real call to that service proved, not what is configured.</div>';
+
+  return `${head}${rows}`;
+}
+
+function stateWords(state) {
+  return {
+    'not-configured': 'not set up',
+    configured: 'set up, never confirmed',
+    working: 'confirmed working',
+    failing: 'failing',
+  }[state] || 'unknown';
 }
