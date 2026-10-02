@@ -359,6 +359,11 @@ export function renderAcqSettings(state) {
   <div class="acq-panel">
     <h3>Integrations</h3>
     ${renderIntegrations(state.integrations, state.integrationsError)}
+  </div>
+
+  <div class="acq-panel">
+    <h3>Text messaging</h3>
+    ${renderSms(state)}
   </div>`;
 }
 
@@ -754,4 +759,58 @@ function stateWords(state) {
     working: 'confirmed working',
     failing: 'failing',
   }[state] || 'unknown';
+}
+
+// ---------------------------------------------------------------------------
+// SMS (R6.11 — built, deliberately disconnected)
+//
+// The point of showing a disconnected integration at all is that "we have not
+// built it" and "we built it and chose not to switch it on" are different
+// facts, and only one of them is true here. The panel shows exactly what would
+// have to become true, and who can make each one true, so connecting it later
+// is supplying facts rather than rediscovering the requirements.
+// ---------------------------------------------------------------------------
+
+export function renderSms(state) {
+  const s = state.sms;
+  if (state.smsError) {
+    return `<div class="note neg"><b>Could not read the SMS status.</b> ${esc(state.smsError)}
+      <br />Treat it as unknown. Nothing is being texted either way — the send path refuses server-side.
+      <button class="btn sm ghost" data-retry="sms">Try again</button></div>`;
+  }
+  if (!s) return '<div class="loading">Checking the SMS status…</div>';
+
+  const reg = s.registration || { state: 'not-started', supplied: 0, total: 0, missing: [] };
+  const rows = (reg.missing || [])
+    .map(
+      (m) => `<tr>
+        <td>${esc(m.label)}</td>
+        <td><span class="pill sm ${m.who === 'owner' ? 'warn' : ''}">${esc(m.who === 'owner' ? 'you' : 'built here')}</span></td>
+        <td class="faint">${esc(m.what)}</td>
+      </tr>`
+    )
+    .join('');
+
+  return `
+    <div class="note warn"><b>Text messaging is built and switched off.</b>
+      ${esc(s.displayStatus || '')}. Nothing has ever been sent through it, and nothing in the dashboard can turn it on —
+      the send path refuses on the server.</div>
+
+    <div class="note">Why it is off, in order: the owner decided SMS stays off this round; US carriers require
+      <b>A2P 10DLC registration</b> before a business may text from a normal number, and unregistered traffic is
+      <b>filtered by the carriers</b>, not merely discouraged; and the registration's opt-in description is a sworn
+      statement about consent that must actually be held.</div>
+
+    <div class="note"><b>Registration: ${esc(reg.state)}</b> — ${reg.supplied}/${reg.total} facts supplied.</div>
+    ${rows
+      ? `<table class="acq-table"><thead><tr><th>Still needed</th><th>Who</th><th>What it means</th></tr></thead><tbody>${rows}</tbody></table>`
+      : '<div class="note">Every registration fact has been supplied. Approval is still the carriers\' decision.</div>'}
+
+    ${(s.blockers || []).length
+      ? `<ul class="acq-blockers">${s.blockers.map((b) => `<li>${esc(b.text)}</li>`).join('')}</ul>`
+      : ''}
+
+    <p class="note faint">Costs to expect when it is connected: a one-time brand registration fee, a per-campaign
+      vetting fee, a monthly campaign fee, per-segment message pricing and carrier fees on top. These are the
+      provider's published figures and must be re-checked before registering — this dashboard cannot verify a price.</p>`;
 }

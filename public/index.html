@@ -2768,7 +2768,8 @@ async function renderAcq(){
   if(ACQ.tab==='bookings'){ const j=await acqLoad('bookings','bookings-list'); ACQ.bookings=j.bookings||[]; ACQ.bookingStats=j.stats||null; }
   if(ACQ.tab==='campaigns'){ const c=await acqLoad('campaigns','campaigns-list'); ACQ.campaigns=c.campaigns||[]; await loadReadiness(); }
   if(ACQ.tab==='settings'){ const j=await acqLoad('settings','settings-get'); ACQ.settings=j.settings; ACQ.pricingBlocker=j.pricingBlocker; await loadReadiness(); const b=await acqApi('budget-status'); ACQ.budget=b.ok?b.budget:null; ACQ.budgetError=b.ok?'':(b.error||'could not read the budget');
-    const g=await acqApi('integrations'); ACQ.integrations=g.ok?g.integrations:null; ACQ.integrationsError=g.ok?'':(g.error||'could not read the integration status'); }
+    const g=await acqApi('integrations'); ACQ.integrations=g.ok?g.integrations:null; ACQ.integrationsError=g.ok?'':(g.error||'could not read the integration status');
+    const sm=await acqApi('sms-readiness'); ACQ.sms=sm.ok?sm.sms:null; ACQ.smsError=sm.ok?'':(sm.error||'could not read the SMS status'); }
   body.innerHTML=acqMod.renderBody(ACQ.tab, {...ACQ, loading:false});
   wireAcq();
   // "Try again" on any error panel re-runs the load for that tab

@@ -97,6 +97,23 @@ export default async function handler(req, res) {
       await setPaused({ paused: body.paused === true, by: 'owner', reason: body.reason || '' });
       return res.status(200).json({ ok: true, automation: await automationStatus() });
     }
+    // R6.11 — the SMS adapter and its A2P registration, built and deliberately
+    // left disconnected. Reading is gated like the rest of acquisition.
+    case 'sms-readiness': {
+      const { smsReadiness, REGISTRATION_REQUIREMENTS, sampleMessages } = await import('../lib/sms-outreach.js');
+      return res.status(200).json({
+        ok: true,
+        sms: await smsReadiness(),
+        requirements: REGISTRATION_REQUIREMENTS,
+        samples: sampleMessages({ business: 'Inspiring Websites LLC', ownerName: 'Mondo' }),
+      });
+    }
+    case 'sms-registration-save': {
+      const { saveRegistration, registrationStatus } = await import('../lib/sms-outreach.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      await saveRegistration(body.fields || {}, { note: body.note || '' });
+      return res.status(200).json({ ok: true, registration: await registrationStatus() });
+    }
     // R2.9 — what each integration has actually PROVEN, not what is configured.
     case 'integrations': {
       const { allStatuses } = await import('../lib/integrations.js');
