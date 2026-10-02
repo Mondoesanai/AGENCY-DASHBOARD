@@ -17,9 +17,9 @@
 // starts being a second implementation that can agree with a broken one.
 
 import { createServer } from 'node:http';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { extname, join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(HERE, '..', '..', 'public');
@@ -93,14 +93,28 @@ const readBody = (req) =>
  * and a stop function.
  */
 export async function startLocalApi({ port = 0, extraRoutes = {} } = {}) {
-  const [admin, collect] = await Promise.all([
-    import('../../api/admin.js').then((m) => m.default),
-    import('../../api/collect.js').then((m) => m.default),
-  ]);
+  // Every function in api/, mounted at the path Vercel gives it. Listing them
+  // by hand would mean a new endpoint is unreachable here until someone
+  // remembers to add it — and an endpoint no full-path test can reach is
+  // exactly the kind that ships unauthorised.
+  const dir = join(HERE, '..', '..', 'api');
+  const routes = {};
+  for (const file of await readdir(dir)) {
+    if (!file.endsWith('.js')) continue;
+    const mod = await import(pathToFileURL(join(dir, file)).href);
+    if (typeof mod.default === 'function') routes[`/api/${file.replace(/\.js$/, '')}`] = mod.default;
+  }
 
   const calls = [];
 
   const server = createServer(async (req, res) => {
+    // No keep-alive. `fetch` otherwise holds a pooled connection per origin,
+    // and a test that talks to two harness servers and then exits trips a
+    // libuv assertion on Windows while those pools are torn down. Tests do not
+    // need connection reuse, and a socket that closes when the response ends
+    // is one less thing that can keep a process alive after it should be gone.
+    res.setHeader('connection', 'close');
+
     const url = new URL(req.url, 'http://localhost');
     const path = url.pathname;
 
@@ -120,7 +134,7 @@ export async function startLocalApi({ port = 0, extraRoutes = {} } = {}) {
       // on demand, that catch block below is never executed, and a harness
       // that quietly turns a 500 into `{ok: false}` would make every
       // full-path test built on it agree with a broken product.
-      const handler = extraRoutes[path] || (path === '/api/collect' ? collect : path === '/api/admin' ? admin : null);
+      const handler = extraRoutes[path] || routes[path] || null;
       if (!handler) {
         entry.code = 404;
         res.writeHead(404, { 'content-type': 'application/json' });
@@ -162,7 +176,16 @@ export async function startLocalApi({ port = 0, extraRoutes = {} } = {}) {
     calls,
     /** every API call the browser made, newest last */
     called: (name) => calls.filter((c) => c.query && c.query.do === name),
-    stop: () => new Promise((resolve) => server.close(resolve)),
+    // `fetch` keeps connections alive, so `server.close()` alone waits for
+    // sockets that will never close on their own — and a test that starts
+    // several servers then exits trips a libuv assertion on Windows. Dropping
+    // the open sockets first makes shutdown deterministic.
+    stop: () =>
+      new Promise((resolve) => {
+        if (typeof server.closeIdleConnections === 'function') server.closeIdleConnections();
+        if (typeof server.closeAllConnections === 'function') server.closeAllConnections();
+        server.close(() => resolve());
+      }),
   };
 }
 

@@ -104,13 +104,45 @@ check(
   'ticked on L0 only: ' + tickedWeakEvidence.join(', ')
 );
 
-// the reverse direction: evidence for something the plan says is not done
+// The reverse direction: evidence for something the plan says is not done.
+//
+// `[~]` is excluded, and that exclusion is the point rather than a loophole.
+// Partial work can have real evidence — the evidence for the part that IS
+// done — and the standing instruction on this build is explicit that partial
+// implementation must not automatically mark a whole requirement complete. The
+// failure this still has to catch is a `[ ]` row with evidence sitting under
+// it, which means finished work is going untracked.
 const evidencedNotTicked = [...evidence.keys()]
-  .filter((id) => plan.has(id) && (evidence.get(id).level ?? 0) >= 1 && plan.get(id).mark !== 'x');
+  .filter((id) => plan.has(id) && (evidence.get(id).level ?? 0) >= 1 && !['x', '~', '!'].includes(plan.get(id).mark));
 check(
-  'anything with real evidence is marked done in the plan',
+  'anything with real evidence is either ticked or explicitly partial',
   evidencedNotTicked.length === 0,
-  'has evidence but not ticked: ' + evidencedNotTicked.join(', ')
+  'has evidence but is marked not-started: ' + evidencedNotTicked.join(', ')
+);
+
+// ...and the rule that keeps `[~]` honest rather than a place to hide.
+// A partial row carrying evidence must SAY what is still missing. Without
+// this, "[~] with a long evidence row" reads exactly like done at a glance,
+// which is the overstatement the mark exists to prevent.
+const partialWithEvidence = [...plan.entries()]
+  .filter(([id, v]) => v.mark === '~' && (evidenceFor(id) ?? -1) >= 1)
+  .map(([id]) => id);
+const partialSilentOnGap = partialWithEvidence.filter((id) => {
+  // every evidence row for this requirement, including "R12.3a" sub-rows —
+  // the same rows evidenceFor() just accepted, or this would flag a
+  // requirement whose gap is stated on a sub-row
+  const rows = [...evidence.entries()].filter(([k]) => k === id || k.startsWith(id)).map(([, v]) => v.line);
+  const planRow = planText.split('\n').find((l) => l.includes(`| ${id} |`)) || '';
+  // the `[~]` mark itself is stripped before looking for a statement of the
+  // gap: every partial row contains it by definition, so accepting it as the
+  // statement would make this check pass for everything
+  const text = [rows.join(' '), planRow].join(' ').replace(/`?\[~\]`?/g, '');
+  return !/\bnot\b|\bonly\b|\bmissing\b|\bblocked\b|\bpending\b|\bremain|\byet\b/i.test(text);
+});
+check(
+  'every partial row with evidence states what is still missing',
+  partialSilentOnGap.length === 0,
+  'partial but silent about the gap: ' + partialSilentOnGap.join(', ')
 );
 
 // ---------------------------------------------------------------------------
