@@ -6,7 +6,7 @@ import {
   PROVIDERS, RECOMMENDED, sendReadiness, createInstantlyAdapter,
   createDisconnectedAdapter, getEmailAdapter, maySend, markSent, sendProspectEmail,
 } from '../lib/outreach-email.js';
-import { saveSettings } from '../lib/settings.js';
+import { saveSettings, saveSender } from '../lib/settings.js';
 import { upsertContact, optOut, field } from '../lib/contacts.js';
 const E = (v) => field(v, { confidence: 1, source: 'manual' });
 import { store } from '../lib/store.js';
@@ -50,7 +50,12 @@ check('creating a campaign refuses', attempt.ok === false && attempt.disconnecte
 // ---------------------------------------------------------------------------
 section('O3  even fully configured, an opt-out still wins');
 await saveSettings({ pricing: { buildPrice: '2500', monthlyFee: '197' }, targeting: { status: 'confirmed' } });
-const fullEnv = { INSTANTLY_API_KEY: 'test-key', OUTREACH_FROM_DOMAIN: 'outreach.example.com' };
+// R6.9 — a real deployment cannot send without a CAN-SPAM sender identity,
+// so the tests that exercise "ready to send" configure one.
+await saveSender({ name: 'Mondo Davis', business: 'Inspiring Websites LLC', postalAddress: '2201 Preston Rd Suite 405, Plano TX 75093' });
+// R6.9 — a real deployment cannot send without a signable unsubscribe link
+// and a public URL for it to point at, so the "everything is set" env says so.
+const fullEnv = { INSTANTLY_API_KEY: 'test-key', OUTREACH_FROM_DOMAIN: 'outreach.example.com', PUBLIC_BASE_URL: 'https://dash.test', UNSUBSCRIBE_SECRET: 'unsub-test-secret' };
 
 // settings cannot activate outreach, so readiness must still fail on that alone
 rd = await sendReadiness({ env: fullEnv });

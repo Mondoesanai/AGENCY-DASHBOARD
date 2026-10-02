@@ -114,14 +114,17 @@ section('Z8  the reconciliation is CALLED by the real send path');
 // sendProspectEmail is the single declared exit, so it is where they belong.
 const { sendProspectEmail } = await import('../lib/outreach-email.js');
 const { upsertContact, field } = await import('../lib/contacts.js');
-const { saveSettings } = await import('../lib/settings.js');
+const { saveSettings, saveSender } = await import('../lib/settings.js');
 const { store } = await import('../lib/store.js');
 const E = (v) => field(v, { confidence: 1, source: 'manual' });
 
 await saveSettings({ pricing: { buildPrice: '2500', monthlyFee: '197' }, targeting: { status: 'confirmed' } });
+// R6.9 — a real deployment cannot send without a CAN-SPAM sender identity,
+// so the tests that exercise "ready to send" configure one.
+await saveSender({ name: 'Mondo Davis', business: 'Inspiring Websites LLC', postalAddress: '2201 Preston Rd Suite 405, Plano TX 75093' });
 const raw = JSON.parse(await store.get('settings:business'));
 await store.set('settings:business', JSON.stringify({ ...raw, outreach: { ...raw.outreach, active: true } }));
-const envOK = { INSTANTLY_API_KEY: 'k', OUTREACH_FROM_DOMAIN: 'outreach.test' };
+const envOK = { INSTANTLY_API_KEY: 'k', OUTREACH_FROM_DOMAIN: 'outreach.test', PUBLIC_BASE_URL: 'https://dash.test', UNSUBSCRIBE_SECRET: 'unsub-test-secret' };
 
 const person = (await upsertContact({ source: 'discovery', name: E('Timeout Test'), businessName: E('TT Co'), email: E('tt@timeout.test') })).contact;
 

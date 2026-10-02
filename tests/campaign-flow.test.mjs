@@ -79,13 +79,13 @@ check('with no sender identity, no message is produced', r.body.message.ok === f
 check('and it names CAN-SPAM as the reason', /postal address/.test(r.body.message.reason), r.body.message.reason);
 check('the response says the identity is incomplete', r.body.owner.complete === false);
 
-await saveSender({ name: 'Mondo Davis', business: 'Inspiring Websites LLC', postalAddress: '123 Example St, Plano TX 75024' });
+await saveSender({ name: 'Mondo Davis', business: 'Inspiring Websites LLC', postalAddress: '2201 Preston Rd Suite 405, Plano TX 75093' });
 r = await api('campaign-preview', { prospectId: ID(901) });
 check('with the identity set, a message is composed', r.body.message.ok === true, JSON.stringify(r.body.message).slice(0, 200));
 const msg = r.body.message;
 check('it uses the listing wording', /couldn't find a website linked from your/.test(msg.body));
 check('it never claims they have no website', !/(have|has) no website/i.test(msg.body));
-check('it carries the postal address', msg.body.includes('123 Example St'));
+check('it carries the postal address', msg.body.includes('2201 Preston Rd'), msg.body.slice(-220));
 check('it quotes the configured price', msg.mentionsPrice === true && /\$2,500/.test(msg.body));
 check('it mentions no preview, because none exists', msg.mentionsPreview === false);
 

@@ -54,6 +54,30 @@ export default async function handler(req, res) {
   // R6.6 / R11.5 — delivery receipts, bounces, complaints and unsubscribes from
   // the sending provider. Same discipline as the booking hook, through the one
   // shared helper so a second webhook cannot implement three of the four checks.
+  // R6.9 — the unsubscribe link from a cold email. It lives on this public
+  // function because someone who wants to stop hearing from us must never be
+  // asked to authenticate, and because the 12-function limit leaves nowhere
+  // else. GET renders a confirmation page and changes NOTHING: mail clients
+  // and security scanners fetch links in messages, so a GET that unsubscribed
+  // would let a scanner opt people out silently. POST performs it, which is
+  // also exactly what RFC 8058 one-click sends.
+  if (req.query?.unsub) {
+    const { handleUnsubscribe, confirmPage, verifyToken } = await import('../lib/unsubscribe.js');
+    const q = req.query || {};
+    const body = typeof req.body === 'object' && req.body ? req.body : {};
+    const address = String(body.e || q.e || '');
+    const token = String(body.t || q.t || '');
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store');
+    if (req.method !== 'POST') {
+      // do not leak whether an address is on the list: an invalid token still
+      // renders the same page, and still does nothing
+      return res.status(200).send(confirmPage({ address, token, done: false }));
+    }
+    const out = await handleUnsubscribe({ address, token });
+    return res.status(out.ok ? 200 : 400).send(confirmPage({ address, token, done: true, ok: out.ok, message: out.message }));
+  }
+
   if (req.query?.hook === 'delivery') {
     const { acceptWebhook } = await import('../lib/webhooks.js');
     const { applyDeliveryEvent } = await import('../lib/outreach-email.js');

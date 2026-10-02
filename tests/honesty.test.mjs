@@ -86,12 +86,12 @@ store.get = realGet;
 // ---------------------------------------------------------------------------
 section('H3  the sending screen stops claiming a connection it has not proven');
 await clear('instantly');
-let rd = await sendReadiness({ env: { INSTANTLY_API_KEY: 'k', OUTREACH_FROM_DOMAIN: 'o.test' } });
+let rd = await sendReadiness({ env: { INSTANTLY_API_KEY: 'k', OUTREACH_FROM_DOMAIN: 'o.test', PUBLIC_BASE_URL: 'https://dash.test', UNSUBSCRIBE_SECRET: 'unsub-test-secret' } });
 check('a key alone does not read as connected', rd.connected === false, JSON.stringify({ c: rd.connected, d: rd.displayStatus }));
 check('the credential is still reported separately', rd.credentialPresent === true);
 check('and the screen says "key set, never confirmed"', rd.displayStatus === 'key set, never confirmed', rd.displayStatus);
 await recordSuccess('instantly');
-rd = await sendReadiness({ env: { INSTANTLY_API_KEY: 'k', OUTREACH_FROM_DOMAIN: 'o.test' } });
+rd = await sendReadiness({ env: { INSTANTLY_API_KEY: 'k', OUTREACH_FROM_DOMAIN: 'o.test', PUBLIC_BASE_URL: 'https://dash.test', UNSUBSCRIBE_SECRET: 'unsub-test-secret' } });
 check('only a proven call turns it into "confirmed working"', rd.connected === true && /confirmed working/.test(rd.displayStatus), rd.displayStatus);
 
 // ---------------------------------------------------------------------------
