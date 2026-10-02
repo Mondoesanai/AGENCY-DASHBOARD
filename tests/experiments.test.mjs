@@ -29,9 +29,19 @@ const reset = async () => {
 // ---------------------------------------------------------------------------
 section('X1  an experiment that could not be acted on is refused');
 await reset();
-let r = await createExperiment({ id: EID, variable: 'subject', variants: [{ id: 'a' }] });
-check('one arm is refused', r.ok === false, JSON.stringify(r));
-check('and says why', /nothing to compare/.test(r.error));
+// R9.6 changed this rule, and for the better: with a holdout always present,
+// ONE variant is a valid experiment — "is this new wording better than what we
+// send now?" is the question most worth asking, and the old arity check
+// refused it, which would have pushed anyone wanting that comparison into
+// inventing a second variant they did not want.
+let r = await createExperiment({ id: 'exp-one-variant', variable: 'subject', variants: [{ id: 'a', content: 'x' }] });
+check('one variant plus the holdout is a valid experiment', r.ok === true, JSON.stringify(r));
+check('and the holdout was added automatically', r.experiment.variants.some((v) => v.id === 'holdout'), JSON.stringify(r.experiment?.variants));
+await store.set('experiment:exp-one-variant', '').catch(() => {});
+
+r = await createExperiment({ id: EID, variable: 'subject', variants: [] });
+check('no variants at all is refused', r.ok === false, JSON.stringify(r));
+check('and says what is missing', /at least one variant to compare against the holdout/.test(r.error));
 r = await createExperiment({ id: EID, variable: 'subject', variants: [{ id: 'a' }, { id: 'a' }] });
 check('duplicate arm ids are refused', r.ok === false && /could not be told apart/.test(r.error));
 r = await createExperiment({ id: EID, variable: 'everything', variants: [{ id: 'a' }, { id: 'b' }] });
