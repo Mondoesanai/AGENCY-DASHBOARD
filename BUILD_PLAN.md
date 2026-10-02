@@ -276,7 +276,7 @@ and never display a mocked integration as connected (R4.4).
 | R12.1 | Risk-based test matrix executed; failures fixed and rechecked | `[~]` 450 automated checks green; matrix not complete |
 | R12.2 | Full-path tests browser → API → storage → worker → provider fixture → webhook → dashboard | `[~]` `tests/fullpath.test.mjs` + `tests/harness/local-api.mjs` — the whole path runs over a real socket with auth enforced; the **send** leg is exercised only in the refusal direction, because outreach is deliberately inactive |
 | R12.3 | The 14 priority scenarios | `[x]` all fourteen, **each verified by negative control rather than by grep** (2026-10-02): revision eligibility/recovery/classification · duplicate imports · ambiguous OCR · suppression + consent enforcement · budget exhaustion under concurrency · a real website missed by a listing · reply/opt-out during a queued send · duplicate + out-of-order webhooks · ambiguous send timeouts · worker restarts · booking cancel/reschedule · cross-account authorization · malicious URLs + prompt injection · provider outages and rate limits |
-| R12.4 | Load test: thousands of contacts, concurrent jobs, webhook bursts, large imports, card batches | `[ ]` |
+| R12.4 | Load test: thousands of contacts, concurrent jobs, webhook bursts, large imports, card batches | `[~]` `tests/load.test.mjs` — contacts, concurrent claims, webhook bursts and same-domain imports all measured by store-operation count; **card batches not yet covered** |
 | R12.5 | Accelerated simulated 7-day operation, labelled as simulated | `[ ]` |
 | R12.6 | Real 7-day staging soak **procedure** prepared (7 real days claimed only after they elapse) | `[ ]` |
 | R12.7 | Build, lint, integration and browser checks, desktop + mobile | `[ ]` |
@@ -293,9 +293,9 @@ replaces it.
 |---|---|
 | `[x]` built **and** verified | 113 |
 | `[b]` built, not verified | 0 |
-| `[~]` in progress | 2 |
+| `[~]` in progress | 3 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 4 |
+| `[ ]` not started | 3 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -432,4 +432,15 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
   Getting there needed a fix in the test file rather than the code. The lease control first came back as a **crash** rather than a failure: when a lease wrongly never expires there is no job to read, and `c2.job.attempts` threw, which stopped the rest of the file running and turned a precise signal into a stack trace. That is the same unguarded-dereference problem this build has now hit six times, and it is worth naming as a habit rather than a series of accidents: **every read of a value that can legitimately be absent gets guarded in a test, because the whole point of a control is a clean, specific failure.** Five dereferences on `claim()` results are now guarded.
 
   That closes all fourteen. Worth stating plainly how much of this requirement was already satisfied before today: nine of the fourteen were covered by tests written earlier and simply never ticked off, and I only found that out by breaking each promise. The plan had been understating its own progress, which is a less dangerous error than overstating it, but it is still an error — and three of my first-round controls were malformed in ways that would have had me "fixing" working code.
+- **2026-10-02** — R12.4. The decision that made this worth anything was measuring **store operations rather than seconds**. Against the in-memory store everything is a Map: 2,000 contacts "import" in 38ms, and it would have been easy to call that a pass and move on. What actually decides whether this survives is the number of round-trips to Upstash, because each is billed and costs ~10-30ms. So the property is shape, not speed — *inserting the 2,000th contact must not cost more than the 10th, and reading page 40 must not cost more than page 1* — and an O(n) insert is invisible in memory right up until a 5,000-row import becomes hours of API calls.
+
+  It found three things, two of them serious.
+
+  **Ten workers claiming from one queue were all handed the same job.** Every time. `claim()` read "no live lease" and then wrote one, which is correct for a single worker and wrong for two — and this system deliberately has several, because no one scheduler is reliable: the GitHub Actions tick, the Vercel cron and the dashboard's public poke can all run at once. For a send queue that means one prospect receiving the same message ten times. **Fifty simultaneous deliveries of one webhook were all treated as fresh**, for the same read-then-write reason, so a provider retrying in a burst would apply one spam complaint fifty times. Both now go through `store.claimOnce`, built on INCR, which is atomic in Redis so exactly one caller can ever see 1 — the same reasoning the budget reservation already used, which existed and had simply not been applied here.
+
+  The third was a cliff rather than a break. Email and phone indexes are naturally bounded — one address belongs to one record — but a **domain** is not: every colleague at one company shares it, the set grows without limit, and reading all of it on every insert makes a same-domain import quadratic. Measured at **~2,000,000 reads for 2,000 rows**; with distinct domains, zero. Reading two thousand colleagues does not produce a better answer than reading twenty-five, because the domain match only ever means "same business, review this", so it is capped at 25 — and when the cap bites the result says so, rather than implying the search was exhaustive. Same import now costs ~50,000 reads and stays linear.
+
+  My first measurement was misleading in a way worth recording: the original fixture gave all 2,000 contacts the same domain, which is **not** realistic — free-mail hosts are already excluded from domain matching, so gmail prospects never collide. Re-run with distinct domains the insert cost is flat and nothing is wrong. The quadratic case is real but narrower than my first number implied, and reporting that first number without re-measuring would have overstated it badly.
+
+  Eight negative controls, all biting, including one on the measurement itself — if the operation counter silently stopped counting, every cost assertion would pass for the wrong reason. Two controls were malformed by me: one keyed the lease token on `attempts`, which the outage path decrements, so the token repeated and permanently blocked re-claiming (caught by the existing outage tests, not by this one); the other was a no-op guarded by a flag nothing set. **`[~]` not `[x]`**: card batches are not covered yet.
 - **NEXT:** R4.1/R4.3 discovery settings + source adapter.
