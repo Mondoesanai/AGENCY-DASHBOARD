@@ -12,8 +12,10 @@ const has = (html, s) => String(html).includes(s);
 
 // ---------------------------------------------------------------------------
 section('A1  the section has the six workflows, not a placeholder');
-check('six tabs', TABS.length === 6, String(TABS.length));
-check('contacts, intake, prospects, campaigns, inbox and settings', TABS.map((t) => t.id).join(',') === 'contacts,intake,prospects,campaigns,inbox,settings', TABS.map((t) => t.id).join(','));
+check('seven tabs', TABS.length === 7, String(TABS.length));
+// Bookings joined them for R2.8 — "View bookings" is one of the five primary
+// actions and needed somewhere to land.
+check('contacts, intake, prospects, campaigns, inbox, bookings and settings', TABS.map((t) => t.id).join(',') === 'contacts,intake,prospects,campaigns,inbox,bookings,settings', TABS.map((t) => t.id).join(','));
 const shell = renderShell('contacts');
 check('the shell marks the active tab', /data-acq="contacts" class="on"/.test(shell), shell.slice(0, 200));
 check('and leaves a body to fill', has(shell, 'id="acqBody"'));

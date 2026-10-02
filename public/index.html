@@ -112,6 +112,21 @@
   .auto-h{display:flex;align-items:center;gap:9px;font-size:13.5px;}
   .auto-t{font-size:13px;margin-top:4px;}
   .auto-row .faint{font-size:12px;margin-top:4px;line-height:1.55;}
+  /* R2.8 — the five primary actions. Equal weight: none of them is the one
+     the dashboard wants you to press, so none of them is louder. */
+  .actions-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin:0 0 26px;}
+  .act{display:flex;flex-direction:column;gap:4px;text-align:left;background:var(--surface);
+    border:1px solid var(--line-strong);border-radius:var(--radius);padding:12px 14px;color:var(--ink);
+    transition:transform .12s ease, border-color .12s ease;}
+  .act:hover{border-color:var(--green);transform:translateY(-1px);}
+  .act:active{transform:translateY(0);}
+  .act[disabled]{opacity:.55;cursor:not-allowed;transform:none;}
+  .act-l{font-weight:600;font-size:13.5px;}
+  .act-n{font-weight:400;font-size:12px;color:var(--green-br);margin-left:4px;}
+  .act-h{font-size:12px;color:var(--muted);line-height:1.45;}
+  @media(max-width:1000px){ .actions-row{grid-template-columns:repeat(3,1fr);} }
+  @media(max-width:620px){ .actions-row{grid-template-columns:repeat(2,1fr);} }
+  @media(max-width:380px){ .actions-row{grid-template-columns:1fr;} }
   .glance-h{font:600 12px/1 "Fraunces",serif;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);margin:0 0 10px;}
   .glance-h span{text-transform:none;letter-spacing:0;font-family:inherit;font-weight:400;font-size:12px;color:var(--faint);margin-left:8px;}
   @media(max-width:560px){
@@ -427,6 +442,8 @@
          looking up, not for noticing: nothing on this page should require the
          owner to spot a problem by reading six tiles. -->
     <div id="attention"></div>
+    <!-- R2.8 — what needs you first (above), then what you can do. -->
+    <div id="primaryActions"></div>
     <div class="glance-h" id="glanceH" hidden>Portfolio at a glance <span>tap any number for the per-site detail</span></div>
     <div class="overview" id="overview"></div>
   </section>
@@ -736,6 +753,7 @@ function render(data){
 
   // R2.4 — what needs you, computed from what is actually loaded.
   renderOverviewAttention();
+  renderPrimaryActions();
   $('#glanceH').hidden=false;
 
   $('#siteCount').textContent=`${data.sites.length} tracked`;
@@ -2604,6 +2622,7 @@ async function loadAttentionReplies(){
   const j=await acqApi('replies-list&limit=100');
   if(j&&j.ok&&Array.isArray(j.replies)) ATT_REPLIES=j.replies;
   renderOverviewAttention();
+  renderPrimaryActions();
 }
 
 function REVSUM(slug){
@@ -2615,6 +2634,33 @@ function RENDER_REVISIONS(slug){
   return CW.renderClientRevisions({ tickets: REV_TICKETS, slug, revisionsConfigured: REV_CONFIGURED });
 }
 let REV_CONFIGURED = true;
+
+/* ---------- R2.8 the five primary actions ----------------------------------
+   All five existed already and every one was two or three clicks deep inside a
+   tab inside a section. A count here is a measurement or it is absent: if the
+   replies did not load, the button says nothing rather than "0", because a
+   zero would read as "nobody has answered". */
+let ACT_MOD = null, ACT_ITEMS = null;
+import('/actions.js').then((m)=>{ ACT_MOD=m; renderPrimaryActions(); }).catch(()=>{ ACT_MOD=null; });
+
+function renderPrimaryActions(){
+  const host=$('#primaryActions'); if(!host||!ACT_MOD) return;
+  ACT_ITEMS=ACT_MOD.buildActions({
+    replies: ATT_REPLIES || undefined,      // undefined = not loaded, not zero
+    bookings: ACQ.bookings || undefined,
+    contacts: ACQ.contacts || undefined,
+    readiness: ACQ.readiness,
+    needsPerson: ATT ? ATT.needsPerson : undefined,
+  });
+  host.innerHTML=ACT_MOD.renderActions(ACT_ITEMS);
+  ACT_MOD.wireActions(host, ACT_ITEMS, {
+    go:(dest)=>{
+      if(!dest) return;
+      if(dest.tab) ACQ.tab=dest.tab;
+      if(dest.view&&goView) goView(dest.view);
+    },
+  });
+}
 
 /* ---------- R2.6 automation status + pause ---------------------------------
    The status is read from the workers' own check-ins. Pausing is gated behind
@@ -2700,6 +2746,7 @@ async function renderAcq(){
   if(ACQ.tab==='contacts'){ const j=await acqLoad('contacts','contacts-list'); ACQ.contacts=j.contacts||[]; }
   if(ACQ.tab==='prospects'){ const j=await acqLoad('prospects','prospects-list'); ACQ.prospects=j.prospects||[]; ACQ.attribution=j.attribution; const s=await acqApi('settings-get'); ACQ.targetingStatus=s.settings?.targeting?.status; const c=await acqLoad('campaigns','campaigns-list'); ACQ.campaigns=c.campaigns||[]; }
   if(ACQ.tab==='inbox'){ const j=await acqLoad('inbox','replies-list'); ACQ.replies=j.replies||[]; const m=await acqApi('reply-mode'); ACQ.replyMode=m.mode; }
+  if(ACQ.tab==='bookings'){ const j=await acqLoad('bookings','bookings-list'); ACQ.bookings=j.bookings||[]; ACQ.bookingStats=j.stats||null; }
   if(ACQ.tab==='campaigns'){ const c=await acqLoad('campaigns','campaigns-list'); ACQ.campaigns=c.campaigns||[]; await loadReadiness(); }
   if(ACQ.tab==='settings'){ const j=await acqLoad('settings','settings-get'); ACQ.settings=j.settings; ACQ.pricingBlocker=j.pricingBlocker; await loadReadiness(); const b=await acqApi('budget-status'); ACQ.budget=b.ok?b.budget:null; ACQ.budgetError=b.ok?'':(b.error||'could not read the budget'); }
   body.innerHTML=acqMod.renderBody(ACQ.tab, {...ACQ, loading:false});

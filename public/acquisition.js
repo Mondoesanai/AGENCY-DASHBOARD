@@ -18,6 +18,7 @@ export const TABS = Object.freeze([
   { id: 'prospects', label: 'Prospects' },
   { id: 'campaigns', label: 'Campaigns' },
   { id: 'inbox', label: 'Replies' },
+  { id: 'bookings', label: 'Bookings' },
   { id: 'settings', label: 'Targeting & pricing' },
 ]);
 
@@ -610,6 +611,82 @@ export function renderBody(tab, state) {
   if (tab === 'intake') return renderIntake(state);
   if (tab === 'prospects') return renderProspects(state);
   if (tab === 'campaigns') return renderCampaigns(state);
+  if (tab === 'bookings') return renderBookings(state);
   if (tab === 'settings') return renderAcqSettings(state);
   return '<div class="note">Unknown tab.</div>';
+}
+
+
+// ---------------------------------------------------------------------------
+// Bookings (R2.8 — "View bookings" needed somewhere to go)
+//
+// lib/bookings.js has existed, tested, since it was written, with no screen.
+// The rule it enforces is the one this screen has to keep visible: a click on
+// a booking link is NOT a booking. Clicks are counted separately and are never
+// added in. A dashboard that blurs the two turns interest into revenue on
+// paper, which is the single most tempting lie an acquisition tool can tell.
+// ---------------------------------------------------------------------------
+
+export const BOOKING_STATUS_LABEL = Object.freeze({
+  scheduled: 'booked',
+  cancelled: 'cancelled',
+  rescheduled: 'moved',
+  attended: 'attended',
+  'no-show': 'did not show',
+});
+
+export const BOOKING_SOURCE_LABEL = Object.freeze({
+  'verified-webhook': 'confirmed by the scheduler',
+  'owner-recorded': 'entered by you',
+});
+
+export function renderBookings(state) {
+  const rows = state.bookings || [];
+  const st = panelState(state, 'bookings', rows);
+  if (st.status === PANEL.LOADING || st.status === PANEL.ERROR || st.status === PANEL.LOCKED) {
+    return renderPanel(st, { thing: 'bookings', retryKey: 'bookings' });
+  }
+
+  const s = state.bookingStats;
+  const summary = s
+    ? `<div class="acq-stats">
+        <span class="pill sm">${s.verifiedBookings} verified</span>
+        <span class="pill sm">${s.scheduled} booked</span>
+        <span class="pill sm">${s.attended} attended</span>
+        <span class="pill sm">${s.noShow} no-show</span>
+        <span class="pill sm">${s.cancelled} cancelled</span>
+      </div>
+      <p class="note">${esc(s.note || '')}</p>`
+    : '<p class="note">The counts have not loaded, so none are shown. This is not a report of zero bookings.</p>';
+
+  if (!rows.length) {
+    return `${summary}${renderPanel({ status: PANEL.EMPTY }, {
+      thing: 'bookings',
+      empty: `<b>No bookings yet.</b> One appears here when the scheduler confirms it by webhook,
+        or when you record one you took yourself. A click on a booking link does
+        <b>not</b> create one — clicks are counted separately and are never added in.`,
+    })}`;
+  }
+
+  const body = rows
+    .map((b) => {
+      const when = b.startAt ? new Date(b.startAt) : null;
+      const ok = !Number.isNaN(when?.getTime?.());
+      return `<tr>
+        <td>${ok && when ? esc(when.toLocaleString()) : '<span class="faint">time not given</span>'}</td>
+        <td>${esc(b.inviteeEmail || '—')}</td>
+        <td><span class="pill sm ${b.status === 'cancelled' || b.status === 'no-show' ? 'warn' : ''}">${esc(BOOKING_STATUS_LABEL[b.status] || b.status)}</span></td>
+        <td>${b.verified ? esc(BOOKING_SOURCE_LABEL[b.source] || b.source) : '<span class="pill warn sm">not verified</span>'}</td>
+        <td>${b.attribution?.campaignId ? esc(b.attribution.campaignId) : '<span class="faint">not attributed</span>'}</td>
+      </tr>`;
+    })
+    .join('');
+
+  return `${summary}
+    <table class="acq-table">
+      <thead><tr><th>When</th><th>Who</th><th>Status</th><th>How we know</th><th>Campaign</th></tr></thead>
+      <tbody>${body}</tbody>
+    </table>
+    <p class="note faint">"Not attributed" means the booking is real but could not be tied to a campaign.
+      It is shown as unknown rather than assigned to the most likely one.</p>`;
 }
