@@ -61,6 +61,23 @@ export default async function handler(req, res) {
   // and security scanners fetch links in messages, so a GET that unsubscribed
   // would let a scanner opt people out silently. POST performs it, which is
   // also exactly what RFC 8058 one-click sends.
+  // R6.14 — inbound SMS from a prospect. Public because a carrier posts here,
+  // and STOP must work whatever else is broken. The reply is returned as
+  // TwiML, which is what Twilio expects; an empty <Response/> sends nothing.
+  if (req.query?.hook === 'sms') {
+    const { handleInboundSms } = await import('../lib/sms-inbound.js');
+    const body = typeof req.body === 'object' && req.body ? req.body : {};
+    const out = await handleInboundSms({
+      from: body.From || req.query.From || '',
+      body: body.Body || req.query.Body || '',
+      business: process.env.OUTREACH_BUSINESS_NAME || '',
+      supportEmail: process.env.OWNER_EMAIL || '',
+    });
+    res.setHeader('Content-Type', 'text/xml; charset=utf-8');
+    const esc = (t) => String(t || '').replace(/[<>&"']/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[ch]));
+    return res.status(200).send(out.reply ? `<Response><Message>${esc(out.reply)}</Message></Response>` : '<Response/>');
+  }
+
   if (req.query?.unsub) {
     const { handleUnsubscribe, confirmPage, verifyToken } = await import('../lib/unsubscribe.js');
     const q = req.query || {};
