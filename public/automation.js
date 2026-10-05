@@ -92,24 +92,61 @@ export function renderAutomation(a, opts = {}) {
          <br /><button class="btn sm ghost" id="autoPause" ${busy ? 'disabled' : ''}>${busy ? 'Working…' : 'Pause automation'}</button>
        </div>`;
 
-  const rows = (a.workers || [])
-    .map(
-      (w) => `<div class="auto-row tone-${esc(STATUS_TONE[w.status] || 'warn')}">
+  const rows = (a.workers || []).map((w) => `<div class="auto-row tone-${esc(STATUS_TONE[w.status] || 'warn')}">
         <div class="auto-h">
           <b>${esc(w.label)}</b>
           <span class="pill sm ${esc(STATUS_TONE[w.status] === 'good' ? '' : STATUS_TONE[w.status])}">${esc(STATUS_WORD[w.status] || w.status)}</span>
         </div>
         <div class="auto-t">${esc(w.text)}</div>
-        <div class="faint">${esc(w.what)} · expected about every ${esc(everyWords(w.everyMs))} · run by ${esc(w.runBy)}</div>
-      </div>`
-    )
-    .join('');
+        ${outcomeLine(w)}
+        <div class="faint">${esc(w.what)} · expected about every ${esc(everyWords(w.everyMs))} · run by ${esc(w.runBy)}${w.nextDueAt ? ` · next expected ${esc(whenWords(w.nextDueAt))}` : ''}</div>
+      </div>`).join('');
 
   return `${pauseBox}
     <div class="note ${h.tone === 'good' ? '' : h.tone}"><b>${esc(h.word)}</b>${h.detail ? ` — ${esc(h.detail)}` : ''}</div>
     ${rows}
     <p class="note faint">Every line above is the last time that worker actually checked in, not a schedule.
       A worker that stopped shows its real silence here rather than a countdown to a run that will not happen.</p>`;
+}
+
+/**
+ * A check-in says a run STARTED. It does not say the work succeeded, and on
+ * this system it can mean nothing more than that somebody opened the dashboard
+ * — the page pokes the tick on load. So the attempt and the outcome are shown
+ * as two separate lines, and a worker with no outcome telemetry says exactly
+ * that rather than borrowing the timestamp's credibility.
+ */
+export function outcomeLine(w) {
+  if (!w) return '';
+  if (w.status === 'never') {
+    return `<div class="auto-o faint">No run has ever been recorded. That is a fact about the <b>record</b>, not proof the worker is broken — if nothing schedules it here, this is what it correctly looks like.</div>`;
+  }
+  if (!w.hasOutcomeTelemetry) {
+    return `<div class="auto-o warn">It checked in, but nothing recorded what it <b>achieved</b>. A timestamp proves it started, not that it worked.</div>`;
+  }
+  const bits = [];
+  if (w.lastSuccessAt) bits.push(`last succeeded ${whenWords(w.lastSuccessAt)}`);
+  else bits.push('<b>never recorded a success</b>');
+  if (w.lastProcessed != null) bits.push(`${w.lastProcessed} item${w.lastProcessed === 1 ? '' : 's'} last run`);
+  if (w.processed != null) bits.push(`${w.processed} in total`);
+  const fail = w.lastFailureAt
+    ? `<div class="auto-o neg">Last failure ${esc(whenWords(w.lastFailureAt))}${w.lastFailure ? ` — ${esc(w.lastFailure)}` : ''}</div>`
+    : '';
+  return `<div class="auto-o">${bits.join(' · ')}</div>${fail}`;
+}
+
+/** Relative time in words, past or future. */
+export function whenWords(at) {
+  const n = Number(at);
+  if (!Number.isFinite(n) || n <= 0) return 'never';
+  const ms = Date.now() - n;
+  const abs = Math.abs(ms);
+  if (abs < 60000) return ms >= 0 ? 'just now' : 'in under a minute';
+  const m = Math.round(abs / 60000);
+  const unit = m < 60 ? `${m} minute${m === 1 ? '' : 's'}`
+    : abs < 36 * 3600e3 ? `${Math.round(m / 60)} hour${Math.round(m / 60) === 1 ? '' : 's'}`
+      : `${Math.round(m / 1440)} day${Math.round(m / 1440) === 1 ? '' : 's'}`;
+  return ms >= 0 ? `${unit} ago` : `in ${unit}`;
 }
 
 export function everyWords(ms) {

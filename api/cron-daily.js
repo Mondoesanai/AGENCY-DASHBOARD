@@ -300,6 +300,17 @@ export default async function handler(req, res) {
   // health-check-eats-the-budget bug) had no way to be noticed except by
   // seeing SEO stop happening days later.
   await store.set('cron:daily:lastRun', String(Date.now()), { ex: 60 * 60 * 24 * 45 }).catch(() => {});
+  // and what it achieved, which the raw timestamp above cannot say. Without
+  // this the panel can only report that the daily pass started.
+  try {
+    const { recordBeat, recordOutcome } = await import('../lib/heartbeat.js');
+    await recordBeat('daily');
+    await recordOutcome('daily', {
+      ok: true,
+      processed: Array.isArray(log) ? log.length : 0,
+      note: '',
+    });
+  } catch { /* the timestamp above is the load-bearing part */ }
 
   // one email a day, only when there's actually something worth seeing —
   // this is the approved alert feature, deduped per calendar day so an

@@ -19,17 +19,65 @@
 // 555-02xx range, and no provider is connected — so the SMS composer will
 // correctly refuse to send, which is itself part of what there is to see.
 
-process.env.CRON_SECRET = process.env.PREVIEW_PASSWORD || 'preview';
-process.env.OUTREACH_WEBHOOK_KEY = 'preview-hook-key';
-process.env.UNSUBSCRIBE_SECRET = 'preview-unsub-key';
+// ---------------------------------------------------------------------------
+// NO PASSWORD, AND WHY THAT IS SAFE HERE
+//
+// `CRON_SECRET` is deliberately NOT set. `lib/auth.js` then reports mode
+// 'open' — but only because it also checks that VERCEL/VERCEL_ENV are absent,
+// which they can never be on a deployment. So this is not a bypass bolted on
+// for convenience: it is the existing local-development posture, and the
+// production path is untouched and still enforced.
+//
+// Three things are checked before the server starts. If any of them fails the
+// preview refuses to run rather than starting something unsafe:
+//
+//   1. no deployment environment — VERCEL/VERCEL_ENV absent
+//   2. no remote storage configured — nothing can reach production data
+//   3. no outbound provider credentials present — nothing can be sent
+//
+// The page cannot turn authentication off: it asks the server what the mode
+// is and does as it is told. There is no query parameter, header or flag a
+// browser could send to get the same effect.
+// ---------------------------------------------------------------------------
+delete process.env.CRON_SECRET;
 
-const remote = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL
-  || process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
-if (remote) {
-  console.error('\nREFUSED: a remote store is configured in this shell, and the preview seeds demo data.');
-  console.error('Unset KV_REST_API_URL / KV_REST_API_TOKEN / UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN.\n');
+const refuse = (why, fix) => {
+  console.error(`\n  REFUSED TO START — ${why}\n`);
+  console.error(`  ${fix}\n`);
+  console.error('  The preview runs without a password, so it will only start when it can');
+  console.error('  prove it is isolated. This check failing is the check working.\n');
   process.exit(1);
+};
+
+if (process.env.VERCEL || process.env.VERCEL_ENV) {
+  refuse(
+    'this looks like a deployment environment (VERCEL is set).',
+    'The no-password preview is for a local machine only. Never run it on a deployment.'
+  );
 }
+
+const remoteStore = ['KV_REST_API_URL', 'KV_REST_API_TOKEN', 'UPSTASH_REDIS_REST_URL', 'UPSTASH_REDIS_REST_TOKEN', 'KV_URL', 'REDIS_URL']
+  .filter((k) => process.env[k]);
+if (remoteStore.length) {
+  refuse(
+    `remote storage is configured in this shell (${remoteStore.join(', ')}).`,
+    'The preview seeds sample data and must never write to your real database. Unset those variables, or run it in a clean shell.'
+  );
+}
+
+const providerKeys = ['INSTANTLY_API_KEY', 'RESEND_API_KEY', 'TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_SMS_FROM']
+  .filter((k) => process.env[k]);
+if (providerKeys.length) {
+  refuse(
+    `outbound provider credentials are present in this shell (${providerKeys.join(', ')}).`,
+    'The preview must not be able to reach a real provider. Unset those variables, or run it in a clean shell.'
+  );
+}
+
+// Signing keys that only exist so the local webhook/unsubscribe paths are
+// exercisable. They are fixed, local, and worthless off this machine.
+process.env.OUTREACH_WEBHOOK_KEY = 'preview-local-only-hook-key';
+process.env.UNSUBSCRIBE_SECRET = 'preview-local-only-unsub-key';
 
 const PORT = Number(process.env.PORT) || 3190;
 const { store } = await import('./lib/store.js');
@@ -71,13 +119,15 @@ const jordan = saved[0].contact.id;
 await record({ contactId: jordan, channel: CHANNEL.SMS, direction: DIRECTION.OUT, body: "Hey Jordan, it's Mondoe with Inspiring Websites — we met at the Plano Chamber breakfast. You mentioned wanting an easier way for customers to request quotes. Want me to send the preview here when it's ready?", by: 'owner', at: NOW - 6 * 3600e3, state: 'delivered' });
 await record({ contactId: jordan, channel: CHANNEL.SMS, direction: DIRECTION.IN, body: 'Yes please — send it here.', at: NOW - 5 * 3600e3 });
 
-const api = await startLocalApi({ port: PORT });
+// loopback only: not reachable from the network, which matters because there
+// is no password on it
+const api = await startLocalApi({ port: PORT, host: '127.0.0.1' });
 
 console.log(`
   ───────────────────────────────────────────────────────────
-   LOCAL PREVIEW — fixture data, in-memory store
+   LOCAL PREVIEW — no password, sample data, in-memory store
    ${api.origin}
-   password: ${process.env.CRON_SECRET}
+   bound to 127.0.0.1 only · not reachable from your network
   ───────────────────────────────────────────────────────────
 
    Worth looking at:

@@ -92,7 +92,7 @@ const readBody = (req) =>
  * assert what the BROWSER actually called, not what it believes it called),
  * and a stop function.
  */
-export async function startLocalApi({ port = 0, extraRoutes = {} } = {}) {
+export async function startLocalApi({ port = 0, extraRoutes = {}, host = '127.0.0.1' } = {}) {
   // Every function in api/, mounted at the path Vercel gives it. Listing them
   // by hand would mean a new endpoint is unreachable here until someone
   // remembers to add it — and an endpoint no full-path test can reach is
@@ -167,7 +167,9 @@ export async function startLocalApi({ port = 0, extraRoutes = {} } = {}) {
     }
   });
 
-  await new Promise((resolve) => server.listen(port, resolve));
+  // Bound to loopback by default. A preview that answers on the LAN is a
+  // preview someone else can reach, and this one runs without a password.
+  await new Promise((resolve) => server.listen(port, host, resolve));
   const actual = server.address().port;
 
   /**

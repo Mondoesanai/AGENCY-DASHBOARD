@@ -51,6 +51,26 @@ export default async function handler(req, res) {
   if (req.query.do === 'revisions-status') {
     return res.status(200).json({ ok: true, status: await revisionsStatus() });
   }
+  // Does this deployment require a password at all?
+  //
+  // Public on purpose and safe to be: it reveals a posture, never a secret,
+  // and the page needs it BEFORE it can authenticate. Without it the page has
+  // to guess, and its guess was "always locked" — which is why a local preview
+  // demanded a password that the server was not actually checking.
+  //
+  // 'enforced' = a secret is set and checked. 'locked' = deployed with no
+  // secret, so everything is refused. 'open' = local development only, which
+  // `authMode()` can only return when VERCEL/VERCEL_ENV are absent.
+  if (req.query.do === 'auth-mode') {
+    const { authMode, isDeployed } = await import('../lib/auth.js');
+    const mode = authMode();
+    return res.status(200).json({
+      ok: true,
+      mode,
+      deployed: isDeployed(),
+      requiresPassword: mode !== 'open',
+    });
+  }
   if (req.query.do === 'system-health') {
     const h = await systemHealth();
     try {
@@ -175,6 +195,23 @@ export default async function handler(req, res) {
       if (out && out.ok === false) return res.status(400).json(out);
       return res.status(200).json({ ok: true, bounds: out });
     }
+    // ---- Operational recovery ---------------------------------------------
+    // `diagnose` looks and changes nothing, so the dashboard can call it on
+    // every load. `recover` acts, and is reached by the independent scheduler.
+    case 'recovery-diagnose': {
+      const { diagnose } = await import('../lib/recovery.js');
+      return res.status(200).json(await diagnose({}));
+    }
+    case 'recovery-run': {
+      const { recover } = await import('../lib/recovery.js');
+      const { notifyOwner } = await import('../lib/sms.js');
+      return res.status(200).json(await recover({ notify: (t) => notifyOwner(t, { subject: 'Automation needs you' }) }));
+    }
+    case 'repair-tasks': {
+      const { listRepairTasks } = await import('../lib/recovery.js');
+      return res.status(200).json(await listRepairTasks({}));
+    }
+
     // ---- Relationship workflow (business cards -> follow-up) --------------
     case 'followups-due': {
       const { dueFollowUps } = await import('../lib/relationship.js');

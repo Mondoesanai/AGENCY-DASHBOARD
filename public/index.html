@@ -112,6 +112,10 @@
   .auto-h{display:flex;align-items:center;gap:9px;font-size:13.5px;}
   .auto-t{font-size:13px;margin-top:4px;}
   .auto-row .faint{font-size:12px;margin-top:4px;line-height:1.55;}
+  /* what a run ACHIEVED, kept visually distinct from when it started */
+  .auto-o{font-size:12.5px;margin-top:5px;line-height:1.55;}
+  .auto-o.warn{color:var(--warn);}
+  .auto-o.neg{color:var(--neg);}
   /* R9.7 — one row per recorded change. Automatic ones are marked, because a
      change nobody chose to make is the one worth finding. */
   .change-row{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line);
@@ -701,9 +705,38 @@ let _toastT=null;
 function toast(msg,kind){ let el=$('#toast'); if(!el){ el=document.createElement('div'); el.id='toast'; document.body.appendChild(el); } el.className='toast'+(kind?' '+kind:''); el.textContent=msg; el.hidden=false; requestAnimationFrame(()=>el.classList.add('show')); clearTimeout(_toastT); _toastT=setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=>{el.hidden=true;},250); },3600); }
 
 /* ---------- admin key (persisted) ---------- */
+/* ---------- is a password required at all? --------------------------------
+   The page used to assume "always locked" and gate every panel on a stored
+   key. That is right in production and wrong on a local preview, where the
+   server is not checking anything — the owner was asked for a password that
+   nothing would have validated, and entering one looked like it failed.
+
+   AUTH_MODE is read once from the server. It is NOT a client-supplied flag:
+   the page cannot set it, it only reports what the server already decided, and
+   the server can only answer 'open' when CRON_SECRET is absent AND the process
+   is not running on Vercel. A deployment can never be 'open'. */
+let AUTH_MODE = null; // null until known — "unknown" is not "open"
+let LAST_REJECTED_KEY = '';
+async function readAuthMode(){
+  try{
+    const r = await fetch('/api/admin?do=auth-mode', { cache:'no-store' });
+    const j = await r.json();
+    AUTH_MODE = (j && j.mode) || null;
+  }catch{ AUTH_MODE = null; }
+  renderUnlock();
+  return AUTH_MODE;
+}
+/** True when nothing needs a password here. Fails CLOSED while unknown. */
+function authOpen(){ return AUTH_MODE === 'open'; }
+/** The one question every panel should ask instead of `key()`. */
+function unlocked(){ return authOpen() || !!key(); }
+
 function key(){ try{ return localStorage.getItem('iw_secret')||''; }catch{ return ''; } }
 function setKey(v,reload){ try{ v?localStorage.setItem('iw_secret',v):localStorage.removeItem('iw_secret'); }catch{} renderUnlock(); if(reload&&typeof load==='function') load(); }
 function needKey(){
+  // On a local preview there is nothing to ask for, and prompting would be
+  // asking for a password that the server will not check.
+  if(authOpen()) return 'open';
   const k=key();
   if(k) return k;
   const v=prompt('What’s your password?');
@@ -712,17 +745,28 @@ function needKey(){
 }
 function renderUnlock(){
   const el=$('#unlock');
-  if(key()){
+  if(!el) return;
+  if(authOpen()){
+    // Local preview: there is no password to get wrong, and saying so is
+    // better than a lock that implies there is one.
+    el.className='unlock ok';
+    el.innerHTML='🔓 Local preview — no password needed. This is isolated sample data; nothing here reaches production.';
+    return;
+  }
+  const rejected = LAST_REJECTED_KEY && key() === LAST_REJECTED_KEY;
+  if(key() && !rejected){
     el.className='unlock ok';
     el.innerHTML=`🔓 Unlocked on this device <button class="link" id="lockBtn">lock</button>`;
     $('#lockBtn').onclick=()=>setKey('');
   } else {
     el.className='unlock';
-    el.innerHTML=`🔒 Locked — enter your password once to manage sites, notes &amp; reports
-      <input id="ukInput" type="password" placeholder="Password" />
+    // the rejected password is kept in the box so it can be corrected rather
+    // than retyped from nothing
+    el.innerHTML=`${rejected ? '⚠️ That password was not accepted — correct it and try again' : '🔒 Locked — enter your password once to manage sites, notes &amp; reports'}
+      <input id="ukInput" type="password" placeholder="Password" value="${rejected ? String(key()).replace(/"/g,'&quot;') : ''}" />
       <button class="btn sm" id="ukBtn">Unlock</button>`;
-    $('#ukBtn').onclick=()=>{ const v=$('#ukInput').value.trim(); if(v) setKey(v,true); };
-    $('#ukInput').onkeydown=(e)=>{ if(e.key==='Enter'){ const v=e.target.value.trim(); if(v) setKey(v,true); } };
+    $('#ukBtn').onclick=()=>{ const v=$('#ukInput').value.trim(); if(v){ LAST_REJECTED_KEY=''; setKey(v,true); } };
+    $('#ukInput').onkeydown=(e)=>{ if(e.key==='Enter'){ const v=e.target.value.trim(); if(v){ LAST_REJECTED_KEY=''; setKey(v,true); } } };
   }
 }
 
@@ -759,11 +803,22 @@ async function load(){
   try{
     // the feed carries client contact details, prices and private notes, so it
     // is password-gated now — send the stored key and ask for it on a 401
-    const r=await fetch('/api/sites?t='+Date.now()+'&secret='+encodeURIComponent(key()),{cache:'no-store'});
+    const r=await fetch('/api/sites?t='+Date.now()+(authOpen()?'':'&secret='+encodeURIComponent(key())),{cache:'no-store'});
     if(r.status===401){
       const j=await r.json().catch(()=>({}));
-      $('#sites').innerHTML='<div class="loading">'+(key()?'That password was not accepted. ':'')+(j.error&&/CRON_SECRET/.test(j.error)?j.error:'Enter your password above to load the portfolio.')+'</div>';
-      if(key()) setKey('');
+      // THE PASSWORD LOOP, fixed.
+      //
+      // This used to wipe the stored key and re-render the locked form, so
+      // someone who mistyped once saw the screen reset and was told to "enter
+      // your password above" — the thing they had just done. The key is now
+      // kept and the input is pre-filled with it, so a typo is a typo rather
+      // than a loop with no memory.
+      const wrong = !!key();
+      $('#sites').innerHTML='<div class="loading">'
+        + (wrong ? 'That password was not accepted. Check it and try again.' : 'Enter your password above to load the portfolio.')
+        + (j.error&&/CRON_SECRET/.test(j.error)?' '+j.error:'')
+        + '</div>';
+      if(wrong) LAST_REJECTED_KEY = key();
       renderUnlock();
       return;
     }
@@ -2697,7 +2752,7 @@ function renderOverviewAttention(){
    turn the Overview into a permission error, so they stay "not checked" — and
    the list says so — until a password is present. */
 async function loadAttentionReplies(){
-  if(!key()) return;
+  if(!unlocked()) return;
   const j=await acqApi('replies-list&limit=100');
   if(j&&j.ok&&Array.isArray(j.replies)) ATT_REPLIES=j.replies;
   renderOverviewAttention();
@@ -2793,7 +2848,7 @@ import('/relationships.js').then((m)=>{ REL_MOD=m; renderRelPanel(); }).catch(()
 import('/sms-inbox.js').then((m)=>{ SMS_MOD=m; renderInbox(); }).catch(()=>{ SMS_MOD=null; });
 
 async function loadFollowUps(){
-  if(!key()){ REL_DATA=null; REL_ERR='Unlock with the password to see what you promised people.'; renderRelPanel(); return; }
+  if(!unlocked()){ REL_DATA=null; REL_ERR='Unlock with the password to see what you promised people.'; renderRelPanel(); return; }
   let j=null;
   try{ j=await acqApi('followups-due'); }catch{ j=null; }
   if(j&&j.ok){ REL_DATA=j; REL_ERR=''; } else { REL_DATA=null; REL_ERR=(j&&j.error)||'the follow-up list did not answer'; }
@@ -2832,7 +2887,7 @@ async function movePreview(taskId,state){
 }
 
 async function loadInbox(){
-  if(!key()) return;
+  if(!unlocked()) return;
   let j=null,s=null;
   try{ j=await acqApi('conversations'); }catch{ j=null; }
   try{ s=await acqApi('sms-stats'); }catch{ s=null; }
@@ -2921,7 +2976,7 @@ async function sendText(){
    rather than silently passing it. */
 let DELIV = null;
 async function loadDeliverability(){
-  if(!key()) return;                         // reading the numbers needs the password
+  if(!unlocked()) return;                         // reading the numbers needs the password
   let j=null;
   try{ j=await acqApi('deliverability'); }catch{ j=null; }
   DELIV = (j&&j.ok) ? { result:j.result, stop:j.stop } : null;
@@ -2937,7 +2992,7 @@ let OPT_MOD=null, OPT_DATA=null, OPT_ERROR='', OPT_BUSY=false, OPT_BUSY_ID='';
 import('/optimisation.js').then((m)=>{ OPT_MOD=m; renderOptPanel(); }).catch(()=>{ OPT_MOD=null; });
 
 async function loadOptimisation(){
-  if(!key()){ OPT_DATA=null; OPT_ERROR='Unlock with the password to read the change history.'; renderOptPanel(); return; }
+  if(!unlocked()){ OPT_DATA=null; OPT_ERROR='Unlock with the password to read the change history.'; renderOptPanel(); return; }
   let j=null,p=null;
   try{ j=await acqApi('optimisation-log'); }catch{ j=null; }
   try{ p=await acqApi('optimisation-prohibitions'); }catch{ p=null; }
@@ -2974,11 +3029,22 @@ async function undoOptChange(id){
 let ACQ = { tab: 'contacts', loading: false, load: {} };
 let acqMod = null;
 async function acqApi(q, body){
-  const u=`/api/admin?do=${q}&secret=${encodeURIComponent(key())}`;
+  // No secret is appended when the server has said none is required. Sending
+  // an empty one would also work, but omitting it keeps the local preview
+  // honest about what it is doing.
+  const u=`/api/admin?do=${q}${authOpen() ? '' : '&secret=' + encodeURIComponent(key())}`;
   const opt=body?{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)}:{cache:'no-store'};
   try{
     const r=await fetch(u,opt);
-    if(r.status===401){ toast('Enter your password first.','err'); return {ok:false,error:'locked'}; }
+    if(r.status===401){
+      // "Enter your password first" was a lie when a password HAD just been
+      // entered and rejected. Say which of the two it actually is.
+      const msg = key()
+        ? 'That password was not accepted.'
+        : 'Enter your password above first.';
+      toast(msg,'err');
+      return {ok:false,error:key()?'that password was not accepted':'locked'};
+    }
     return await r.json().catch(()=>({ok:false,error:'the server sent something this page could not read'}));
   }catch(e){
     // R2.5 — a network failure used to surface as an empty list. It is an
@@ -3149,6 +3215,11 @@ renderUnlock();
 fillLeadSourceList();
 loadSysHealth();
 (async()=>{
+  // FIRST: find out whether this deployment needs a password at all. Every
+  // panel's "am I allowed to load?" depends on the answer, and asking after
+  // they have already decided is how a local preview ends up locked against
+  // a server that was not checking anything.
+  await readAuthMode();
   await load(); // let the main dashboard paint first — revisions renders after, not ahead of everything else
   await loadRevWidget();
   startRevPoll();

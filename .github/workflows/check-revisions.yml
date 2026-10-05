@@ -27,3 +27,20 @@ jobs:
           curl -sS -m 65 -X POST "https://agency-dashboard-omega-red.vercel.app/api/admin?do=auto-tick&secret=${{ secrets.CRON_SECRET }}" \
             -o tick.json -w "\nHTTP %{http_code}\n" || true
           cat tick.json
+
+      # THE INDEPENDENT HEALTH CHECK.
+      #
+      # A failed worker cannot be its own monitor: a process that is not
+      # running cannot tell you it is not running. This step runs on GitHub's
+      # infrastructure, on GitHub's scheduler, and reaches the deployment from
+      # outside — so if Vercel is down or the functions are failing, something
+      # that is not Vercel notices.
+      #
+      # Its limit, stated honestly: if GitHub Actions itself stops firing,
+      # nothing here notices. That gap is real and is why the dashboard also
+      # shows each worker's own last check-in, which would go stale visibly.
+      - name: Recovery sweep
+        run: |
+          curl -sS -m 60 -X POST "https://agency-dashboard-omega-red.vercel.app/api/admin?do=recovery-run&secret=${{ secrets.CRON_SECRET }}" \
+            -o recovery.json -w "\nHTTP %{http_code}\n" || true
+          cat recovery.json
