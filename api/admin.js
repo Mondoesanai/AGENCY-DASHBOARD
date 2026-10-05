@@ -195,6 +195,40 @@ export default async function handler(req, res) {
       if (out && out.ok === false) return res.status(400).json(out);
       return res.status(200).json({ ok: true, bounds: out });
     }
+    // Everything the landing screen needs, in one call — three round trips on
+    // the screen the owner opens most would be three chances to be slow.
+    case 'today': {
+      const [{ listBookings }, { dueFollowUps }, { queue }, { queueHealth }] = await Promise.all([
+        import('../lib/bookings.js'), import('../lib/relationship.js'),
+        import('../lib/previews.js'), import('../lib/jobs.js'),
+      ]);
+      // "connected" is about the SCHEDULER, not about whether anyone booked.
+      // Without the signing key every booking payload is refused, so a booking
+      // could not have arrived — which is a different fact from none arriving.
+      const connected = !!process.env.CALENDLY_WEBHOOK_KEY;
+      let bookings = [];
+      let bookingError = null;
+      try {
+        const all = await listBookings({ limit: 50 });
+        bookings = (all || [])
+          .filter((b) => b.status === 'scheduled' && Number(b.startAt) > Date.now())
+          .sort((a, b) => a.startAt - b.startAt);
+      } catch (e) { bookingError = String(e.message || e); }
+
+      let work = {};
+      try {
+        const [fu, pv, qh] = await Promise.all([dueFollowUps({}), queue({}), queueHealth({})]);
+        const owed = (pv.tasks || []).filter((t) => t.state === 'requested' || t.state === 'in-progress').length;
+        work = { followUpsDue: fu.dueCount || 0, previewsOwed: owed, queued: qh.queued || 0 };
+      } catch (e) { work = { error: String(e.message || e) }; }
+
+      return res.status(200).json({
+        ok: true,
+        bookings: { connected, bookings, error: bookingError },
+        work,
+      });
+    }
+
     // ---- Operational recovery ---------------------------------------------
     // `diagnose` looks and changes nothing, so the dashboard can call it on
     // every load. `recover` acts, and is reached by the independent scheduler.

@@ -112,6 +112,21 @@
   .auto-h{display:flex;align-items:center;gap:9px;font-size:13.5px;}
   .auto-t{font-size:13px;margin-top:4px;}
   .auto-row .faint{font-size:12px;margin-top:4px;line-height:1.55;}
+  /* The landing screen's three summary blocks. Stacks on a phone. */
+  .today-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0;}
+  @media (max-width:900px){ .today-grid{grid-template-columns:minmax(0,1fr);} }
+  .today-block h3{font-size:13px;margin:0 0 7px;letter-spacing:.02em;opacity:.85;}
+  .today-block .note{margin:0;}
+  .book-row{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--green-br);
+    border-radius:var(--radius);padding:9px 11px;margin-bottom:6px;}
+  .book-row.tone-warn{border-left-color:var(--warn);}
+  .book-when{font-size:13px;}
+  .book-who{font-size:12.5px;margin-top:2px;}
+  .book-row .faint{font-size:11.5px;margin-top:3px;}
+  .work-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+  /* numbers folded away: for looking up, not for noticing */
+  .glance-fold{margin-top:14px;border-top:1px solid var(--line);padding-top:10px;}
+  .glance-fold>summary{cursor:pointer;font-size:13px;opacity:.8;}
   /* what a run ACHIEVED, kept visually distinct from when it started */
   .auto-o{font-size:12.5px;margin-top:5px;line-height:1.55;}
   .auto-o.warn{color:var(--warn);}
@@ -484,10 +499,36 @@
          looking up, not for noticing: nothing on this page should require the
          owner to spot a problem by reading six tiles. -->
     <div id="attention"></div>
+
+    <!-- The three questions that follow "what needs me?": what is coming up,
+         what is in flight, and is it all running. Each is a summary with a way
+         through to the detail — the detail itself does not belong here. -->
+    <div class="today-grid">
+      <section class="today-block">
+        <h3>Upcoming bookings</h3>
+        <div id="todayBookings"></div>
+      </section>
+      <section class="today-block">
+        <h3>In progress</h3>
+        <div id="todayWork"></div>
+      </section>
+      <section class="today-block">
+        <h3>Automation</h3>
+        <div id="todayHealth"></div>
+      </section>
+    </div>
+
     <!-- R2.8 — what needs you first (above), then what you can do. -->
     <div id="primaryActions"></div>
-    <div class="glance-h" id="glanceH" hidden>Portfolio at a glance <span>tap any number for the per-site detail</span></div>
-    <div class="overview" id="overview"></div>
+
+    <!-- Numbers are for looking up, not for noticing, so they are folded away
+         by default. Nothing on the landing screen should require the owner to
+         spot a problem by reading six tiles. -->
+    <details class="glance-fold" id="glanceFold">
+      <summary>Portfolio numbers</summary>
+      <div class="glance-h" id="glanceH" hidden>Portfolio at a glance <span>tap any number for the per-site detail</span></div>
+      <div class="overview" id="overview"></div>
+    </details>
   </section>
 
   <section id="view-clients" hidden>
@@ -2836,6 +2877,34 @@ async function setAutomationPaused(paused){
   const t=$('#nextSeoVal'); if(t) t.textContent=autoRanText();
 }
 
+/* ---------- The landing screen's three summary blocks ----------------------
+   Bookings, work in flight, automation health. Each is a summary with a route
+   through to the detail; the detail stays where it lives. */
+let TODAY_MOD=null, TODAY_DATA=null, TODAY_ERR='';
+import('/today.js').then((m)=>{ TODAY_MOD=m; renderToday(); }).catch(()=>{ TODAY_MOD=null; });
+
+async function loadToday(){
+  if(!unlocked()) return;
+  let j=null;
+  try{ j=await acqApi('today'); }catch{ j=null; }
+  if(j&&j.ok){ TODAY_DATA=j; TODAY_ERR=''; }
+  else { TODAY_DATA=null; TODAY_ERR=(j&&j.error)||'the summary did not answer'; }
+  renderToday();
+}
+
+function renderToday(){
+  if(!TODAY_MOD) return;
+  const bk=$('#todayBookings'), wk=$('#todayWork'), hl=$('#todayHealth');
+  const bookings = TODAY_ERR ? {error:TODAY_ERR} : (TODAY_DATA ? TODAY_DATA.bookings : null);
+  const work     = TODAY_ERR ? {error:TODAY_ERR} : (TODAY_DATA ? TODAY_DATA.work : null);
+  if(bk) bk.innerHTML=TODAY_MOD.renderBookings(bookings);
+  if(wk) wk.innerHTML=TODAY_MOD.renderWork(work);
+  if(hl) hl.innerHTML=TODAY_MOD.renderHealth(AUTO_ERROR?{error:AUTO_ERROR}:AUTO_STATUS);
+  for(const host of [bk,wk,hl]){
+    if(host) TODAY_MOD.wireToday(host,{ go:(v)=>{ if(window.IWgo) window.IWgo(v); }, retry:()=>loadToday() });
+  }
+}
+
 /* ---------- Follow-ups, previews and the unified conversation inbox --------
    The two screens the relationship work exists for. Both read through the
    password-gated admin routes; a failed read renders as a failed read rather
@@ -3199,6 +3268,7 @@ import('/nav.js')
         if (v === 'acquisition' && acqMod) renderAcq();
         if (v === 'automations') { loadAutomation(); loadOptimisation(); } // refresh the check-ins and the ledger on arrival
         if (v === 'followups') loadFollowUps(); // what you promised people, re-read on arrival
+        if (v === 'overview') loadToday();   // bookings and work in flight, re-read on arrival
       },
     });
     window.IWgo = (v) => (goView ? goView(v) : null);
@@ -3228,6 +3298,7 @@ loadSysHealth();
   loadOptimisation();         // R9.7 — the ledger, which says so if it cannot be read
   loadDeliverability();       // R9.9 — only does anything once a password is present
   loadFollowUps();            // follow-ups, previews owed, and the conversation inbox
+  loadToday();                // bookings, work in flight, automation health
 })();
 </script>
 </body>
