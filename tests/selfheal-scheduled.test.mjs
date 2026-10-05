@@ -1,10 +1,16 @@
 // Does the system heal itself when nobody is watching?
 //
-// recover() has existed for a while and was wired to exactly one caller: a
-// button in the dashboard. So the self-healing sweep only ran while somebody
-// was looking at it, which is the opposite of the point. Two real client
-// requests died in the same week with every worker reporting green, and
-// nothing swept for it because nothing was scheduled to.
+// CORRECTION: an earlier version of this comment said recover() had only one
+// caller, a button in the dashboard. That was wrong — .github/workflows/
+// check-revisions.yml has been calling it every ~10 minutes all along. The
+// real gaps were narrower and are what these checks cover:
+//
+//   - the sweep recorded NOTHING, so "is anything sweeping?" had no answer and
+//     a stopped sweep was invisible. That workflow's own comments admit it:
+//     "if GitHub Actions itself stops firing, nothing here notices."
+//   - the daily pass is the floor beneath that workflow, and it ran the sweep
+//     LAST, so the floor was dropped for lack of budget exactly during a long
+//     outage — the one situation that makes a floor matter.
 //
 // The import inside the cron is dynamic, so a wrong path fails at RUN time in
 // production, not at load time here — the first version of this wiring pointed
@@ -47,11 +53,17 @@ for (const s of specs.filter((s) => s.startsWith('../lib/'))) {
 
 // ---------------------------------------------------------------------------
 section('H3  the sweep is guarded so it cannot take the run down');
-const block = cron.slice(cron.indexOf('The self-healing sweep'), cron.indexOf('The self-healing sweep') + 1400);
-check('it is inside a try/catch', /catch\s*\(/.test(block), block.slice(0, 80));
-check('a failure is logged rather than thrown', /action:\s*'recovery',\s*error:/.test(block));
-check('it respects the remaining time budget', /remaining\s*>\s*\d+/.test(block));
-check('and says so when it skips', /skipped:\s*true/.test(block));
+// both sweep call sites: the early one at the top and the ordinary one later
+const early = cron.slice(cron.indexOf('the overdue self-healing sweep goes FIRST'), cron.indexOf('Health + billing'));
+const late = cron.slice(cron.indexOf('The self-healing sweep, as a FLOOR'), cron.indexOf('real signal for'));
+check('the early sweep is inside a try/catch', /catch\s*\(/.test(early));
+check('and a failure there is logged, not thrown', /action:\s*'recovery-first',\s*error:/.test(early));
+check('the later sweep is inside a try/catch', /catch\s*\(/.test(late));
+check('a failure is logged rather than thrown', /action:\s*'recovery',\s*error:/.test(late));
+check('it respects the remaining time budget', /remaining\s*>\s*\d+/.test(late));
+check('and says so when it skips', /skipped:\s*true/.test(late));
+check('skipping is only safe because another trigger is current',
+  /10-minute trigger is current/.test(late), 'the reason must be stated, not assumed');
 
 // ---------------------------------------------------------------------------
 section('H4  it escalates the severities the new findings use');

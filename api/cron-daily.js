@@ -113,6 +113,47 @@ export default async function handler(req, res) {
   const isFirst = today === 1;
   const log = [];
 
+  // ---- the overdue self-healing sweep goes FIRST -------------------------
+  //
+  // The sweep's primary trigger is GitHub Actions every ~10 minutes. This run
+  // is the floor beneath it, for the gap that workflow openly cannot cover:
+  // if GitHub's scheduler stops, nothing there notices.
+  //
+  // A floor that only holds when there is spare time is not a floor. Running
+  // this at the END meant the one condition that makes it matter — a long
+  // outage, which is also when everything else here has the most to do — was
+  // exactly when it would be dropped for lack of budget. So when the sweep is
+  // genuinely overdue it runs before anything else can spend the time, and
+  // the block at the bottom stands down.
+  let sweptEarly = false;
+  try {
+    const { sweepHealth, recover } = await import('../lib/recovery.js');
+    const h = await sweepHealth({ now: t0 });
+    if (!h.ok) {
+      const { notifyOwner } = await import('../lib/sms.js');
+      const r = await recover({ notify: (m) => notifyOwner(m, { subject: 'Automation needs you' }) });
+      sweptEarly = true;
+      log.push({
+        action: 'recovery-first',
+        reason: h.note || 'the sweep was overdue',
+        result: `${r.findings.length} finding(s)`,
+      });
+      // The sweep being overdue is itself a fault: the 10-minute trigger has
+      // stopped. Say so, because every other check could be green while the
+      // thing that watches them is the one that died.
+      if (h.everRan === false || (h.ageMs && h.ageMs > 26 * 3600e3)) {
+        await notifyOwner(
+          `The self-healing sweep ${h.everRan === false ? 'has never run' : `has not run for ${Math.round(h.ageMs / 3600e3)}h`}. ` +
+            'Its 10-minute trigger is GitHub Actions (.github/workflows/check-revisions.yml) — check that workflow is still enabled. ' +
+            'The daily pass has just run one sweep in its place.',
+          { subject: 'The watchdog stopped' }
+        ).catch(() => {});
+      }
+    }
+  } catch (e) {
+    log.push({ action: 'recovery-first', error: String(e.message || e) });
+  }
+
   // Health + billing/snapshot used to run one site at a time — with fetch
   // (up to 12s) and a raw TLS connect for the SSL check (up to 8s) EACH,
   // sequentially, this alone could burn 15-20+ seconds per slow/unresponsive
@@ -295,31 +336,38 @@ export default async function handler(req, res) {
     log.push({ action: 'revisions', error: String(e.message || e) });
   }
 
-  // The self-healing sweep. Until now recover() only ever ran when somebody
-  // opened the dashboard and pressed a button, which means the system could
-  // only fix itself while being watched — the opposite of the point. Two real
-  // client requests died in a week with every worker green, and nothing swept
-  // for it because nothing was scheduled to.
+  // The self-healing sweep, as a FLOOR under GitHub Actions.
   //
-  // It is deliberately last: it diagnoses what the rest of this run did, it
-  // escalates at most once per day per issue anyway, and if the budget is
-  // gone it is the safest thing to drop.
-  try {
-    const remaining = HARD_LIMIT_MS - (Date.now() - t0) - 4000;
-    if (remaining > 8000) {
-      const { recover } = await import('../lib/recovery.js');
-      const { notifyOwner } = await import('../lib/sms.js');
-      const r = await recover({ notify: (t) => notifyOwner(t, { subject: 'Automation needs you' }) });
-      const escalated = (r.actions || []).find((a) => a.action === 'escalated');
-      log.push({
-        action: 'recovery',
-        result: `${r.findings.length} finding(s)` + (escalated ? `, raised ${escalated.ids.length}` : ', nothing new to raise'),
-      });
-    } else {
-      log.push({ action: 'recovery', skipped: true, reason: 'out of time budget this run' });
+  // The primary trigger is .github/workflows/check-revisions.yml, every ~10
+  // minutes. This run is the backstop for the case that workflow admits it
+  // cannot cover: if GitHub's scheduler stops firing, nothing there notices.
+  //
+  // It ran last and was therefore droppable whenever the budget was spent,
+  // which made the floor conditional — exactly the thing it exists to not be.
+  // Now, if the sweep is genuinely overdue it has ALREADY been run at the top
+  // of this function, before anything else could consume the time. This block
+  // only handles the ordinary case, where skipping is harmless because the
+  // 10-minute trigger is alive.
+  if (sweptEarly) {
+    log.push({ action: 'recovery', result: 'ran first — the sweep was overdue' });
+  } else {
+    try {
+      const remaining = HARD_LIMIT_MS - (Date.now() - t0) - 4000;
+      if (remaining > 8000) {
+        const { recover } = await import('../lib/recovery.js');
+        const { notifyOwner } = await import('../lib/sms.js');
+        const r = await recover({ notify: (t) => notifyOwner(t, { subject: 'Automation needs you' }) });
+        const escalated = (r.actions || []).find((a) => a.action === 'escalated');
+        log.push({
+          action: 'recovery',
+          result: `${r.findings.length} finding(s)` + (escalated ? `, raised ${escalated.ids.length}` : ', nothing new to raise'),
+        });
+      } else {
+        log.push({ action: 'recovery', skipped: true, reason: 'out of time this run; the 10-minute trigger is current, so nothing is missed' });
+      }
+    } catch (e) {
+      log.push({ action: 'recovery', error: String(e.message || e) });
     }
-  } catch (e) {
-    log.push({ action: 'recovery', error: String(e.message || e) });
   }
 
   // real signal for "is the daily automation actually running" — nothing

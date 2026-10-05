@@ -104,10 +104,14 @@ await recordBeat('tick', NOW);
 await recordBeat('daily', NOW);
 await recordBeat('jobs', NOW);
 await recordBeat('revisions', NOW);
+await recordBeat('recovery', NOW); // the self-healing sweep is a monitored worker too
 let a = await automationStatus(NOW);
-check('all four workers are reported', a.workers.length === 4, String(a.workers.length));
+check('every registered worker is reported', a.workers.length === Object.keys(WORKERS).length,
+  `${a.workers.length} reported vs ${Object.keys(WORKERS).length} registered`);
 check('everything fresh is all ok', a.allOk === true, JSON.stringify(a.workers.map((w) => [w.id, w.status])));
 check('and the headline says running', headline(a).word === 'running');
+// a new worker must not be able to join the registry without being monitored
+check('the sweep is among them', a.workers.some((w) => w.id === 'recovery'));
 
 await store.set(WORKERS.jobs.key, String(NOW - 2 * 864e5));
 a = await automationStatus(NOW);
