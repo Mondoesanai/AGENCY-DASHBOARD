@@ -229,6 +229,24 @@ export default async function handler(req, res) {
       });
     }
 
+    // ---- Client onboarding progress ---------------------------------------
+    case 'onboarding': {
+      const { allStatuses, statusFor } = await import('../lib/onboarding.js');
+      if (req.query.slug) {
+        const { listSites } = await import('../lib/registry.js');
+        const site = (await listSites()).find((s) => s.slug === req.query.slug);
+        if (!site) return res.status(404).json({ ok: false, error: 'no such client' });
+        return res.status(200).json(await statusFor(site, {}));
+      }
+      return res.status(200).json(await allStatuses({}));
+    }
+    case 'onboarding-recheck': {
+      const { recheck } = await import('../lib/onboarding.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await recheck(body.slug || req.query.slug, {});
+      return res.status(out.ok ? 200 : 404).json(out);
+    }
+
     // ---- Operational recovery ---------------------------------------------
     // `diagnose` looks and changes nothing, so the dashboard can call it on
     // every load. `recover` acts, and is reached by the independent scheduler.
