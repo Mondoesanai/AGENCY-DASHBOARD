@@ -27,6 +27,12 @@ import {
   enqueue, claim, fail, getJob, runOne, throwFromProviderResult, MAX_OUTAGE_DEFERRALS, JOB_STATE,
 } from '../lib/jobs.js';
 
+// Every enqueue below passes `runAt: NOW`. Without it the job is queued at the
+// WALL clock while everything else runs on this fixed one, so the whole file
+// went red three days after it was written — nothing was due, because "now"
+// had moved past the fixture. Same class of bug as the retention test that
+// searched a timestamp for an area code: a test that depends on today's date
+// is a test that is sometimes red for no reason.
 const NOW = Date.UTC(2026, 9, 2, 12);
 
 // A loop-local assertion that only reports when it FAILS. Asserting inside a
@@ -77,7 +83,7 @@ check('rate limit, outage and permanent are three different answers',
 
 // ---------------------------------------------------------------------------
 section('O2  an outage gives the attempt back — the work survives the outage');
-let j = await enqueue({ type: 'outage-send', payload: { to: 'someone' }, maxAttempts: 3 });
+let j = await enqueue({ type: 'outage-send', payload: { to: 'someone' }, maxAttempts: 3, runAt: NOW });
 await claim({ worker: 'w', now: NOW, types: ['outage-send'] });
 let before = await getJob(j.job.id);
 const attemptsAfterClaim = before.attempts;
@@ -95,7 +101,7 @@ check('and NOT recorded as a rate limit, because they are different problems',
   !(job.history || []).some((h) => h.event === 'rate-limited'));
 
 // the thing this exists for: an outage longer than the attempt budget
-j = await enqueue({ type: 'outage-long', payload: {}, maxAttempts: 3 });
+j = await enqueue({ type: 'outage-long', payload: {}, maxAttempts: 3, runAt: NOW });
 for (let i = 0; i < 5; i++) {
   await claim({ worker: 'w', now: NOW + i * 1000, types: ['outage-long'] });
   f = await fail(j.job.id, 'HTTP 503', { now: NOW + i * 1000, outage: true });
@@ -121,7 +127,7 @@ check('and is not reported as having failed', !ran.failed, JSON.stringify(ran).s
 // runOne reports it as failed, every count the owner sees is wrong — the
 // dashboard would show work failing during an outage that is simply waiting.
 {
-  const viaRunOne = await enqueue({ type: 'outage-runone', payload: {}, maxAttempts: 3 });
+  const viaRunOne = await enqueue({ type: 'outage-runone', payload: {}, maxAttempts: 3, runAt: NOW });
   const out = await runOne({
     handlers: {
       'outage-runone': async () => throwFromProviderResult({ ok: false, status: 503, error: 'unavailable' }, { what: 'send' }),
@@ -140,7 +146,7 @@ check('and is not reported as having failed', !ran.failed, JSON.stringify(ran).s
   check('with the outage on its history', (jr.history || []).some((h) => h.event === 'provider-outage'), JSON.stringify(jr.history));
 
   // the contrast: a genuinely permanent failure through the same path
-  const permJob = await enqueue({ type: 'perm-runone', payload: {}, maxAttempts: 3 });
+  const permJob = await enqueue({ type: 'perm-runone', payload: {}, maxAttempts: 3, runAt: NOW });
   const permOut = await runOne({
     handlers: {
       'perm-runone': async () => throwFromProviderResult({ ok: false, status: 401, error: 'bad key' }, { what: 'send' }),
@@ -161,7 +167,7 @@ section('O3  but "give the attempt back" is CAPPED — a broken provider must be
 // one cannot, and that is the worse outcome.
 check('the cap exists and is a small number', MAX_OUTAGE_DEFERRALS > 0 && MAX_OUTAGE_DEFERRALS <= 20, String(MAX_OUTAGE_DEFERRALS));
 
-j = await enqueue({ type: 'outage-forever', payload: {}, maxAttempts: 2 });
+j = await enqueue({ type: 'outage-forever', payload: {}, maxAttempts: 2, runAt: NOW });
 let died = false;
 // the clock has to move past the backoff each round, or the job is simply not
 // due and `claim` returns nothing — which looks exactly like the cap failing
@@ -181,7 +187,7 @@ check('and the reason is on the job', !!job.deadReason, String(job.deadReason));
 
 // ---------------------------------------------------------------------------
 section('O4  a permanent failure is NOT given the outage treatment');
-j = await enqueue({ type: 'bad-request', payload: {}, maxAttempts: 5 });
+j = await enqueue({ type: 'bad-request', payload: {}, maxAttempts: 5, runAt: NOW });
 await claim({ worker: 'w', now: NOW, types: ['bad-request'] });
 f = await fail(j.job.id, 'HTTP 400 malformed', { now: NOW, permanent: true });
 job = await getJob(j.job.id);
