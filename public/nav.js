@@ -20,6 +20,10 @@ export const VIEWS = Object.freeze([
   { id: 'overview', label: 'Overview', hint: 'What needs attention today' },
   { id: 'clients', label: 'Clients', hint: 'Each client, their analytics, sites and revisions' },
   { id: 'acquisition', label: 'Acquisition', hint: 'Prospecting, contacts, campaigns, conversations, bookings' },
+  // People you have actually met, what you promised them, and the conversation
+  // you are having. Deliberately separate from Acquisition: the whole point of
+  // the relationship work is that these are not cold prospects.
+  { id: 'followups', label: 'Follow-ups', hint: 'What you promised people you met, previews owed, and conversations' },
   { id: 'automations', label: 'Automations', hint: 'What is running, what is paused, what is blocked' },
   { id: 'settings', label: 'Settings', hint: 'Business settings, integrations, budgets' },
 ]);

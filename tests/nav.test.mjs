@@ -6,10 +6,18 @@ import { check, section, done } from './world.mjs';
 import { VIEWS, DEFAULT_VIEW, resolveView, hashFor, initNav, VIEW_OF_ELEMENT } from '../public/nav.js';
 
 // ---------------------------------------------------------------------------
-section('N1  the five sections the owner specified');
+section('N1  the sections the owner specified');
 const ids = VIEWS.map((v) => v.id);
-check('there are exactly five', VIEWS.length === 5, String(VIEWS.length));
-check('in the specified order', ids.join(',') === 'overview,clients,acquisition,automations,settings', ids.join(','));
+// Five originally; "Follow-ups" was added with the business-card addendum,
+// deliberately as ONE tab holding both the promises and the conversations
+// rather than two, because a nav that keeps growing is the thing that makes a
+// dashboard feel like software nobody edited. The cap below is the guard: this
+// test failing is the intended way to notice a seventh tab being added.
+check('there are exactly six', VIEWS.length === 6, String(VIEWS.length));
+check('and no more than six, so the nav cannot creep', VIEWS.length <= 6);
+check('in the specified order', ids.join(',') === 'overview,clients,acquisition,followups,automations,settings', ids.join(','));
+check('Follow-ups sits next to Acquisition, since it is the warm half of the same job',
+  ids.indexOf('followups') === ids.indexOf('acquisition') + 1);
 check('each has a visible label', VIEWS.every((v) => v.label && v.label.length > 2));
 check('each has a hint explaining what belongs there', VIEWS.every((v) => v.hint && v.hint.length > 10));
 check('Overview is the default', DEFAULT_VIEW === 'overview');

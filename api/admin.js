@@ -175,6 +175,98 @@ export default async function handler(req, res) {
       if (out && out.ok === false) return res.status(400).json(out);
       return res.status(200).json({ ok: true, bounds: out });
     }
+    // ---- Relationship workflow (business cards -> follow-up) --------------
+    case 'followups-due': {
+      const { dueFollowUps } = await import('../lib/relationship.js');
+      const { queue } = await import('../lib/previews.js');
+      const [due, previews] = await Promise.all([
+        dueFollowUps({ limit: Number(req.query.limit) || 50 }),
+        queue({ limit: 50 }),
+      ]);
+      return res.status(200).json({ ok: true, followUps: due, previews });
+    }
+    case 'relationship-get': {
+      const { getRoute, describe } = await import('../lib/relationship.js');
+      const rel = await getRoute(req.query.contactId);
+      // `undefined` means unreadable, which is not the same as "none"
+      if (rel === undefined) return res.status(503).json({ ok: false, error: 'the relationship record could not be read' });
+      return res.status(200).json({ ok: true, relationship: rel, summary: describe(rel) });
+    }
+    case 'relationship-edit': {
+      const { editRoute } = await import('../lib/relationship.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await editRoute(body.contactId, body, { by: 'owner' });
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
+    case 'preview-state': {
+      const { setState, attach } = await import('../lib/previews.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = body.attachOnly
+        ? await attach(body.taskId, body.url, { by: 'owner' })
+        : await setState(body.taskId, body.state, { url: body.url || null, by: 'owner', note: body.note || '' });
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
+    case 'preview-announceable': {
+      const { mayAnnounce } = await import('../lib/previews.js');
+      return res.status(200).json({ ok: true, result: await mayAnnounce(req.query.contactId) });
+    }
+
+    // ---- Unified inbox + SMS ---------------------------------------------
+    case 'conversations': {
+      const { waiting } = await import('../lib/conversations.js');
+      return res.status(200).json(await waiting({ limit: Number(req.query.limit) || 50 }));
+    }
+    case 'conversation': {
+      const { conversationFor } = await import('../lib/conversations.js');
+      const { forContact } = await import('../lib/sms-send.js');
+      const [conv, messages] = await Promise.all([
+        conversationFor(req.query.contactId),
+        forContact(req.query.contactId),
+      ]);
+      return res.status(200).json({ ok: conv.ok, conversation: conv, smsMessages: messages });
+    }
+    case 'conversation-takeover': {
+      const { takeOver } = await import('../lib/conversations.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await takeOver(body.contactId, { by: 'owner' });
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
+    case 'conversation-mode': {
+      const { setOwnership } = await import('../lib/conversations.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await setOwnership(body.contactId, body.mode, { by: 'owner' });
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
+    case 'conversation-pause': {
+      const { setPaused } = await import('../lib/conversations.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const out = await setPaused(body.contactId, !!body.paused, { reason: body.reason || '', by: 'owner' });
+      return res.status(200).json(out);
+    }
+    case 'sms-compose': {
+      // preview only — composes and checks, sends nothing
+      const { compose } = await import('../lib/sms-send.js');
+      const { getContact } = await import('../lib/contacts.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const contact = await getContact(body.contactId);
+      if (!contact) return res.status(404).json({ ok: false, error: 'no such contact' });
+      return res.status(200).json({ ok: true, draft: await compose({ contact, body: body.body, purpose: body.purpose || 'one_time_followup' }) });
+    }
+    case 'sms-schedule': {
+      const { schedule } = await import('../lib/sms-send.js');
+      const { getContact } = await import('../lib/contacts.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const contact = await getContact(body.contactId);
+      if (!contact) return res.status(404).json({ ok: false, error: 'no such contact' });
+      const out = await schedule({ contact, body: body.body, purpose: body.purpose || 'one_time_followup', sendAt: Number(body.sendAt) || Date.now(), by: 'owner' });
+      return res.status(out.ok ? 200 : 400).json(out);
+    }
+    case 'sms-stats': {
+      const { stats } = await import('../lib/sms-send.js');
+      const { stats: previewStats } = await import('../lib/previews.js');
+      return res.status(200).json({ ok: true, sms: await stats(), previews: await previewStats() });
+    }
+
     // R9.9 — the deliverability trip: what the numbers are, and the one way
     // back. Starting again is an owner action and has no automatic equivalent.
     case 'deliverability': {

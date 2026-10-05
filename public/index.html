@@ -120,6 +120,34 @@
   .change-h{display:flex;align-items:center;gap:9px;font-size:13.5px;flex-wrap:wrap;}
   .change-row .faint{font-size:12px;margin-top:4px;line-height:1.55;}
   .change-undo{display:flex;align-items:center;gap:9px;flex-wrap:wrap;margin-top:8px;}
+  /* Follow-ups: one row per person you owe something to. */
+  .rel-row{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line);
+    border-radius:var(--radius);padding:12px 14px;margin-bottom:8px;}
+  .rel-row.tone-neg{border-left-color:var(--neg);}
+  .rel-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:6px;}
+  .rel-why,.rel-next,.rel-when{font-size:13px;margin-top:3px;line-height:1.5;}
+  .rel-notes{font-size:12px;margin-top:6px;line-height:1.55;}
+  .rel-actions,.rel-preview-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px;}
+  .rel-preview{border-top:1px solid var(--line);margin-top:9px;padding-top:9px;font-size:13px;}
+  .rel-preview.warn{color:var(--warn);}
+  .rel-queue-item{font-size:12.5px;margin-top:4px;}
+  /* The inbox: list beside the open conversation, stacking on a phone. */
+  .inbox-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.4fr);gap:12px;align-items:start;}
+  @media (max-width:860px){ .inbox-split{grid-template-columns:minmax(0,1fr);} }
+  .sms-waiting{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);
+    padding:10px 12px;margin-bottom:7px;cursor:pointer;}
+  .sms-w-head{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:13px;}
+  .sms-w-body{font-size:12.5px;margin-top:4px;line-height:1.5;}
+  .sms-thread{display:flex;flex-direction:column;gap:8px;margin:10px 0;}
+  .sms-msg{border:1px solid var(--line);border-radius:var(--radius);padding:9px 11px;max-width:92%;}
+  .sms-msg.out{align-self:flex-end;background:var(--surface);}
+  .sms-msg.in{align-self:flex-start;}
+  .sms-msg-meta{display:flex;align-items:center;gap:7px;flex-wrap:wrap;font-size:11.5px;margin-bottom:4px;}
+  .sms-msg-body{font-size:13px;line-height:1.5;white-space:pre-wrap;word-break:break-word;}
+  .sms-controls,.sms-composer-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
+  .sms-composer{margin-top:10px;}
+  .sms-composer textarea{width:100%;box-sizing:border-box;font:inherit;padding:9px 11px;
+    border:1px solid var(--line);border-radius:var(--radius);background:var(--surface);color:inherit;}
   .prohibit-row{border-top:1px solid var(--line);padding-top:8px;margin-top:8px;font-size:13px;}
   .prohibit-row .faint{font-size:12px;margin-top:3px;line-height:1.55;}
   /* R2.8 — the five primary actions. Equal weight: none of them is the one
@@ -476,6 +504,20 @@
          "what changed and what was it before?", which is the whole point. -->
     <div class="section-h"><h2>Experiment changes</h2></div>
     <div id="optPanel"></div>
+  </section>
+
+  <!-- The business-card-to-follow-up workflow and the unified inbox. These are
+       the two screens the relationship work exists for: what you promised
+       people and when, and the conversation you are actually having. -->
+  <section id="view-followups" hidden>
+    <div class="section-h"><h2>Follow-ups &amp; previews</h2></div>
+    <div id="relPanel"></div>
+    <div class="section-h"><h2>Conversations</h2></div>
+    <div id="smsStats"></div>
+    <div class="inbox-split">
+      <div id="smsWaiting"></div>
+      <div id="smsConversation"></div>
+    </div>
   </section>
 
   <section id="view-settings" hidden>
@@ -2739,6 +2781,140 @@ async function setAutomationPaused(paused){
   const t=$('#nextSeoVal'); if(t) t.textContent=autoRanText();
 }
 
+/* ---------- Follow-ups, previews and the unified conversation inbox --------
+   The two screens the relationship work exists for. Both read through the
+   password-gated admin routes; a failed read renders as a failed read rather
+   than as "nothing to do", which on this screen would mean a promise to a real
+   person silently disappearing. */
+let REL_MOD=null, REL_DATA=null, REL_ERR='', REL_BUSY=false;
+let SMS_MOD=null, SMS_WAIT=null, SMS_WAIT_ERR='', SMS_CONV=null, SMS_CONV_ERR='', SMS_DRAFT=null, SMS_OPEN=null, SMS_BUSY=false, SMS_STATS=null, SMS_BODY='';
+
+import('/relationships.js').then((m)=>{ REL_MOD=m; renderRelPanel(); }).catch(()=>{ REL_MOD=null; });
+import('/sms-inbox.js').then((m)=>{ SMS_MOD=m; renderInbox(); }).catch(()=>{ SMS_MOD=null; });
+
+async function loadFollowUps(){
+  if(!key()){ REL_DATA=null; REL_ERR='Unlock with the password to see what you promised people.'; renderRelPanel(); return; }
+  let j=null;
+  try{ j=await acqApi('followups-due'); }catch{ j=null; }
+  if(j&&j.ok){ REL_DATA=j; REL_ERR=''; } else { REL_DATA=null; REL_ERR=(j&&j.error)||'the follow-up list did not answer'; }
+  renderRelPanel();
+  loadInbox();
+}
+
+function renderRelPanel(){
+  const host=$('#relPanel'); if(!host||!REL_MOD) return;
+  host.innerHTML=REL_MOD.renderRelationships(REL_DATA,{error:REL_ERR,busy:REL_BUSY});
+  REL_MOD.wireRelationships(host,{
+    retry:()=>loadFollowUps(),
+    open:(id)=>openConversation(id),
+    edit:(id)=>editPlan(id),
+    preview:(taskId,state)=>movePreview(taskId,state),
+  });
+}
+
+async function editPlan(contactId){
+  const next=prompt('What happens next for this person?');
+  if(next===null) return;
+  const out=await acqApi('relationship-edit',{contactId,nextAction:next});
+  if(!(out&&out.ok)) alert((out&&out.error)||'That could not be changed.');
+  loadFollowUps();
+}
+
+async function movePreview(taskId,state){
+  let url=null;
+  if(state==='ready'){
+    url=prompt('Paste the link to the finished preview.\n\nIt cannot be marked ready without one — "ready" is what unlocks telling someone their preview is ready.');
+    if(!url) return;
+  }
+  const out=await acqApi('preview-state',{taskId,state,url});
+  if(!(out&&out.ok)) alert((out&&out.error)||'That could not be changed.');
+  loadFollowUps();
+}
+
+async function loadInbox(){
+  if(!key()) return;
+  let j=null,s=null;
+  try{ j=await acqApi('conversations'); }catch{ j=null; }
+  try{ s=await acqApi('sms-stats'); }catch{ s=null; }
+  if(j&&j.ok){ SMS_WAIT=j; SMS_WAIT_ERR=''; } else { SMS_WAIT=null; SMS_WAIT_ERR=(j&&j.error)||'the inbox did not answer'; }
+  SMS_STATS=(s&&s.ok)?s:null;
+  renderInbox();
+}
+
+function renderInbox(){
+  const w=$('#smsWaiting'), c=$('#smsConversation'), st=$('#smsStats');
+  if(!SMS_MOD) return;
+  if(st) st.innerHTML=SMS_STATS?SMS_MOD.renderSmsStats(SMS_STATS):'';
+  if(w){
+    w.innerHTML=SMS_MOD.renderWaiting(SMS_WAIT,{error:SMS_WAIT_ERR});
+    SMS_MOD.wireSmsInbox(w,{ open:(id)=>openConversation(id), retry:()=>loadInbox() });
+  }
+  if(c){
+    c.innerHTML=SMS_OPEN?SMS_MOD.renderConversation(SMS_CONV,{error:SMS_CONV_ERR,draft:SMS_DRAFT,busy:SMS_BUSY,body:SMS_BODY})
+      :'<p class="note faint">Pick a conversation to read it.</p>';
+    SMS_MOD.wireSmsInbox(c,{
+      takeOver:()=>takeOverConversation(),
+      mode:(m)=>setConversationMode(m),
+      pause:(p)=>pauseConversation(p),
+      preview:()=>previewText(),
+      send:()=>sendText(),
+      retry:()=>openConversation(SMS_OPEN),
+    });
+  }
+}
+
+async function openConversation(contactId){
+  if(!contactId) return;
+  SMS_OPEN=contactId; SMS_DRAFT=null; SMS_BODY='';
+  if(window.IWgo) window.IWgo('followups');
+  let j=null;
+  try{ j=await acqApi(`conversation&contactId=${encodeURIComponent(contactId)}`); }catch{ j=null; }
+  if(j&&j.ok){ SMS_CONV=j; SMS_CONV_ERR=''; } else { SMS_CONV=null; SMS_CONV_ERR=(j&&j.error)||'that conversation did not load'; }
+  renderInbox();
+}
+
+async function takeOverConversation(){
+  if(!SMS_OPEN) return;
+  const out=await acqApi('conversation-takeover',{contactId:SMS_OPEN});
+  if(out&&out.ok&&out.cancelledQueuedReplies>0){
+    alert(`You have taken over. ${out.cancelledQueuedReplies} queued automatic repl${out.cancelledQueuedReplies===1?'y was':'ies were'} cancelled.`);
+  }
+  openConversation(SMS_OPEN);
+}
+async function setConversationMode(mode){
+  if(!SMS_OPEN) return;
+  await acqApi('conversation-mode',{contactId:SMS_OPEN,mode});
+  openConversation(SMS_OPEN);
+}
+async function pauseConversation(paused){
+  if(!SMS_OPEN) return;
+  await acqApi('conversation-pause',{contactId:SMS_OPEN,paused,reason:paused?'paused from the inbox':''});
+  openConversation(SMS_OPEN);
+}
+async function previewText(){
+  if(!SMS_OPEN) return;
+  const ta=$('#smsBody');
+  // Captured BEFORE the re-render, and kept in SMS_BODY so the typed message
+  // survives it. Re-rendering the panel replaces the textarea, which silently
+  // threw away what the owner had written and then reported "there is nothing
+  // written yet" — a confusing lie about their own input.
+  SMS_BODY = ta ? ta.value : SMS_BODY;
+  SMS_BUSY=true; renderInbox();
+  const out=await acqApi('sms-compose',{contactId:SMS_OPEN,body:SMS_BODY});
+  SMS_BUSY=false;
+  SMS_DRAFT=(out&&out.ok)?out.draft:{ok:false,body:SMS_BODY,reason:(out&&out.error)||'that could not be checked'};
+  renderInbox();
+}
+async function sendText(){
+  if(!SMS_OPEN||!SMS_DRAFT||!SMS_DRAFT.ok) return;
+  if(!confirm('Send this text?\n\nIt goes to a real phone if a provider is connected.')) return;
+  SMS_BUSY=true; renderInbox();
+  const out=await acqApi('sms-schedule',{contactId:SMS_OPEN,body:SMS_DRAFT.body,sendAt:Date.now()});
+  SMS_BUSY=false; SMS_DRAFT=null; SMS_BODY='';
+  if(!(out&&out.ok)) alert((out&&out.error)||'That could not be queued.');
+  openConversation(SMS_OPEN);
+}
+
 /* ---------- R9.9 the deliverability trip -----------------------------------
    Left undefined until it has genuinely been read, so "nothing wrong" is never
    inferred from "not yet asked" — buildAttention lists an unchecked area
@@ -2956,6 +3132,7 @@ import('/nav.js')
       onChange: (v) => {
         if (v === 'acquisition' && acqMod) renderAcq();
         if (v === 'automations') { loadAutomation(); loadOptimisation(); } // refresh the check-ins and the ledger on arrival
+        if (v === 'followups') loadFollowUps(); // what you promised people, re-read on arrival
       },
     });
     window.IWgo = (v) => (goView ? goView(v) : null);
@@ -2979,6 +3156,7 @@ loadSysHealth();
   loadAutomation();           // R2.6 — real check-ins for the tile and the panel
   loadOptimisation();         // R9.7 — the ledger, which says so if it cannot be read
   loadDeliverability();       // R9.9 — only does anything once a password is present
+  loadFollowUps();            // follow-ups, previews owed, and the conversation inbox
 })();
 </script>
 </body>

@@ -42,6 +42,8 @@ const WIRING = [
   { mod: 'actions.js', host: 'index.html', calls: ['buildActions', 'renderActions', 'wireActions'], mount: ['primaryActions'] },
   { mod: 'focus.js', host: 'index.html', calls: ['handleModalTab', 'restoreFocus'], mount: ['drawer'] },
   { mod: 'optimisation.js', host: 'index.html', calls: ['renderOptimisation', 'wireOptimisation'], mount: ['optPanel'] },
+  { mod: 'relationships.js', host: 'index.html', calls: ['renderRelationships', 'wireRelationships'], mount: ['relPanel'] },
+  { mod: 'sms-inbox.js', host: 'index.html', calls: ['renderWaiting', 'renderConversation', 'renderSmsStats', 'wireSmsInbox'], mount: ['smsWaiting', 'smsConversation', 'smsStats'] },
   // states.js is a library for the other modules, not for the page
   { mod: 'states.js', host: 'acquisition.js', calls: ['renderPanel', 'panelState'], mount: [] },
 ];
