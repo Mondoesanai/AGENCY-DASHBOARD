@@ -295,6 +295,33 @@ export default async function handler(req, res) {
     log.push({ action: 'revisions', error: String(e.message || e) });
   }
 
+  // The self-healing sweep. Until now recover() only ever ran when somebody
+  // opened the dashboard and pressed a button, which means the system could
+  // only fix itself while being watched — the opposite of the point. Two real
+  // client requests died in a week with every worker green, and nothing swept
+  // for it because nothing was scheduled to.
+  //
+  // It is deliberately last: it diagnoses what the rest of this run did, it
+  // escalates at most once per day per issue anyway, and if the budget is
+  // gone it is the safest thing to drop.
+  try {
+    const remaining = HARD_LIMIT_MS - (Date.now() - t0) - 4000;
+    if (remaining > 8000) {
+      const { recover } = await import('../lib/recovery.js');
+      const { notifyOwner } = await import('../lib/sms.js');
+      const r = await recover({ notify: (t) => notifyOwner(t, { subject: 'Automation needs you' }) });
+      const escalated = (r.actions || []).find((a) => a.action === 'escalated');
+      log.push({
+        action: 'recovery',
+        result: `${r.findings.length} finding(s)` + (escalated ? `, raised ${escalated.ids.length}` : ', nothing new to raise'),
+      });
+    } else {
+      log.push({ action: 'recovery', skipped: true, reason: 'out of time budget this run' });
+    }
+  } catch (e) {
+    log.push({ action: 'recovery', error: String(e.message || e) });
+  }
+
   // real signal for "is the daily automation actually running" — nothing
   // else recorded this anywhere, so a multi-day silent outage (like the
   // health-check-eats-the-budget bug) had no way to be noticed except by
