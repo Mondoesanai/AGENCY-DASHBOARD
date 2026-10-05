@@ -45,6 +45,11 @@ const WIRING = [
   { mod: 'relationships.js', host: 'index.html', calls: ['renderRelationships', 'wireRelationships'], mount: ['relPanel'] },
   { mod: 'today.js', host: 'index.html', calls: ['renderBookings', 'renderWork', 'renderHealth', 'wireToday'], mount: ['todayBookings', 'todayWork', 'todayHealth'] },
   { mod: 'sms-inbox.js', host: 'index.html', calls: ['renderWaiting', 'renderConversation', 'renderSmsStats', 'wireSmsInbox'], mount: ['smsWaiting', 'smsConversation', 'smsStats'] },
+  // The touch/keyboard route to chart detail. It creates its own tooltip
+  // element on first use, so there is no mount point to assert — what matters
+  // is that the page both initialises it AND re-scans after each redraw, since
+  // the panels are rebuilt rather than patched.
+  { mod: 'chart-touch.js', host: 'index.html', calls: ['initChartTouch', 'wireCharts'], mount: [] },
   // states.js is a library for the other modules, not for the page
   { mod: 'states.js', host: 'acquisition.js', calls: ['renderPanel', 'panelState'], mount: [] },
 ];

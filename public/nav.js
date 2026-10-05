@@ -16,16 +16,20 @@
 // Kept as a separate module so the routing is testable without a browser —
 // `resolveView` is pure, and the DOM wiring is the only part that needs one.
 
+// `short` is the label on the phone tab bar, where six full words do not fit
+// in 360px without either truncating or shrinking below a readable size. The
+// icon is a simple stroke glyph — enough to tell the tabs apart at a glance
+// without the label having to carry it alone.
 export const VIEWS = Object.freeze([
-  { id: 'overview', label: 'Overview', hint: 'What needs attention today' },
-  { id: 'clients', label: 'Clients', hint: 'Each client, their analytics, sites and revisions' },
-  { id: 'acquisition', label: 'Acquisition', hint: 'Prospecting, contacts, campaigns, conversations, bookings' },
+  { id: 'overview', label: 'Overview', short: 'Today', icon: 'M3 11l9-8 9 8M5 10v10h14V10', hint: 'What needs attention today' },
+  { id: 'clients', label: 'Clients', short: 'Clients', icon: 'M16 20v-2a4 4 0 00-8 0v2M12 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7', hint: 'Each client, their analytics, sites and revisions' },
+  { id: 'acquisition', label: 'Acquisition', short: 'Growth', icon: 'M4 19V5M4 19h16M8 16V9M12 16v-5M16 16v-9', hint: 'Prospecting, contacts, campaigns, conversations, bookings' },
   // People you have actually met, what you promised them, and the conversation
   // you are having. Deliberately separate from Acquisition: the whole point of
   // the relationship work is that these are not cold prospects.
-  { id: 'followups', label: 'Follow-ups', hint: 'What you promised people you met, previews owed, and conversations' },
-  { id: 'automations', label: 'Automations', hint: 'What is running, what is paused, what is blocked' },
-  { id: 'settings', label: 'Settings', hint: 'Business settings, integrations, budgets' },
+  { id: 'followups', label: 'Follow-ups', short: 'People', icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z', hint: 'What you promised people you met, previews owed, and conversations' },
+  { id: 'automations', label: 'Automations', short: 'Health', icon: 'M22 12h-4l-3 9L9 3l-3 9H2', hint: 'What is running, what is paused, what is blocked' },
+  { id: 'settings', label: 'Settings', short: 'Settings', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 003.6 15a1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 018 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0020.4 9c.14.35.38.65.69.86', hint: 'Business settings, integrations, budgets' },
 ]);
 
 export const DEFAULT_VIEW = 'overview';
@@ -88,6 +92,33 @@ export function initNav(doc = document, { onChange = null } = {}) {
       `<button type="button" class="navbtn" data-view="${v.id}" title="${v.hint}" aria-current="false">${v.label}</button>`
   ).join('');
 
+  // The phone tab bar. Built from the SAME VIEWS list and updated by the SAME
+  // render() as the top nav, so the two cannot drift apart — a second
+  // navigation with its own state is how "the tab says Clients and the page
+  // shows Settings" happens. The top nav is hidden by CSS at phone widths and
+  // this takes over; neither is duplicated content, it is one nav in two
+  // presentations.
+  // This module is deliberately runnable against a minimal document stub so
+  // the routing can be tested without a browser — so creating the bar has to
+  // be optional, not assumed. If there is nothing to create it in, routing
+  // still works and the bar is simply absent.
+  let bar = doc.getElementById?.('tabBar') || null;
+  if (!bar && typeof doc.createElement === 'function' && doc.body?.appendChild) {
+    bar = doc.createElement('nav');
+    bar.id = 'tabBar';
+    bar.className = 'tabbar';
+    bar.setAttribute('aria-label', 'Sections');
+    doc.body.appendChild(bar);
+  }
+  // a no-op stand-in keeps the render and click paths below branch-free
+  if (!bar) bar = { innerHTML: '', querySelectorAll: () => [], addEventListener: () => {} };
+  bar.innerHTML = VIEWS.map(
+    (v) =>
+      `<button type="button" class="tabbtn" data-view="${v.id}" aria-current="false">` +
+      `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${v.icon}"/></svg>` +
+      `<span>${v.short || v.label}</span></button>`
+  ).join('');
+
   const sections = {};
   for (const v of VIEWS) sections[v.id] = doc.getElementById('view-' + v.id);
 
@@ -96,11 +127,11 @@ export function initNav(doc = document, { onChange = null } = {}) {
       const el = sections[v.id];
       if (el) el.hidden = v.id !== view;
     }
-    host.querySelectorAll('.navbtn').forEach((b) => {
+    for (const b of [...host.querySelectorAll('.navbtn'), ...bar.querySelectorAll('.tabbtn')]) {
       const on = b.dataset.view === view;
       b.classList.toggle('on', on);
       b.setAttribute('aria-current', on ? 'page' : 'false');
-    });
+    }
     if (onChange) onChange(view);
   };
 
@@ -121,6 +152,14 @@ export function initNav(doc = document, { onChange = null } = {}) {
   host.addEventListener('click', (e) => {
     const b = e.target.closest?.('.navbtn');
     if (b) go(b.dataset.view);
+  });
+  bar.addEventListener('click', (e) => {
+    const b = e.target.closest?.('.tabbtn');
+    if (!b) return;
+    go(b.dataset.view);
+    // changing section on a phone should start at the top of that section,
+    // not halfway down wherever the last one was scrolled to
+    try { doc.defaultView?.scrollTo({ top: 0, behavior: 'instant' }); } catch { /* older browsers */ }
   });
   doc.defaultView?.addEventListener?.('hashchange', () => render(resolveView(doc.location.hash)));
 
