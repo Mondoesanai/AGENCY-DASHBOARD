@@ -230,3 +230,33 @@ Recorded honestly rather than guessed:
 - **G3 — Chosen discovery data source.** Not selected. Blocks R4.4 activation only.
 - **G4 — Service area / industries / weekly volume.** Not specified. Needed to seed R4.1 defaults.
 - **G5 — Voice notes (R3.6).** The owner asked for "short text or voice notes". Text is specified; the voice capture path (recording UI vs upload) was never detailed.
+
+## Part 13 — Business-card relationships and SMS as a product (owner addendum, 2026-10-05)
+
+Added after the original 120 were complete. The owner's words: *"I want to
+photograph business cards after a networking meeting and have the system
+organize the contacts, remember the relationship, identify the appropriate
+opportunity, and handle eligible follow-up intelligently"*, and *"SMS must be a
+first-class channel controlled through our agency dashboard... A phone-number
+field and a 'send text' button do not satisfy this requirement."*
+
+One point in the addendum contradicts itself and is resolved here in favour of
+the detailed version. Its body states: *"A published number, business card,
+mobile-number lookup, or failure to reply STOP does not establish SMS
+permission."* A closing line says contacts handed over "have already opted in".
+The body is what is implemented: **adding** contacts from cards is instant and
+unrestricted; **marketing SMS** requires its own recorded consent, which is
+what the law requires and what the rest of the addendum assumes. The addendum's
+own remedy — a short disclosed opt-in or QR flow — is the supported path.
+
+| Req | What it means | Notes |
+|---|---|---|
+| R13.1 | A batch of cards becomes contacts with field-level confidence, correction, and duplicate matching that never merges two people at one company | Existing `card-intake` extraction and review reused; batch context (event, group, date, owner) already existed |
+| R13.2 | Each card is routed to a relationship path, with the reason, the next action and the date shown and editable | Seven paths. A contact on any of them can never enter a cold sequence |
+| R13.3 | A requested preview becomes a tracked production task; "your preview is ready" is impossible before one exists | No automatic website production exists and none is claimed; this creates an owner task |
+| R13.4 | SMS is a complete workflow: composition, preview, scheduling, delivery state, two-way conversation, ownership, takeover, quiet hours, cost | Delivery is a provider's job; the workflow and interface are ours |
+| R13.5 | Messages are specific, natural and easy to answer, and may not overclaim | The R9.8 prohibitions apply to texts exactly as to email |
+| R13.6 | Replies are answered on their merits, with bounded automatic turns and immediate manual takeover | Takeover cancels queued automatic replies rather than flagging them |
+| R13.7 | Email and SMS share one history and never overlap; an unanswered cold email never becomes a text | Opt-out scope is honoured across channels |
+| R13.8 | Relationship and SMS results are reported separately from cold discovery | Delivery is not interest; a scanned card is not a qualified lead |
+| R13.9 | The real user journeys are demonstrated, with fixtures until services are configured and live checks labelled separately | Nothing is sent to prospects as a test |

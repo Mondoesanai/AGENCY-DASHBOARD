@@ -291,9 +291,9 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 119 |
+| `[x]` built **and** verified | 124 |
 | `[b]` built, not verified | 0 |
-| `[~]` in progress | 0 |
+| `[~]` in progress | 4 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
 | `[ ]` not started | 0 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
@@ -485,4 +485,20 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
   Seven negative controls; three bit immediately and four did not. **Three of those four were weak assertions of mine.** Checking that the payload mentioned this origin *somewhere* passed with the body's unsubscribe link emptied, because the headers build their own URL — it now matches the `unsubscribe_url` variable specifically. Asserting merely that an attempt record existed passed with the pre-request write deleted, because the outcome write creates one too — it now asserts the `contactId` and `campaignId` that only the pre-write puts there, which is the actual promise: a process killed mid-send leaves evidence. And the composer's CAN-SPAM identity check could be deleted entirely without failing anything, because the test always supplied a complete identity — it now composes with a missing postal address and with a missing name, and asserts both are refused.
 
   The fourth is not a defect and is worth recording as such: removing the reconciliation skip did not let a second message out, because `maySend`'s already-sent check catches it independently. Removing **both** fails the test, so the property is genuinely covered — two guards, not one weak one.
+
+### Part 13 — Business-card relationships and first-class SMS (owner addendum, 2026-10-05)
+
+| Req | Task | State |
+|---|---|---|
+| R13.1 | Card batch → contacts, confidence, correction, matching | `[x]` `lib/card-intake.js` extended with per-card `interactions`; extraction, confidence and review queue reused unchanged |
+| R13.2 | Relationship routing: path, reason, next action, date, editable | `[x]` `lib/relationship.js` + `public/relationships.js`; `addMember` refuses a relationship contact for any cold campaign |
+| R13.3 | Preview production tasks, and no "ready" before one exists | `[x]` `lib/previews.js`; READY requires a real URL, `mayAnnounce` is the gate |
+| R13.4 | SMS workflow: compose, cost, schedule, deliver, converse | `[~]` `lib/sms-send.js` + `lib/conversations.js` + `public/sms-inbox.js`, fixture-tested end to end. **No real provider is connected**, so no live send, delivery receipt or inbound callback has ever happened |
+| R13.5 | Message quality and prohibitions on SMS copy | `[x]` R9.8 `inspect()` runs on every text at compose time |
+| R13.6 | Replies answered, bounded turns, manual takeover | `[~]` takeover, cancellation, turn budget and escalation are built and tested; **reply classification for the nine stated phrasings is covered by the existing `lib/replies.js` for email and is NOT yet exercised over SMS** |
+| R13.7 | One history, no overlap, no cold-email→SMS escalation | `[x]` `lib/conversations.js`; the escalation is refused by name |
+| R13.8 | Relationship and SMS reporting | `[~]` `sms-send.stats()` and `previews.stats()` exist and are on screen; **cost per qualified conversation and owner response time are not yet computed** |
+| R13.9 | The journeys demonstrated | `[~]` 11 of 14 demonstrated against fixtures (`tests/cardjourney.test.mjs`, `tests/smsworkflow.test.mjs`, `tests/smsui.test.mjs`). **Not demonstrated: a real SMS to a designated recipient, a real inbound reply, a real booking through the scheduler** — each needs a connected service |
+
+
 - **NEXT:** R4.1/R4.3 discovery settings + source adapter.
