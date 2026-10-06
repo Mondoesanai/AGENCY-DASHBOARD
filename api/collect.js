@@ -169,6 +169,53 @@ export default async function handler(req, res) {
     return res.status(out.ok ? 200 : 400).json(out);
   }
 
+  // R17.1 — the web/QR opt-in. Public for the same reason the unsubscribe link
+  // is public: the person giving permission is not a user of this system and
+  // must never be asked to authenticate.
+  //
+  // The terms are served from the same function that records them, so the text
+  // somebody agrees to and the text stored with their consent cannot drift.
+  if (req.query?.hook === 'optin-terms') {
+    const { publishedTerms, OPTIN_KEYWORD } = await import('../lib/optin-public.js');
+    const { getSettings } = await import('../lib/settings.js');
+    const s = await getSettings().catch(() => null);
+    return res.status(200).json({
+      ok: true,
+      terms: publishedTerms({ business: s?.business?.name || undefined }),
+      keyword: OPTIN_KEYWORD,
+    });
+  }
+
+  if (req.query?.hook === 'optin') {
+    // GET renders nothing and changes nothing. A scanner or a link preview
+    // fetching this must never enrol somebody, which is the same rule the
+    // unsubscribe link follows in the opposite direction.
+    if (req.method !== 'POST') {
+      return res.status(405).json({ ok: false, error: 'POST only — a fetched link must never enrol anyone' });
+    }
+    const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
+    const { recordWebOptIn } = await import('../lib/optin-public.js');
+    const { getSettings } = await import('../lib/settings.js');
+    const { findDuplicates } = await import('../lib/contacts.js');
+    const s = await getSettings().catch(() => null);
+    const out = await recordWebOptIn({
+      phone: body.phone,
+      name: body.name,
+      agreed: body.agreed === true,
+      pageUrl: body.pageUrl,
+      business: s?.business?.name || undefined,
+      findContact: async (num) => {
+        const matches = await findDuplicates({ phone: num });
+        return (matches || []).find((m) => m.certainty === 'exact' || m.certainty === 'likely')?.contact || null;
+      },
+    });
+    // Never echo back whether the number was already known: that would turn
+    // this public form into a way of testing whether we hold somebody.
+    return res.status(out.ok ? 200 : 400).json(
+      out.ok ? { ok: true } : { ok: false, error: out.error, why: out.why || undefined },
+    );
+  }
+
   if (req.query?.hook === 'booking') {
     const { verifyCalendlySignature, handleBookingWebhook } = await import('../lib/bookings.js');
     const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});

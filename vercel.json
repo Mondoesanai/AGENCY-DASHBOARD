@@ -15,6 +15,7 @@
   ],
   "rewrites": [
     { "source": "/r/:slug", "destination": "/r.html?slug=:slug" },
-    { "source": "/t.js", "destination": "/api/t" }
+    { "source": "/t.js", "destination": "/api/t" },
+    { "source": "/optin", "destination": "/optin.html" }
   ]
 }

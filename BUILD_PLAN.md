@@ -318,6 +318,18 @@ anyone SMS-eligible.
 
 ---
 
+## PART 14 — Recipient-initiated SMS permission (R17)
+
+The owner withdrew the bulk-checkbox-plus-first-text flow after reading the provider
+requirements. This is the replacement, and it is the whole of the SMS consent story:
+**promotional permission has two honest sources, and in both the recipient acts first.**
+
+| Req | Task | Status |
+|---|---|---|
+| R17.1 | Keyword and web/QR opt-in; owner records assessed against message type | `[x]` |
+
+---
+
 ## Tally
 
 Counted by the plan parser, not by hand — my first hand tally was wrong by 3 and this
@@ -331,7 +343,7 @@ no report should give a single number for both.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 151 (requirements, not operational readiness — see Part 13) |
+| `[x]` built **and** verified | 152 (requirements, not operational readiness — see Part 13) |
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 0 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |

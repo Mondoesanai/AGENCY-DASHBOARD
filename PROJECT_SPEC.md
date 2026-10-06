@@ -305,3 +305,14 @@ tested and unreachable is not delivered.** These rows are about the code actuall
 | R16.10 | There is one scheduling mechanism, not two | The unused one is triggered or deleted, and the decision is recorded |
 | R16.11 | Each function has one name | No back-compat alias without a caller |
 | R16.12 | The everyday path is obvious to a new employee on desktop and mobile | Email availability, SMS permission, the reason, and the next lawful action are visible without hunting; diagnostics live in Settings |
+
+## Part 15 — Recipient-initiated SMS permission (owner decision, 2026-10-06)
+
+The owner asked for a blanket checkbox plus a first automated "reply YES" text to
+discovered numbers, reviewed the provider requirements, and withdrew that request.
+The first promotional text is itself promotional, so it cannot obtain permission
+for itself, and one person cannot give permission on another's behalf.
+
+| Req | Requirement | Acceptance criteria |
+|---|---|---|
+| R17.1 | Promotional SMS permission comes only from the recipient's own act; the owner's record is assessed against the message type | A published keyword and a web/QR form each produce promotional consent with the recipient's own act as evidence; an owner-recorded conversation is capped at a one-time follow-up and a promotional send is refused on it; a standing STOP is not overturned by a keyword |

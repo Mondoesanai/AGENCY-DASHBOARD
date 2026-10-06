@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Get your free website preview</title>
+<meta name="robots" content="noindex" />
+<!--
+  R17.1 — the web/QR opt-in. Deliberately its own tiny page rather than part of
+  the dashboard: it is the only page a PROSPECT ever sees, it has to load behind
+  a QR code on a phone with one bar of signal, and it must not ship the
+  dashboard's JavaScript to do it.
+
+  The consent box is unticked and the form refuses to submit without it. A
+  pre-ticked box is not consent, and the wording the person agrees to is sent
+  with the submission so the record says what they actually saw.
+-->
+<style>
+  :root{
+    --bg:#0f1311; --surface:#1a221e; --surface2:#232d28; --ink:#f6f9f6;
+    --muted:#c2ccc5; --faint:#93a099; --line:#3a463f; --line-strong:#7d8f85;
+    --green:#46a878; --green-br:#77dbaa; --focus:#77dbaa; --neg:#f0906f;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);
+    font:16px/1.6 "Inter",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:24px 16px 48px;}
+  main{max-width:34rem;margin:0 auto}
+  h1{font:600 26px/1.25 Georgia,"Times New Roman",serif;margin:0 0 8px;letter-spacing:-.01em}
+  p{color:var(--muted);margin:0 0 14px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:18px}
+  label{display:block;font-size:13px;color:var(--muted);margin-bottom:6px}
+  input[type=text],input[type=tel]{width:100%;background:var(--surface2);border:1px solid var(--line-strong);
+    border-radius:10px;padding:12px;color:var(--ink);font:inherit;min-height:44px}
+  input:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  .consent{display:flex;gap:10px;align-items:flex-start;margin:16px 0;font-size:13.5px;color:var(--muted)}
+  .consent input{width:20px;height:20px;min-width:20px;margin-top:2px;accent-color:var(--green)}
+  button{width:100%;min-height:48px;border:1px solid var(--green);background:var(--green);color:#04120c;
+    border-radius:11px;font:600 16px/1 inherit;cursor:pointer;
+    transition:transform .14s cubic-bezier(.2,.9,.3,1.2),filter .14s ease}
+  button:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.06)}
+  button:active:not(:disabled){transform:translateY(0)}
+  button:focus-visible{outline:2px solid var(--focus);outline-offset:3px}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .terms{font-size:12.5px;color:var(--faint);margin-top:12px;line-height:1.65}
+  .msg{margin-top:14px;padding:12px;border-radius:10px;font-size:14px;display:none}
+  .msg.ok{display:block;background:rgba(70,168,120,.14);border:1px solid var(--green);color:var(--green-br)}
+  .msg.err{display:block;background:rgba(240,144,111,.12);border:1px solid var(--neg);color:var(--neg)}
+  .field{margin-bottom:14px}
+</style>
+</head>
+<body>
+<main>
+  <h1>Get your free website preview</h1>
+  <p>We will build a preview of a new site for your business and text you the link when it is ready. No cost, no obligation.</p>
+
+  <form class="card" id="f" novalidate>
+    <div class="field">
+      <label for="name">Your name <span class="terms">(optional)</span></label>
+      <input id="name" type="text" autocomplete="name" placeholder="Jordan Hale" />
+    </div>
+    <div class="field">
+      <label for="phone">Mobile number</label>
+      <input id="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(214) 555-0123" required />
+    </div>
+
+    <label class="consent">
+      <input type="checkbox" id="agree" />
+      <span id="termsText">Loading the terms…</span>
+    </label>
+
+    <button type="submit" id="go">Send me the preview</button>
+    <div class="msg" id="msg" role="status" aria-live="polite"></div>
+    <p class="terms">We only text the number you enter here. Reply STOP at any time and we stop immediately.</p>
+  </form>
+</main>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+  let TERMS = '';
+
+  // The wording is fetched rather than hardcoded in the page, so the text shown
+  // and the text recorded with the consent are the same string from the same
+  // place. A page that drifts from the record is a page whose consent cannot be
+  // evidenced.
+  fetch('/api/collect?hook=optin-terms')
+    .then((r) => r.json())
+    .then((j) => { TERMS = j.terms || ''; $('#termsText').textContent = TERMS; })
+    .catch(() => { $('#termsText').textContent = 'Could not load the terms. Please try again shortly.'; $('#go').disabled = true; });
+
+  $('#f').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const msg = $('#msg');
+    msg.className = 'msg';
+    if (!$('#agree').checked) {
+      msg.className = 'msg err';
+      msg.textContent = 'Please tick the box to agree before sending.';
+      return;
+    }
+    $('#go').disabled = true;
+    $('#go').textContent = 'Sending…';
+    try {
+      const r = await fetch('/api/collect?hook=optin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone: $('#phone').value,
+          name: $('#name').value,
+          agreed: $('#agree').checked,
+          wordingShown: TERMS,
+          pageUrl: location.href,
+        }),
+      });
+      const j = await r.json();
+      if (j.ok) {
+        msg.className = 'msg ok';
+        msg.textContent = 'Thank you — we will text that number when your preview is ready.';
+        $('#f').reset();
+      } else {
+        msg.className = 'msg err';
+        msg.textContent = j.error || 'That did not go through. Please check the number.';
+      }
+    } catch {
+      msg.className = 'msg err';
+      msg.textContent = 'That did not go through. Please try again.';
+    }
+    $('#go').disabled = false;
+    $('#go').textContent = 'Send me the preview';
+  });
+</script>
+</body>
+</html>
