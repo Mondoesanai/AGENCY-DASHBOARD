@@ -1,6 +1,6 @@
 # Release candidate — 2026-10-06
 
-**Commit:** `0e1f8b6` *(set by the commit that lands this file; see `git log -1`)*
+**Commit:** `f88d039`
 **Rollback target:** `30bf2d0` — the commit currently live in production.
 **Status: NOT deployed.** 79 commits are local only. The production hold stands.
 
