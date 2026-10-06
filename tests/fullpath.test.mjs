@@ -192,7 +192,7 @@ const codes = readiness.blockers.map((b) => b.code);
 check('with nothing configured, sending is not ready', readiness.ready === false);
 // named individually, so removing any one of them is detected — asserting only
 // `ready === false` passes while five of six guards are deleted
-for (const code of ['no-credentials', 'no-sending-domain', 'no-pricing', 'outreach-off', 'no-public-url']) {
+for (const code of ['no-cold-sender', 'no-sending-domain', 'no-pricing', 'outreach-off', 'no-public-url']) {
   check(`it names "${code}" as a blocker`, codes.includes(code), JSON.stringify(codes));
 }
 check('and every blocker is written in words, not a code alone', readiness.blockers.every((b) => b.text && b.text.length > 10));

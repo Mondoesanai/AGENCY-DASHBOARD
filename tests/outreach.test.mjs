@@ -34,7 +34,7 @@ check('not ready', rd.ready === false);
 check('not connected', rd.connected === false);
 check('the display status is "not connected", never "ready"', rd.displayStatus === 'not connected', rd.displayStatus);
 const codes = rd.blockers.map((b) => b.code);
-check('it names the missing credentials', codes.includes('no-credentials'), codes.join(','));
+check('it names the missing cold sender', codes.includes('no-cold-sender'), codes.join(','));
 check('it names the missing separate sending domain', codes.includes('no-sending-domain'), codes.join(','));
 check('it names unset pricing', codes.includes('no-pricing'), codes.join(','));
 check('it names draft targeting', codes.includes('targeting-draft'), codes.join(','));
@@ -155,7 +155,12 @@ section('O6  the single send path refuses when anything is missing');
 const c = await upsertContact({ source: 'discovery', name: E('Dana Kim'), businessName: E('Trinity Tile'), email: E('dana@trinitytile.test') });
 let sent = await sendProspectEmail({ contact: c.contact, campaignId: 'c9', message: {}, env: {}, fetchImpl: fakeFetch });
 check('with no provider key, nothing is sent', sent.sent === false, JSON.stringify(sent));
-check('and the reason is actionable', /API key|not connected|not been switched/i.test(sent.reason || ''), sent.reason);
+check('and the reason is actionable',
+  /INSTANTLY_API_KEY|not connected|not been switched|open an account/i.test(sent.reason || ''), sent.reason);
+// R19.6 — the refusal must also be unambiguous about the account that IS
+// configured, or the obvious "fix" is to point prospecting at Resend.
+check('and it rules out the transactional sender by name',
+  /Resend cannot be used/i.test(sent.reason || ''), sent.reason);
 
 sent = await sendProspectEmail({ contact: c.contact, campaignId: 'c9', message: {}, env: fullEnv, fetchImpl: fakeFetch });
 check('with everything configured and activated, it goes through the provider', sent.sent === true, JSON.stringify(sent));
