@@ -75,14 +75,21 @@ check('and may be contacted to begin with', (await canContact(contact, { channel
 
 await setCampaignStatus(campaignId, 'running');
 
-// make the first step due now
+// A Tuesday mid-morning, so the sending window is not what is under test here.
+// Declared BEFORE the plan is written, because the plan has to be anchored to
+// it: an earlier version set the step's due time from `Date.now()` and then
+// asked whether it was due at this fixed timestamp, so the test passed only
+// while the real clock happened to be before 15:00 UTC and failed every
+// afternoon. A test whose result depends on what time it is run is not testing
+// the thing it names.
+const WHEN = new Date('2026-10-06T15:00:00Z').getTime();
+
+// make the first step due as of WHEN
 const member = await getMember(campaignId, contactId);
 check('the member has a plan', !!member && Array.isArray(member.plan) && member.plan.length > 0, JSON.stringify(member).slice(0, 220));
-member.plan = member.plan.map((p, i) => (i === 0 ? { ...p, at: Date.now() - 60000 } : p));
+member.plan = member.plan.map((p, i) => (i === 0 ? { ...p, at: WHEN - 60000 } : p));
 await store.set(`campaign:member:${campaignId}:${contactId}`, JSON.stringify(member));
 
-// a Tuesday mid-morning, so the sending window is not what is under test here
-const WHEN = new Date('2026-10-06T15:00:00Z').getTime();
 const due = await dueSends(campaignId, { now: WHEN });
 check('the send is due', (due.due || []).some((d) => d.contactId === contactId), JSON.stringify(due).slice(0, 220));
 

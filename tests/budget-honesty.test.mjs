@@ -32,22 +32,39 @@ const st = await getPeriodState('week');
 check('the limit really is configured for this check', st.limitCents === 2500, String(st.limitCents));
 check('the state reports whether a limit was configured', st.limitConfigured === true, JSON.stringify(Object.keys(st)));
 check('and separately whether anything applies it', 'enforced' in st);
-check('A CONFIGURED LIMIT IS STILL NOT AN ENFORCED ONE', st.enforced === false,
-  'this is the whole fix: `enforced` used to be `limit != null`, so typing a number in was enough to make the panel claim work was being stopped');
-check('CAP_WIRED is the single switch that says so', CAP_WIRED === false, String(CAP_WIRED));
-check('enforced can never be true while the cap is unwired',
-  !(st.enforced && !CAP_WIRED),
-  'enforced is derived from CAP_WIRED, so a configured limit alone cannot flip it');
+
+// THE INVARIANT, which outlives the bug: enforcement needs BOTH a configured
+// limit and a code path that applies it. R16.1 added the path, so the honest
+// answer flipped from false to true — but it must still be the conjunction,
+// never `limit != null` on its own, which is what made the panel claim work was
+// being stopped when nothing consulted the number.
+check('enforced is exactly "a limit is set AND something applies it"',
+  st.enforced === (st.limitConfigured && CAP_WIRED), `enforced=${st.enforced} configured=${st.limitConfigured} wired=${CAP_WIRED}`);
+check('with the cap now wired and a limit set, it IS enforced', st.enforced === true, String(st.enforced));
 check('the monthly window behaves the same way',
-  (await getPeriodState('month')).enforced === false && (await getPeriodState('month')).limitConfigured === true);
+  (await getPeriodState('month')).enforced === true && (await getPeriodState('month')).limitConfigured === true);
+
+section('B1b  removing the limit removes the enforcement, not just the number');
+await setBudgetSettings({ weeklyLimitCents: null, monthlyLimitCents: null, conversationReservePct: 20 });
+const none = await getPeriodState('week');
+check('no limit configured', none.limitConfigured === false);
+check('so nothing is enforced, even though the path exists', none.enforced === false,
+  'a wired cap with no number is not a cap');
+await setBudgetSettings({ weeklyLimitCents: 2500, monthlyLimitCents: 9000, conversationReservePct: 20 });
 
 // ---------------------------------------------------------------------------
 section('B2  the status tells the owner what is really being spent');
 const b = await budgetStatus();
-check('it says the cap is not wired', b.capWired === false, String(b.capWired));
-check('and explains what that means for the figures below', /recorded preferences/.test(b.capUnwiredNote || ''), b.capUnwiredNote);
-check('it warns that the spent column stays at zero', /stay at zero/.test(b.capUnwiredNote || ''));
-check('observed spend is reported separately', !!b.observed, JSON.stringify(b.observed));
+check('it says the cap is wired', b.capWired === true, String(b.capWired));
+check('and drops the "not being applied" note', !b.capUnwiredNote, String(b.capUnwiredNote));
+check('observed spend is STILL reported separately', !!b.observed,
+  'the ledger and the feature counters measure different things; wiring the cap does not merge them');
+check('spend is attributable by category', !!b.byCategory, JSON.stringify(b.byCategory));
+check('the paid paths are split into what can and cannot be capped', !!b.paidPaths?.enforceable && !!b.paidPaths?.notConnected,
+  JSON.stringify(Object.keys(b.paidPaths || {})));
+check('and what keeps running at zero allowance is named', (b.essentialWork?.kinds || []).includes('opt_out'),
+  JSON.stringify(b.essentialWork?.kinds));
+check('with the reason it must', /unlawful/.test(b.essentialWork?.note || ''), b.essentialWork?.note);
 check('from the counters the features actually write',
   b.observed.error ? true : /coach:spend/.test(b.observed.source || ''), b.observed.source);
 check('a failed read is NOT reported as zero spending',

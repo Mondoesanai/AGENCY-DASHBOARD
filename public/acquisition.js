@@ -412,7 +412,9 @@ export function renderBudget(b, error = '') {
     ${binding}
     ${renderObservedSpend(b.observed)}
     ${renderActiveCaps(b.activeCaps)}
-    <h4 class="acq-h4">Limits on record</h4>
+    ${renderPaidPaths(b.paidPaths, b.essentialWork)}
+    <h4 class="acq-h4">${b.capWired ? 'Your spending limit' : 'Limits on record'}</h4>
+    ${renderLimitForm(b)}
     <table class="acq-table">
       <thead><tr><th>Window</th><th>Limit</th><th>Spent</th><th>Reserved</th><th>Remaining</th><th>Resets</th></tr></thead>
       <tbody>${row(b.week)}${row(b.month)}</tbody>
@@ -446,6 +448,53 @@ export function renderObservedSpend(o) {
     ${rows ? `<ul class="acq-spend-list">${rows}</ul>` : ''}
     <p class="note faint">${esc(o.source || '')}. ${esc(o.note || '')}</p>
   </div>`;
+}
+
+/**
+ * R16.3 — setting the limit the enforcement path actually reads.
+ *
+ * Blank means "no limit", which is deliberately not the same as 0: a zero would
+ * refuse everything, and clearing a field must not silently stop all work.
+ */
+export function renderLimitForm(b) {
+  const usd = (c) => (c == null ? '' : (c / 100).toFixed(2));
+  return `<form class="acq-limit" id="budgetForm">
+    <label class="field"><span>Weekly limit ($)</span>
+      <input id="bgWeekly" inputmode="decimal" placeholder="no limit" value="${esc(usd(b.week?.limitCents))}" /></label>
+    <label class="field"><span>Monthly limit ($)</span>
+      <input id="bgMonthly" inputmode="decimal" placeholder="no limit" value="${esc(usd(b.month?.limitCents))}" /></label>
+    <label class="field"><span>Held back for live replies (%)</span>
+      <input id="bgReserve" inputmode="numeric" value="${esc(b.settings?.conversationReservePct ?? 20)}" /></label>
+    <div class="acq-limit-actions">
+      <button class="btn sm" type="submit">Save limit</button>
+      <span class="faint">Blank means no limit. It is not the same as 0, which would refuse everything.</span>
+    </div>
+  </form>`;
+}
+
+/**
+ * What this limit can and cannot stop.
+ *
+ * The honest half of a spending cap: refusing our own discretionary jobs is
+ * entirely within our control; a provider's subscription or a charge already in
+ * flight is not. Showing only the first would imply a ceiling that does not exist.
+ */
+export function renderPaidPaths(p, essential) {
+  if (!p) return '';
+  const row = (x) => `<li><b>${esc(x.what)}</b> <span class="faint">${esc(x.where)}</span></li>`;
+  return `<details class="acq-paths">
+    <summary>What this limit covers</summary>
+    <div class="acq-paths-in">
+      <h5>Stopped by this limit</h5>
+      <ul>${(p.enforceable || []).map(row).join('') || '<li class="faint">none</li>'}</ul>
+      ${p.ownCap?.length ? `<h5>Capped separately by the feature itself</h5><ul>${p.ownCap.map(row).join('')}</ul>` : ''}
+      ${p.notConnected?.length ? `<h5>Not connected, so nothing can be spent</h5><ul>${p.notConnected.map(row).join('')}</ul>` : ''}
+      ${essential ? `<h5>Keeps running even at zero</h5>
+        <ul>${(essential.kinds || []).map((k) => `<li>${esc(String(k).replace(/_/g, ' '))}</li>`).join('')}</ul>
+        <p class="note faint">${esc(essential.note || '')}</p>` : ''}
+      <p class="note faint">${esc(p.note || '')}</p>
+    </div>
+  </details>`;
 }
 
 /** The limits that really do refuse work — and the one that only warns. */

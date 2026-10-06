@@ -123,18 +123,6 @@ const ALLOWED = {
   'lib/phone.js:getLookupAdapter': { cls: 'HELD', why: 'Returns null while unconfigured, so callers report "unknown" instead of guessing.', wiredBy: 'a paid lookup provider' },
 
   // --- GAP: unwired, and something is worse for it ------------------------
-  'lib/budget.js:withBudget': {
-    cls: 'GAP',
-    why: 'THE CLUSTER HEAD. `withBudget` → `reserveCost` → `reconcileCost` / `releaseCost` is the whole money cap, and nothing calls any of it. '
-      + 'Consequence: the limits on the Spending panel are recorded preferences that no code path applies, and the panel\'s spent/reserved figures read $0.00 '
-      + 'because real AI spend accrues under `coach:spend:*` and `agent:spend:*` instead. '
-      + 'Mitigated in R15.7 by making `enforced` mean "a path applies this" rather than "a number was typed in", and by showing the observed spend and the caps that DO refuse. '
-      + 'Dead with it: reserveCost, reconcileCost, releaseCost, spendByCategory, setBudgetSettings, ESSENTIAL.',
-    wiredBy: 'wrapping the twelve Anthropic call sites, which have no shared chokepoint today',
-  },
-  'lib/budget.js:spendByCategory': { cls: 'GAP', why: 'Dead with withBudget: there are no reservations to group.', wiredBy: 'wiring withBudget' },
-  'lib/budget.js:setBudgetSettings': { cls: 'GAP', why: 'Writes limits nothing enforces. Reachable via no screen; the Spending panel is read-only.', wiredBy: 'wiring withBudget' },
-  'lib/budget.js:ESSENTIAL': { cls: 'GAP', why: 'Names the categories that may exceed the cap. Inert while nothing checks the cap.', wiredBy: 'wiring withBudget' },
   'lib/contrast.js': {
     cls: 'GAP',
     module: true,
@@ -144,7 +132,6 @@ const ALLOWED = {
   },
   'lib/recovery.js:sweepHistory': { cls: 'GAP', why: 'The record of past sweeps. Unwired, so the Checks panel shows the latest sweep but not whether sweeps have been running.', wiredBy: 'a history row on the Checks panel' },
   'lib/recovery.js:clearEscalation': { cls: 'GAP', why: 'Clears a raised escalation. With no caller an escalation can be raised but never lowered from the UI.', wiredBy: 'an acknowledge button' },
-  'lib/recovery.js:openRepairTask': { cls: 'GAP', why: 'Opens a repair task. The sweep currently records the failure without opening one.', wiredBy: 'the sweep, once repair tasks have a screen' },
   'lib/jobs.js:enqueue': { cls: 'GAP', why: 'The generic job queue. Everything schedules through the daily cron instead, so this is a second mechanism with no users.', wiredBy: 'nothing planned; a candidate for deletion' },
   'lib/suggestions.js:clientSuggestions': {
     cls: 'GAP',
@@ -168,6 +155,11 @@ const ALLOWED = {
   'lib/revision-state.js:isTerminal': { cls: 'OWNER', why: 'State predicate; callers compare the state directly.' },
   'lib/discovery.js:guessEmailFromName': { cls: 'OWNER', why: 'Guesses an address from a name. Unwired on purpose — a guessed address is not a discovered one and must never enter the contact list as fact.' },
   'lib/integrations.js:withEvidence': { cls: 'OWNER', why: 'Attaches the evidence for an integration claim.' },
+
+  'lib/ai-client.js:__setSdkLoader': {
+    cls: 'INTERNAL',
+    why: 'The test seam that swaps the model SDK. Production always uses the real loader; a test that reached the network instead would be both slow and billable.',
+  },
 
   // --- INTERNAL: helpers and constants kept for readers of the module -----
   'lib/boot.js:booted': { cls: 'INTERNAL', why: 'Start-up marker, read in development.' },

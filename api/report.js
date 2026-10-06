@@ -124,9 +124,11 @@ async function buildReportContext(site, stats, changelog, period) {
 async function aiPolish({ site, stats, audit, grade, findings, improvements, actions, angle, wins, style, dropped, changelog, period }) {
   const ctx = await buildReportContext(site, stats, changelog, period).catch(() => ({}));
   if (!process.env.ANTHROPIC_API_KEY) return { __error: 'no ANTHROPIC_API_KEY set' };
-  let Anthropic;
+  // R16.1 — discretionary. A monthly report is valuable and can wait for the
+  // next period's allowance; it is not inbound work.
+  let aiClient;
   try {
-    ({ default: Anthropic } = await import('@anthropic-ai/sdk'));
+    ({ aiClient } = await import('../lib/ai-client.js'));
   } catch (e) {
     return { __error: 'sdk import failed: ' + (e.message || e) };
   }
@@ -135,7 +137,11 @@ async function aiPolish({ site, stats, audit, grade, findings, improvements, act
   // when the function is killed means the client's email NEVER sends. A live test
   // showed one big report call taking over 45s. A call that times out here just
   // falls back to the rule-based email, which still goes out.
-  const client = new Anthropic({ maxRetries: 0, timeout: Number(process.env.REPORT_MODEL_TIMEOUT_MS) || 36000 });
+  const client = await aiClient({
+    category: 'ai',
+    meta: { feature: 'monthly-report', site: site?.slug || null },
+    clientOptions: { maxRetries: 0, timeout: Number(process.env.REPORT_MODEL_TIMEOUT_MS) || 36000 },
+  });
   // Sonnet 5 is the practical default here (widely available on any key, cheap
   // enough for monthly emails across dozens of sites). Set ANTHROPIC_MODEL to override.
   const model = process.env.ANTHROPIC_MODEL || 'claude-sonnet-5';

@@ -284,3 +284,24 @@ round's fix moved rather than closed.
 | R15.5 | The whole path from first message to a confirmed meeting works on fixtures | A meeting counts only when the scheduler confirms it |
 | R15.6 | A meetings-per-week target guides volume without overriding consent | Attended meetings are the outcome that matters, not bookings |
 | R15.7 | Every critical path has a real trigger, durable state and a visible outcome | The overnight failure pattern was a module with no caller |
+
+## Part 14 — Operational enforcement, not just implementation (owner correction, 2026-10-06)
+
+The R15.7 audit found ten places where production could not reach code the plan counted as
+delivered, and the owner's correction is the requirement: **a capability that is built,
+tested and unreachable is not delivered.** These rows are about the code actually running.
+
+| Req | Requirement | Acceptance criteria |
+|---|---|---|
+| R16.1 | The app's own spending limit is enforced on every paid discretionary path | A low allowance with concurrent jobs stops eligible work; no paid path is silently exempt; a retried job does not double-charge |
+| R16.2 | Spend is attributable to the activity that caused it | Category totals come from real reservations, not estimates |
+| R16.3 | The owner can set the limit the enforcement path reads | A limit set in the interface is the one that refuses work |
+| R16.4 | Essential inbound work continues when discretionary spend is exhausted | Replies, opt-outs and monitoring are processed with the allowance at zero |
+| R16.5 | The SMS send path is either wired behind consent or honestly absent | No interface element implies a sending capability the product does not have |
+| R16.6 | A raised operational escalation can be cleared by the owner | An alert that cannot be dismissed trains the owner to ignore the alert area |
+| R16.7 | A stalled recovery sweep is visible as stalled | "Has not run" and "found nothing" must look different |
+| R16.8 | A detected failure becomes a work item, not only a log line | The sweep opens something a person can see and close |
+| R16.9 | Colour tokens are checked against WCAG contrast automatically | A deliberately failing token turns the suite red |
+| R16.10 | There is one scheduling mechanism, not two | The unused one is triggered or deleted, and the decision is recorded |
+| R16.11 | Each function has one name | No back-compat alias without a caller |
+| R16.12 | The everyday path is obvious to a new employee on desktop and mobile | Email availability, SMS permission, the reason, and the next lawful action are visible without hunting; diagnostics live in Settings |

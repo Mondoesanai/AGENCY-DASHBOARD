@@ -100,12 +100,12 @@ and never display a mocked integration as connected (R4.4).
 |---|---|---|
 | R1.1 | **Inventory** of api/, lib/, public/, tests/, cron, KV key space | `[x]` 2026-10-01 — constraints table above |
 | R1.2 | Root cause of the repeat-failure revision bug, traced to code | `[x]` 2026-10-01 — reproduced, cited, seen live on Renewity |
-| R1.3 | Revision state machine as a pure function | `[x]` `lib/revision-state.js`, 46 checks |
+| R1.3 | Revision state machine as a pure function | `[x]`[x]`lib/revision-state.js`, 46 checks |
 | R1.4 | Permanent vs transient classification; bounded backoff | `[x]` permanent blocks after 1 attempt; transient caps at 6h |
 | R1.5 | Actionable recovery messages (`blockedBy.label/hint`, `stateLabel`) | `[x]` logic verified — **UI rendering is R2.5** |
 | R1.6 | Request preserved through block → fix → resume | `[x]` L2 end-to-end |
-| R1.7 | Repo-mapping audit: identity, owner, branch, permissions, stale cached state | `[x]` `lib/repo-audit.js`, 94 checks — wired into `agentStatus`, `saveSiteConfig`, the 6-hourly tick and `?do=repo-audit` |
-| R1.8 | End-to-end verification of existing flows | `[x]` `tests/flows.test.mjs`, 96 checks through the real API handlers — clients CRUD, settings persistence, site/repo association, analytics ranges + empty states, authorization + isolation, integration connect/disconnect, deployment/uptime status |
+| R1.7 | Repo-mapping audit: identity, owner, branch, permissions, stale cached state | `[x]`[x]`lib/repo-audit.js`, 94 checks — wired into `agentStatus`, `saveSiteConfig`, the 6-hourly tick and `?do=repo-audit` |
+| R1.8 | End-to-end verification of existing flows | `[x]`[x]`tests/flows.test.mjs`, 96 checks through the real API handlers — clients CRUD, settings persistence, site/repo association, analytics ranges + empty states, authorization + isolation, integration connect/disconnect, deployment/uptime status |
 | R1.9 | Shipped work never displays as failed | `[x]` — caught my own regression in `resolveCompletedTickets` while wiring it |
 | R1.10 | No dependency upgrades without a demonstrated need | `[x]` none made |
 
@@ -121,8 +121,8 @@ and never display a mocked integration as connected (R4.4).
 
 | Req | Task | Status |
 |---|---|---|
-| R2.1 | Top-level nav: Overview / Clients / Acquisition / Automations / Settings | `[x]` `public/nav.js` + 44 checks; hash-routed, deep-linkable, falls back to Overview on an unknown hash |
-| R2.2 | Client workspace holds that client's analytics, sites, revisions | `[x]` `public/client-workspace.js` — a Requests tab on each client card, sharing one fetch with the global queue so the two views cannot disagree |
+| R2.1 | Top-level nav: Overview / Clients / Acquisition / Automations / Settings | `[x]`[x]`public/nav.js` + 44 checks; hash-routed, deep-linkable, falls back to Overview on an unknown hash |
+| R2.2 | Client workspace holds that client's analytics, sites, revisions | `[x]`[x]`public/client-workspace.js` — a Requests tab on each client card, sharing one fetch with the global queue so the two views cannot disagree |
 | R2.3 | Acquisition section holds prospecting, contacts, campaigns, conversations, bookings, reporting | `[x]` `public/acquisition.js` — Contacts, Add contacts, Prospects, Targeting & pricing |
 | R2.4 | Overview = what needs attention only | `[x]` `public/attention.js` — named problems with the reason and a button to the fix; an empty list is only an all-clear when every source was actually read |
 | R2.5 | Explicit loading / empty / error / disconnected / success / recovery states — **renders R1.5 and R8.8** | `[x]` `public/states.js` — one vocabulary for all six states; a failed load can no longer render as "none yet", and the sending gate no longer says "live" when it does not know |
@@ -284,18 +284,58 @@ and never display a mocked integration as connected (R4.4).
 
 ---
 
+## PART 13 — Operational gaps found by the R15.7 reachability audit (R16)
+
+**Why this part exists.** Part 12 closed with "139 done, 0 open", and that was a true
+statement about plan items and a misleading one about the product. The R15.7 audit found
+ten places where production cannot reach code the plan counted as delivered. A budget cap
+that no path consults is not a delivered budget cap. **"Built and verified" describes a
+requirement; it does not describe operational readiness, and the two must never again be
+reported as the same number.** The Tally below now says so.
+
+Each row states the consequence if nothing is done, who it depends on, and a definition of
+done that can be checked rather than asserted. Rows marked `[ ]` are open work.
+
+| Req | Gap | Consequence if left | Priority | Depends on | Definition of done (verifiable) | Status |
+|---|---|---|---|---|---|---|
+| R16.1 | `lib/budget.js:withBudget` — the central reserve → run → reconcile chain has no caller. `reserveCost`, `reconcileCost`, `releaseCost` are dead behind it | **Release blocker.** The app has no spend ceiling of its own. Discretionary work can run until a provider stops it or the bill arrives. The owner authorised "existing credits, no paid overages" and nothing enforces that | **P1** | none — all code-side | Every paid production path reserves before it spends and reconciles after. A fixture with a low allowance and concurrent jobs shows eligible work **stopping** and essential inbound work **continuing**. No paid path is exempt without being named. A retried job does not double-charge | `[x]` |
+| R16.2 | `lib/budget.js:spendByCategory` — dead with R16.1 | Spend cannot be attributed, so the owner cannot tell which activity costs money | **P1** | R16.1 | Spend by category is computed from real reservations and shown | `[x]` |
+| R16.3 | `lib/budget.js:setBudgetSettings` — no screen writes limits | The owner cannot set the cap the app is supposed to obey; limits are only settable by direct store access | **P1** | R16.1 | A limit set in the UI is persisted and is the one the enforcement path reads | `[x]` |
+| R16.4 | `lib/budget.js:ESSENTIAL` — the categories allowed to exceed the cap are never consulted | Inbound replies, opt-outs and monitoring could be refused when the budget runs out. Ignoring an opt-out for lack of budget is unlawful, not merely rude | **P1** | R16.1 | With the allowance exhausted, an inbound reply and an opt-out are still processed, and the refusal path is proven to apply only to discretionary work | `[x]` |
+| R16.5 | `lib/sms-outreach.js:sendProspectSms` — complete and unreachable (classified HELD, not GAP, but it is the second thing the owner named) | Either a missing production path or UI that implies a capability the product does not have. Both are defects; they need opposite fixes | **P2** | Twilio account + A2P 10DLC for the live leg only | The whole path is traced and a decision recorded: wired behind the outreach switch **and** per-contact permission, or deliberately dormant with the misleading UI removed. Fixture verification complete either way | `[ ]` |
+| R16.6 | `lib/recovery.js:clearEscalation` — an escalation can be raised but never lowered | An operational alert, once raised, stays raised for ever. The owner learns to ignore the alert area, which defeats every other alert in it | **P3** | none | A raised escalation can be acknowledged from the dashboard and visibly clears, with the acknowledgement recorded | `[ ]` |
+| R16.7 | `lib/recovery.js:sweepHistory` — past sweeps are recorded but never shown | The Checks panel shows the latest sweep only, so "the sweep has not run for three days" is indistinguishable from "the sweep found nothing" | **P3** | none | The Checks panel shows when sweeps last ran, so a stalled sweep is visible | `[ ]` |
+| R16.8 | `lib/recovery.js:openRepairTask` — the sweep records a failure without opening a repair task | A detected failure produces a log line and no work item, which is how the three silent revision failures stayed silent | **P3** | none | A sweep-detected failure creates a task the owner can see and close | `[x]` |
+| R16.9 | `lib/contrast.js` — the WCAG contrast checker is not reachable from anything, including the test suite's own gate | Colour tokens can drop below 4.5:1 and nothing notices. The module was written to prevent exactly this | **P3** | none | The token set is checked automatically and a deliberately failing token turns the suite red | `[ ]` |
+| R16.10 | `lib/jobs.js:enqueue` — a second scheduling mechanism with no users | Two ways to schedule work, one of them dead, invites a future change to the wrong one | **P4** | none | Either given a real trigger or deleted, with the decision recorded | `[ ]` |
+| R16.11 | `lib/suggestions.js:clientSuggestions` — a back-compat alias whose last mention is a stale comment | Two names for one function; a future edit lands on the wrong one | **P4** | none | Alias and stale comment removed, `clientActions` left as the single name | `[ ]` |
+| R16.12 | The owner reports the dashboard "still feels terrible to use" | The product can be correct and still unusable. An owner who avoids the tool gets no value from any of the above | **P2** | none | Walked as a new employee on desktop **and** mobile against the real preview, with actual taps and form submissions. The everyday path is Today → People → Conversations → Meetings; whether email is available, whether SMS is permitted, why, and the next lawful action are visible without hunting. Diagnostics move to Settings. Existing functionality still works | `[ ]` |
+
+**Standing constraints for this part:** the release hold stays on, `outreach.active` stays
+false, nothing is pushed or deployed, and no prospect outreach is sent. A discovered phone
+number, a business card, an "emailable" status, or a bulk owner checkbox **does not** make
+anyone SMS-eligible.
+
+---
+
 ## Tally
 
 Counted by the plan parser, not by hand — my first hand tally was wrong by 3 and this
 replaces it.
 
+**What this counts, and what it does not.** These are *requirements*, and `[x]` means a
+requirement was built and verified. It does **not** mean the product is operationally
+ready. R15.7 made the difference concrete: every budget requirement was ticked while no
+production path consulted the budget. Part 13 tracks that second question separately, and
+no report should give a single number for both.
+
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 139 |
+| `[x]` built **and** verified | 144 (requirements, not operational readiness — see Part 13) |
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 0 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 0 |
+| `[ ]` not started | 7 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.

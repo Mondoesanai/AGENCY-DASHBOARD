@@ -2,9 +2,10 @@ import { check, section, done } from './world.mjs';
 import { store } from '../lib/store.js';
 import {
   setBudgetSettings, getBudgetSettings, budgetStatus, getPeriodState,
-  reserveCost, reconcileCost, releaseCost, withBudget,
+  reserveCost, reconcileCost, releaseCost,
   periodKey, periodEnd, toCents, toUsd, spendByCategory, uncappableNote,
 } from '../lib/budget.js';
+import { withSpend } from '../lib/spend-guard.js';
 
 section('B1  money is counted in whole cents, never drifting floats');
 check('$0.07 is 7 cents', toCents(0.07) === 7);
@@ -70,14 +71,32 @@ const second = await reconcileCost(once.reservationId, 1);
 check('reconciling the same reservation twice is ignored', second.alreadyDone === true);
 check('the ledger is not charged twice', (await getPeriodState('week')).spentCents === spentAfterFirst, String(spentAfterFirst));
 
-section('B7  a crashing job never leaves money stuck');
-const before = (await getPeriodState('week')).committedCents;
+section('B7  a crashing job never leaves money HELD');
+// `withBudget` lived here until R16.1 and released the reservation on any
+// throw. `withSpend` replaced it and deliberately does not: an unknown error
+// may well mean the provider did the work and charged for it, and handing that
+// money back lets a retry spend it a second time. What survives from the old
+// test is the invariant that actually mattered — nothing is left *held*.
+const heldBefore = (await getPeriodState('week')).reservedCents;
+
 let threw = false;
+const crashed = await withSpend({ category: 'ai', estimateUsd: 4 }, async () => { throw new Error('provider exploded'); });
+check('an unknown failure is reported as uncertain', crashed.uncertain === true, JSON.stringify(crashed));
+check('the original cause is not swallowed', /provider exploded/.test(crashed.reason), crashed.reason);
+check('nothing is left held', (await getPeriodState('week')).reservedCents === heldBefore,
+  String((await getPeriodState('week')).reservedCents));
+
+const committedBefore = (await getPeriodState('week')).committedCents;
 try {
-  await withBudget({ category: 'ai', estimateUsd: 4 }, async () => { throw new Error('provider exploded'); });
+  await withSpend({ category: 'ai', estimateUsd: 4 }, async () => {
+    const e = new Error('getaddrinfo ENOTFOUND');
+    e.code = 'ENOTFOUND';
+    throw e;
+  });
 } catch { threw = true; }
-check('the error still surfaces to the caller', threw);
-check('…and the reservation was handed back', (await getPeriodState('week')).committedCents === before, String(before));
+check('an error raised before the request still surfaces to the caller', threw);
+check('…and that one IS handed back in full', (await getPeriodState('week')).committedCents === committedBefore,
+  String(committedBefore));
 
 section('B8  part of the budget is held back for live conversations');
 await store.set(`budget:week:${periodKey('week')}:spent`, '0');

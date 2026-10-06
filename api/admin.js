@@ -540,6 +540,37 @@ export default async function handler(req, res) {
       const { budgetStatus } = await import('../lib/budget.js');
       return res.status(200).json({ ok: true, budget: await budgetStatus() });
     }
+    // R16.3 — the owner sets the limit the enforcement path reads. Until this
+    // existed, a limit could only be written by reaching into the store, so the
+    // cap the panel displayed was one nobody could actually change.
+    case 'budget-save': {
+      if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
+      const { setBudgetSettings, budgetStatus, toCents } = await import('../lib/budget.js');
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+
+      // An empty string means "no limit", which is different from zero: zero
+      // would refuse everything, and typing a number then clearing it must not
+      // silently become a total stop.
+      const limit = (v) => {
+        if (v === '' || v == null) return null;
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 0) return undefined; // invalid, reject below
+        return toCents(n);
+      };
+      const weekly = limit(body.weeklyUsd);
+      const monthly = limit(body.monthlyUsd);
+      if (weekly === undefined || monthly === undefined) {
+        return res.status(400).json({ ok: false, error: 'a limit must be a number of dollars, or blank for no limit' });
+      }
+      const pct = body.conversationReservePct == null ? undefined : Math.max(0, Math.min(90, Number(body.conversationReservePct) || 0));
+
+      await setBudgetSettings({
+        weeklyLimitCents: weekly,
+        monthlyLimitCents: monthly,
+        ...(pct == null ? {} : { conversationReservePct: pct }),
+      });
+      return res.status(200).json({ ok: true, budget: await budgetStatus() });
+    }
     case 'settings-save': {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const saved = await saveSettings(body.patch || body);

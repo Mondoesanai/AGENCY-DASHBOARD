@@ -94,8 +94,9 @@ async function analyzeConversion({ site, description }) {
         const r = await fetch(site.url, { redirect: 'follow', signal: AbortSignal.timeout(12000) });
         const html = (await r.text()).slice(0, 45000);
         const bits = (html.match(/<(a|button|form|input)[^>]*>[^<]{0,60}/gi) || []).slice(0, 120).join('\n');
-        const { default: Anthropic } = await import('@anthropic-ai/sdk');
-        const client = new Anthropic({ apiKey: key });
+        // R16.1 — discretionary conversion tagging on a manual lookup.
+        const { aiClient } = await import('../lib/ai-client.js');
+        const client = await aiClient({ apiKey: key, category: 'ai', meta: { feature: 'conversion-tag', site: site?.slug || null } });
         const resp = await client.messages.create({
           model: 'claude-haiku-4-5-20251001',
           max_tokens: 400,
@@ -130,8 +131,9 @@ async function analyzeConversion({ site, description }) {
     if (!fetched.ok || !fetched.home || !fetched.candidates.length) {
       return manualFallback('Nothing matched on the homepage — it may be on a different page.');
     }
-    const { default: Anthropic } = await import('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey: key });
+    // R16.1 — discretionary.
+    const { aiClient } = await import('../lib/ai-client.js');
+    const client = await aiClient({ apiKey: key, category: 'ai', meta: { feature: 'conversion-candidates', site: site?.slug || null } });
     const list = fetched.candidates.map((c, i) => `${i}. <${c.tag}> "${c.text}"${c.href ? ` href="${c.href}"` : ''}`).join('\n');
     const r = await client.messages.create({
       model: 'claude-haiku-4-5-20251001',
