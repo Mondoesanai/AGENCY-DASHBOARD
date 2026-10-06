@@ -65,11 +65,50 @@ export default async function handler(req, res) {
   // and STOP must work whatever else is broken. The reply is returned as
   // TwiML, which is what Twilio expects; an empty <Response/> sends nothing.
   if (req.query?.hook === 'sms') {
-    const { handleInboundSms } = await import('../lib/sms-inbound.js');
+    // R18.1 — VERIFY BEFORE READING. This hook had no signature check at all,
+    // and that defeated the entire R17.2 fix.
+    //
+    // R17.2 made the web form grant nothing, on the grounds that only a message
+    // FROM the handset proves possession — "the one thing a web page cannot
+    // fake". But the channel carrying that proof was itself unauthenticated, so
+    // anyone could POST `From=<somebody else's number>&Body=PREVIEW` here and
+    // be granted PROMOTIONAL consent for a number they do not own. Worse than
+    // the hole it was meant to close: the web form only ever created a pending
+    // record, this granted the real thing.
+    //
+    // Fails closed without TWILIO_AUTH_TOKEN, which `verifyTwilioSignature`
+    // already does. An inbound message that cannot be verified must not grant
+    // consent, suppress a number, or queue a reply — and with no provider
+    // configured there are no real inbound messages to lose.
+    const { verifyTwilioSignature, claimEventOnce } = await import('../lib/webhooks.js');
     const body = typeof req.body === 'object' && req.body ? req.body : {};
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+    const v = verifyTwilioSignature({
+      header: req.headers['x-twilio-signature'],
+      url: `${proto}://${host}${req.url || ''}`,
+      params: body,
+      authToken: process.env.TWILIO_AUTH_TOKEN,
+    });
+    if (!v.ok) return res.status(401).json({ ok: false, error: v.reason });
+
+    // Carriers retry. Without this, a retried inbound is processed again: a
+    // second consent record, a second queued draft, a second conversation
+    // entry. STOP is idempotent, so the retry that matters least is the only
+    // one that was safe before.
+    const sid = String(body.MessageSid || body.SmsSid || '');
+    if (sid) {
+      const once = await claimEventOnce('sms-inbound', sid);
+      if (!once.fresh) {
+        res.setHeader('Content-Type', 'text/xml; charset=utf-8');
+        return res.status(200).send('<Response/>');
+      }
+    }
+
+    const { handleInboundSms } = await import('../lib/sms-inbound.js');
     const out = await handleInboundSms({
-      from: body.From || req.query.From || '',
-      body: body.Body || req.query.Body || '',
+      from: body.From || '',
+      body: body.Body || '',
       business: process.env.OUTREACH_BUSINESS_NAME || '',
       supportEmail: process.env.OWNER_EMAIL || '',
     });
@@ -178,11 +217,26 @@ export default async function handler(req, res) {
   if (req.query?.hook === 'optin-terms') {
     const { publishedTerms, OPTIN_KEYWORD } = await import('../lib/optin-public.js');
     const { getSettings } = await import('../lib/settings.js');
+    const { smsReadiness } = await import('../lib/sms-outreach.js');
     const s = await getSettings().catch(() => null);
+
+    // R18.1 — the page must not promise that texting a keyword will work when
+    // there is no number to text, no webhook pointed here, or no approved
+    // campaign. Somebody who texts PREVIEW into a void gets no confirmation and
+    // no preview, and concludes the business is broken — having already given
+    // their number. `smsReadiness` already knows all three; the page just has to
+    // be told, and the terms are still returned so the page can show what the
+    // programme WILL be.
+    const readiness = await smsReadiness().catch(() => ({ ready: false, blockers: [{ code: 'unknown', text: 'readiness could not be checked' }] }));
     return res.status(200).json({
       ok: true,
       terms: publishedTerms({ business: s?.business?.name || undefined }),
       keyword: OPTIN_KEYWORD,
+      // The page branches on this. Deliberately not a list of blocker text:
+      // those name internal environment variables and are for the owner, not
+      // for a prospect standing in a shop.
+      smsLive: readiness.ready === true,
+      to: readiness.ready ? (process.env.TWILIO_SMS_FROM || null) : null,
     });
   }
 
@@ -204,6 +258,19 @@ export default async function handler(req, res) {
     const caller = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
     const perNumber = await rateLimit(`optin:num:${String(body.phone || '').replace(/\D/g, '')}`, { max: 3, windowSec: 3600 });
     const perCaller = await rateLimit(`optin:ip:${caller}`, { max: 10, windowSec: 3600 });
+    // FAIL CLOSED on a store outage. Enrolment is a new permission being
+    // created; an outage is the one moment when nothing about it can be checked
+    // — not the suppression list, not how many times this number has already
+    // been submitted. Refusing costs somebody a retry. Allowing it creates a
+    // permission record nobody could verify. STOP is unaffected: it arrives at
+    // `?hook=sms`, which is not rate-limited by anything.
+    if (perNumber.degraded || perCaller.degraded) {
+      return res.status(503).json({
+        ok: false,
+        error: 'we cannot sign anyone up at the moment — please try again shortly',
+        retryable: true,
+      });
+    }
     if (!perNumber.ok || !perCaller.ok) {
       // One message for both, so the response cannot be used to tell which limit
       // was hit and therefore whether a number has been submitted before.

@@ -70,6 +70,13 @@
       <span id="termsText">Loading the terms…</span>
     </label>
 
+    <!-- Shown only when texting is not live. Hidden by default so the common
+         case is not qualified by a caveat that does not apply. -->
+    <p class="terms" id="notLive" hidden>
+      <b>Note:</b> text messaging is not switched on yet. You can still register your
+      interest and we will contact you another way. We will not text you unless you
+      confirm from your phone first.
+    </p>
     <button type="submit" id="go">Send me the preview</button>
     <div class="msg" id="msg" role="status" aria-live="polite"></div>
     <!--
@@ -97,9 +104,24 @@
   // and the text recorded with the consent are the same string from the same
   // place. A page that drifts from the record is a page whose consent cannot be
   // evidenced.
+  let SMS_LIVE = false;
+  let TO = null;
   fetch('/api/collect?hook=optin-terms')
     .then((r) => r.json())
-    .then((j) => { TERMS = j.terms || ''; $('#termsText').textContent = TERMS; })
+    .then((j) => {
+      TERMS = j.terms || '';
+      SMS_LIVE = j.smsLive === true;
+      TO = j.to || null;
+      $('#termsText').textContent = TERMS;
+      // R18.1 — do not invite somebody to text a keyword into a void. If the
+      // number, the webhook or the campaign is not live, say we will be in
+      // touch instead of promising something that cannot happen. The form still
+      // works: the intention is recorded either way.
+      if (!SMS_LIVE) {
+        $('#notLive').hidden = false;
+        $('#go').textContent = 'Register my interest';
+      }
+    })
     .catch(() => { $('#termsText').textContent = 'Could not load the terms. Please try again shortly.'; $('#go').disabled = true; });
 
   $('#f').addEventListener('submit', async (e) => {
@@ -132,9 +154,15 @@
         // let somebody who typed a stranger's number believe they had enrolled
         // them — which is exactly what this step exists to stop.
         msg.className = 'msg ok';
-        msg.innerHTML = '<b>One more step.</b> Text <b>' + (j.keyword || 'PREVIEW')
-          + '</b> to <b>' + (j.to || 'our number') + '</b> from that phone to confirm it is yours. '
-          + 'We will not text you until you do.';
+        msg.innerHTML = (SMS_LIVE && j.to)
+          ? '<b>One more step.</b> Text <b>' + (j.keyword || 'PREVIEW')
+            + '</b> to <b>' + j.to + '</b> from that phone to confirm it is yours. '
+            + 'We will not text you until you do.'
+          // Texting is not live. Promising a keyword here would send somebody to
+          // a number that does not answer.
+          : '<b>Thank you.</b> We have your interest. Texting is not switched on yet, '
+            + 'so we will be in touch another way — and we will not text you unless you '
+            + 'confirm from that phone first.';
         $('#f').reset();
       } else {
         msg.className = 'msg err';

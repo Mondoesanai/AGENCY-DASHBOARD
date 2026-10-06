@@ -204,24 +204,32 @@ section('Q7  through the real webhook, as a carrier posts it');
     r.end = () => r;
     return r;
   };
+  // R18.1 — the hook verifies the Twilio signature now, so these sign properly.
+  const { signedInboundReq, TEST_AUTH_TOKEN } = await import('./harness/twilio-sign.mjs');
+  const tokenWas = process.env.TWILIO_AUTH_TOKEN;
+  process.env.TWILIO_AUTH_TOKEN = TEST_AUTH_TOKEN;
   const NUM = '+12145550177';
   await store.set(`suppress:phone:${NUM}`, '').catch(() => {});
 
   let res = mk();
-  await handler({ method: 'POST', query: { hook: 'sms' }, body: { From: NUM, Body: 'STOP' }, headers: {} }, res);
+  await handler(signedInboundReq({ From: NUM, Body: 'STOP', MessageSid: 'SMt1' }), res);
   check('the webhook answers', res.statusCode === 200, String(res.statusCode));
   check('as TwiML', /text\/xml/.test(String(res.headers['Content-Type'] || '')));
   check('with a confirmation message', /<Message>/.test(res.body), res.body.slice(0, 120));
   check('and the number is suppressed', !!(await store.get(`suppress:phone:${NUM}`)));
 
   res = mk();
-  await handler({ method: 'POST', query: { hook: 'sms' }, body: { From: NUM, Body: 'Sure, what would it cost?' }, headers: {} }, res);
+  await handler(signedInboundReq({ From: NUM, Body: 'Sure, what would it cost?', MessageSid: 'SMt2' }), res);
   check('an ordinary reply sends nothing back', res.body === '<Response/>', res.body);
 
   res = mk();
-  await handler({ method: 'POST', query: { hook: 'sms' }, body: { From: NUM, Body: 'HELP' }, headers: {} }, res);
+  await handler(signedInboundReq({ From: NUM, Body: 'HELP', MessageSid: 'SMt3' }), res);
   check('HELP replies', /<Message>/.test(res.body));
   await store.set(`suppress:phone:${NUM}`, '').catch(() => {});
+  // Put the env back: leaving a token set would let a later section pass a
+  // signature check it was not meant to reach.
+  if (tokenWas == null) delete process.env.TWILIO_AUTH_TOKEN;
+  else process.env.TWILIO_AUTH_TOKEN = tokenWas;
 }
 
 await store.set(`suppress:phone:${TX}`, '').catch(() => {});

@@ -139,8 +139,14 @@ check('THE ONLY untested step is Calendly actually posting it',
 section('J12  an inbound reply, driven from the carrier\'s own payload shape');
 // Twilio posts form fields; this is that shape, through the real handler.
 const collect = (await import('../api/collect.js')).default;
+// R18.1 — the hook verifies the Twilio signature now. Signing here is not a
+// workaround: it is what the carrier actually does, so this is closer to the
+// real payload than the unsigned version was.
+const { signedInboundReq, TEST_AUTH_TOKEN } = await import('./harness/twilio-sign.mjs');
+const j12TokenWas = process.env.TWILIO_AUTH_TOKEN;
+process.env.TWILIO_AUTH_TOKEN = TEST_AUTH_TOKEN;
 async function carrierPost(body) {
-  const req = { method: 'POST', url: '/api/collect?hook=sms', query: { hook: 'sms' }, headers: {}, body };
+  const req = signedInboundReq(body);
   let payloadOut = null, code = 0;
   const res = { status(c) { code = c; return this; }, send(p) { payloadOut = p; return this; }, json(p) { payloadOut = p; return this; }, setHeader() { return this; } };
   await collect(req, res);

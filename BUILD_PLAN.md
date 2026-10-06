@@ -341,7 +341,7 @@ Starting point `f05673c`. Priorities are in order; each row is one checklist ite
 
 | Req | Task | Status |
 |---|---|---|
-| R18.1 | Opt-in: ordering, duplication, suppression precedence, unconfigured-provider honesty, fail-CLOSED enrolment | `[ ]` |
+| R18.1 | Opt-in: ordering, duplication, suppression precedence, unconfigured-provider honesty, fail-CLOSED enrolment | `[x]` |
 | R18.2 | Preview isolation as a real gate: inventory, fail-closed guard, Vercel change prepared | `[ ]` |
 | R18.3 | Public-repo history audit (no history rewrite) + a committed check that stops new exposure | `[ ]` |
 | R18.4 | The six everyday journeys, traced end to end with negative controls | `[ ]` |
@@ -363,11 +363,11 @@ no report should give a single number for both.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 156 (requirements, not operational readiness — see Part 13) |
+| `[x]` built **and** verified | 157 (requirements, not operational readiness — see Part 13) |
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 0 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 6 |
+| `[ ]` not started | 5 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.

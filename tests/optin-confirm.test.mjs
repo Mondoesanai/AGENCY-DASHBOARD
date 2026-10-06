@@ -122,13 +122,21 @@ check('it counts', last.count === 4, String(last.count));
 check('and says when it resets', last.resetSec > 0 && last.resetSec <= 60, String(last.resetSec));
 check('a different key is unaffected', (await rateLimit(`${key}:other`, { max: 3, windowSec: 60 })).ok === true);
 
-section('C7b  but a store failure must not block opting out');
+section('C7b  a store failure does NOT quietly allow the request');
+// R18.1 corrected this. It used to fail OPEN, justified as "a KV outage must
+// not take the opt-out path down with it" — which was simply wrong: opt-out
+// arrives at ?hook=sms and is not rate-limited by anything. Failing open only
+// ever made new enrolment easier during an outage, which is the one moment when
+// nothing about it can be checked. The limiter now reports the failure and the
+// caller decides; tests/optin-ordering.test.mjs O7 proves the public endpoint
+// returns 503, and O7b proves STOP still gets through during the same outage.
 const realIncr = store.incr;
 store.incr = async () => { throw new Error('kv down'); };
 const degraded = await rateLimit('anything', { max: 1, windowSec: 60 });
 store.incr = realIncr;
-check('it fails OPEN', degraded.ok === true, JSON.stringify(degraded));
-check('and says it was degraded rather than pretending', degraded.degraded === true,
-  'a silent pass and a real pass must be distinguishable in a log');
+check('it does NOT report a clean pass', degraded.ok === false, JSON.stringify(degraded));
+check('and is explicitly marked degraded', degraded.degraded === true,
+  'a caller reading only `ok` must not mistake an outage for a pass');
+check('with the reason, so it can be logged', /could not be read/.test(degraded.reason || ''), degraded.reason);
 
 done();

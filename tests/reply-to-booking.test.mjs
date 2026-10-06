@@ -31,7 +31,9 @@ async function hook(name, body, { signature = null } = {}) {
   process.env.TWILIO_AUTH_TOKEN = TOKEN;
   const url = `https://dash.example/api/collect?hook=${name}`;
   let sig = signature;
-  if (sig === null && name === 'sms-status') {
+  // R18.1 — the inbound `sms` hook verifies the signature now, not just
+  // `sms-status`. Both are Twilio posts and both are signed the same way.
+  if (sig === null && (name === 'sms-status' || name === 'sms')) {
     let data = url;
     for (const k of Object.keys(body).sort()) data += k + String(body[k] ?? '');
     sig = crypto.createHmac('sha1', TOKEN).update(Buffer.from(data, 'utf8')).digest('base64');
