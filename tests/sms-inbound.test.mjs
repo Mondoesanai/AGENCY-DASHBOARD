@@ -18,7 +18,7 @@ import {
   classifySendFailure, applySendFailure,
 } from '../lib/sms-inbound.js';
 
-const TX = '+12148675309'; // Dallas — Central
+const TX = '+12145557709'; // Dallas — Central
 const CA = '+14155550134'; // San Francisco — Pacific
 const UNKNOWN = '+13075551234'; // Wyoming 307, deliberately not in the map
 
@@ -171,7 +171,7 @@ section('Q6  the real send path refuses outside quiet hours');
   // grepped the source for `withinQuietHours(`, and a control that deleted the
   // REFUSAL while leaving the CALL passed it. Greps prove words, not behaviour.
   const ok = { ok: true };
-  const base = { readiness: { ready: true }, number: '+12148675309', suppressed: false, permission: ok, sequence: ok, quiet: ok, adapterConfigured: true };
+  const base = { readiness: { ready: true }, number: '+12145557709', suppressed: false, permission: ok, sequence: ok, quiet: ok, adapterConfigured: true };
   check('with everything satisfied, nothing refuses', smsRefusal(base) === null);
 
   let r = smsRefusal({ ...base, quiet: { ok: false, reason: 'it is 6:00 where they are' } });

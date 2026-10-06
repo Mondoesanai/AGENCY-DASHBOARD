@@ -23,7 +23,7 @@ const batch = [
   { name: F('Jordan Hale'), businessName: F('Hale Flooring'), email: F('jordan@haleflooring.example'), phone: F('214-555-0101'), website: F('https://haleflooring.example') },
   { name: F('Priya Raman'), businessName: F('Raman Roofing'), email: F('priya@ramanroofing.example'), phone: F('214-555-0102') },
   { name: F('Chris Okafor'), businessName: F('Okafor HVAC'), email: F('chris@okaforhvac.example'), phone: F('214-555-0103') },
-  { name: F('Lee Chan'), businessName: F('Chan Landscaping'), email: F('lee@chanlandscaping.example'), phone: F('214-555-0104'), website: F('https://chanlandscaping.example') },
+  { name: F('Lee Chan'), businessName: F('Chan Landscaping'), email: F('lee@chanlandscaping.example'), phone: F('214-555-7704'), website: F('https://chanlandscaping.example') },
 ];
 
 const saved = await saveCards(batch, {

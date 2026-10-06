@@ -62,9 +62,9 @@ await saveSettings({ pricing: { buildPrice: '2500', monthlyFee: '197' }, targeti
 
 // three prospects in the three states that matter
 await saveProspects([
-  { sourceId: 'osm:node/901', name: 'Lone Star Flooring', email: 'pat@lonestarflooring.com', phone: '2145550147', city: 'Dallas', industry: 'flooring', evidence: {} },
-  { sourceId: 'osm:node/902', name: 'Metroplex Floors', email: 'sam@metroplexfloors.com', city: 'Plano', industry: 'flooring', evidence: {} },
-  { sourceId: 'osm:node/903', name: 'Trinity Tile', email: 'dana@trinitytile.com', city: 'Frisco', industry: 'flooring', evidence: {} },
+  { sourceId: 'osm:node/901', name: 'Lone Star Flooring', email: 'pat@lonestarflooring.test', phone: '2145550147', city: 'Dallas', industry: 'flooring', evidence: {} },
+  { sourceId: 'osm:node/902', name: 'Metroplex Floors', email: 'sam@metroplexfloors.test', city: 'Plano', industry: 'flooring', evidence: {} },
+  { sourceId: 'osm:node/903', name: 'Trinity Tile', email: 'dana@trinitytile.test', city: 'Frisco', industry: 'flooring', evidence: {} },
   { sourceId: 'osm:node/904', name: 'No Email Co', city: 'Irving', industry: 'flooring', evidence: {} },
 ]);
 const ID = (n) => `osm-node-${n}`;
@@ -133,10 +133,10 @@ check('nothing has been emailed at any point', W.emails.length === 0, `${W.email
 
 // ---------------------------------------------------------------------------
 section('E6  an opt-out removes them from the campaign for good');
-await api('contacts-optout', { email: 'pat@lonestarflooring.com', reason: 'unsubscribed' });
+await api('contacts-optout', { email: 'pat@lonestarflooring.test', reason: 'unsubscribed' });
 const { stopContact } = await import('../lib/campaigns.js');
 const contacts = (await api('contacts-list')).body.contacts || [];
-const pat = contacts.find((c) => c.email?.value === 'pat@lonestarflooring.com');
+const pat = contacts.find((c) => c.email?.value === 'pat@lonestarflooring.test');
 check('the contact exists', !!pat);
 const stopped = await stopContact(pat.id, 'opted out');
 check('their pending sends are cancelled', stopped.totalCancelled >= 1, JSON.stringify(stopped));

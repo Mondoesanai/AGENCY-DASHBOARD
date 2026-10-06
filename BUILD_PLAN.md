@@ -328,6 +328,9 @@ requirements. This is the replacement, and it is the whole of the SMS consent st
 |---|---|---|
 | R17.1 | Keyword and web/QR opt-in; owner records assessed against message type | `[x]` |
 | R17.2 | Web opt-in is pending until confirmed from the handset; public write rate-limited; campaign disclosures and terms/privacy pages | `[x]` |
+| R17.3 | Release gate on the real entry points, every claim with a negative control | `[x]` |
+| R17.4 | Public-repository scan: no real address, number or credential in anything committed | `[x]` |
+| R17.5 | `auto-poke` refused outside production, because Preview shares production KV | `[x]` |
 
 ---
 
@@ -344,7 +347,7 @@ no report should give a single number for both.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 153 (requirements, not operational readiness — see Part 13) |
+| `[x]` built **and** verified | 156 (requirements, not operational readiness — see Part 13) |
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 0 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |

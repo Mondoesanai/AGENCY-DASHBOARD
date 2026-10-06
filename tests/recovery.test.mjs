@@ -95,7 +95,7 @@ check('a job that died for an unrelated reason stays dead',
 section('V4  it recovers workflows; it does NOT repair code');
 const task = await openRepairTask({
   title: 'The revisions poller throws on a malformed subject line',
-  diagnostics: 'TypeError at parseSubject\nkey sk-ant-abcdefghijklmnopqrstuvwxyz012345\nfrom owner@realclient.com\ncalled +1 214 555 0201',
+  diagnostics: 'TypeError at parseSubject\nkey sk-ant-abcdefghijklmnopqrstuvwxyz012345\nfrom owner@realclient.test\ncalled +1 214 555 0201',
   now: NOW,
 });
 check('a repair task is opened', task.ok === true && !!task.task.id, JSON.stringify(task).slice(0, 120));

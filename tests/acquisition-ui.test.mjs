@@ -54,12 +54,12 @@ check('and it states discovery never contacts anyone', /never contacts anyone/.t
 
 // ---------------------------------------------------------------------------
 section('A4  low-confidence OCR is marked, never silently used');
-check('a clean field renders plainly', fieldCell({ value: 'info@acme.com', needsReview: false }) === 'info@acme.com');
-check('a shaky field is flagged for a human', /check/.test(fieldCell({ value: 'tnfo@acme.com', needsReview: true })));
+check('a clean field renders plainly', fieldCell({ value: 'info@acme.test', needsReview: false }) === 'info@acme.test');
+check('a shaky field is flagged for a human', /check/.test(fieldCell({ value: 'tnfo@acme.test', needsReview: true })));
 check('an empty field is a dash, not a blank lie', /—/.test(fieldCell(null)));
 check('values are HTML-escaped', /&lt;script&gt;/.test(fieldCell({ value: '<script>' })));
 
-html = renderIntake({ scan: { note: 'Nothing has been saved yet.', cards: [{ name: { value: 'Pat Lee' }, email: { value: 'pat@x.com', needsReview: true }, review: [{ field: 'email' }] }] } });
+html = renderIntake({ scan: { note: 'Nothing has been saved yet.', cards: [{ name: { value: 'Pat Lee' }, email: { value: 'pat@x.test', needsReview: true }, review: [{ field: 'email' }] }] } });
 check('the scan result says nothing is saved yet', /Nothing has been saved yet/.test(html));
 check('fields needing a check are named', /Unsure about: email/.test(html));
 check('and saving is an explicit button, not automatic', has(html, 'acqCommitCards'));
@@ -122,9 +122,9 @@ check('an unknown tab is handled', /Unknown tab/.test(renderBody('nope', {})));
 // ---------------------------------------------------------------------------
 section('A9  an opted-out contact stays visible, with its state');
 html = renderContacts({ contacts: [
-  { id: '1', name: { value: 'Pat' }, email: { value: 'pat@x.com' }, optedOutAt: Date.now() },
-  { id: '2', name: { value: 'Sam' }, email: { value: 'sam@x.com' }, emailStatus: 'hard_bounce' },
-  { id: '3', name: { value: 'Dana' }, email: { value: 'dana@x.com' } },
+  { id: '1', name: { value: 'Pat' }, email: { value: 'pat@x.test' }, optedOutAt: Date.now() },
+  { id: '2', name: { value: 'Sam' }, email: { value: 'sam@x.test' }, emailStatus: 'hard_bounce' },
+  { id: '3', name: { value: 'Dana' }, email: { value: 'dana@x.test' } },
 ] });
 check('an opted-out contact is shown as opted out', /opted out/.test(html));
 check('a bounced address is shown as bounced', /bounced/.test(html));
@@ -168,7 +168,7 @@ check('and framed as correct behaviour, not an error', /That is the system worki
 section('A11  prospects can be selected and enrolled, with honest limits');
 html = renderProspects({
   prospects: [
-    { id: 'p1', name: 'Has Email', city: 'Dallas', email: 'a@b.com', qualification: { segment: 'no-site-found' }, web: {}, evidence: {} },
+    { id: 'p1', name: 'Has Email', city: 'Dallas', email: 'a@b.test', qualification: { segment: 'no-site-found' }, web: {}, evidence: {} },
     { id: 'p2', name: 'No Email', city: 'Plano', qualification: { segment: 'no-site-found' }, web: {}, evidence: {} },
   ],
   campaigns: [{ id: 'c1', name: 'DFW flooring' }],

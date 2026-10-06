@@ -97,8 +97,8 @@ section('S5  SSRF protection on prospect-supplied URLs (R11.9)');
 for (const bad of ['http://localhost/admin', 'http://127.0.0.1:8080', 'http://10.0.0.5', 'http://192.168.1.1', 'http://169.254.169.254/latest/meta-data/', 'file:///etc/passwd', 'http://172.16.0.1']) {
   check(`blocked: ${bad}`, safeUrl(bad).ok === false, JSON.stringify(safeUrl(bad)));
 }
-check('a normal site is allowed', safeUrl('lonestarflooring.com').ok === true);
-check('and is normalised to https', /^https:\/\//.test(safeUrl('lonestarflooring.com').url));
+check('a normal site is allowed', safeUrl('lonestarflooring.test').ok === true);
+check('and is normalised to https', /^https:\/\//.test(safeUrl('lonestarflooring.test').url));
 check('a non-standard port is blocked', safeUrl('http://example.com:9000').ok === false);
 check('a hostname with no dot is blocked', safeUrl('http://intranet').ok === false);
 
@@ -112,12 +112,12 @@ check('and it explicitly says this is not evidence they have none', /NOT evidenc
 
 // a listed site that loads and matches
 const fetchOk = async () => okRes('<html><title>Lone Star Flooring</title><body>Call 214-555-0147</body></html>');
-web = await verifyWebsite({ ...p, website: 'lonestarflooring.com' }, { fetchImpl: fetchOk });
+web = await verifyWebsite({ ...p, website: 'lonestarflooring.test' }, { fetchImpl: fetchOk });
 check('a matching site is verified present', web.status === WEB_STATUS.PRESENT, JSON.stringify(web).slice(0, 160));
 check('and names the evidence that tied it to the business', web.signals.length > 0, web.signals.join(','));
 
 // a listed site that 404s
-web = await verifyWebsite({ ...p, website: 'lonestarflooring.com' }, { fetchImpl: async () => okRes('nope', 404) });
+web = await verifyWebsite({ ...p, website: 'lonestarflooring.test' }, { fetchImpl: async () => okRes('nope', 404) });
 check('a dead listed site is inaccessible, not absent', web.status === WEB_STATUS.INACCESSIBLE);
 check('and the observation states the HTTP status', /HTTP 404/.test(web.observation), web.observation);
 
@@ -163,7 +163,7 @@ section('S8  the adapter, driven end to end against a fixture');
 const overpassBody = {
   elements: [
     { type: 'node', id: 1, lat: 32.78, lon: -96.8, tags: { name: 'Lone Star Flooring', shop: 'flooring', phone: '2145550147', 'addr:city': 'Dallas' } },
-    { type: 'way', id: 2, center: { lat: 32.9, lon: -96.9 }, tags: { name: 'Metroplex Floors', shop: 'flooring', website: 'metroplexfloors.com', 'addr:city': 'Plano' } },
+    { type: 'way', id: 2, center: { lat: 32.9, lon: -96.9 }, tags: { name: 'Metroplex Floors', shop: 'flooring', website: 'metroplexfloors.test', 'addr:city': 'Plano' } },
     { type: 'node', id: 3, lat: 32.7, lon: -96.7, tags: { shop: 'flooring' } }, // unnamed
   ],
 };
@@ -193,10 +193,10 @@ check('and no prospects are invented', r.prospects.length === 0);
 
 // ---------------------------------------------------------------------------
 section('S9  the same business is never discovered twice (R4.11)');
-check('identity prefers the website host', identityKey({ website: 'https://www.lonestarflooring.com/about', phone: '2145550147' }) === 'web:lonestarflooring.com');
+check('identity prefers the website host', identityKey({ website: 'https://www.lonestarflooring.test/about', phone: '2145550147' }) === 'web:lonestarflooring.test');
 check('then the phone number', identityKey({ phone: '(214) 555-0147' }) === 'tel:2145550147');
 check('then name + city', identityKey({ name: 'Lone Star Flooring', city: 'Dallas' }) === 'name:lonestarflooring|dallas');
-check('the same business from two sources collides on purpose', identityKey({ sourceId: 'osm:node/1', website: 'http://lonestarflooring.com' }) === identityKey({ sourceId: 'yelp:99', website: 'https://www.lonestarflooring.com/' }));
+check('the same business from two sources collides on purpose', identityKey({ sourceId: 'osm:node/1', website: 'http://lonestarflooring.test' }) === identityKey({ sourceId: 'yelp:99', website: 'https://www.lonestarflooring.test/' }));
 
 const first = await saveProspects(r.prospects.length ? r.prospects : [{ sourceId: 'osm:node/9', name: 'Dedup Test Co', phone: '2145550199', city: 'Dallas', evidence: {} }]);
 const second = await saveProspects([{ sourceId: 'osm:node/9', name: 'Dedup Test Co', phone: '2145550199', city: 'Dallas', evidence: {} }]);
@@ -228,17 +228,17 @@ check('no configured industries refuses rather than searching for everything', n
 section('S11  R4.5 — a shared inbox is never dressed up as the owner');
 const { classifyEmail, decisionMakerEvidence, greetingFor, guessEmailFromName, titleClaim } = await import('../lib/discovery.js');
 
-for (const generic of ['info@acme.com', 'sales@acme.com', 'office@acme.com', 'contact@acme.com', 'hello@acme.com', 'bookings@acme.com', 'dispatch@acme.com', 'estimates@acme.com']) {
+for (const generic of ['info@acme.test', 'sales@acme.test', 'office@acme.test', 'contact@acme.test', 'hello@acme.test', 'bookings@acme.test', 'dispatch@acme.test', 'estimates@acme.test']) {
   const cl = classifyEmail(generic);
   check(`${generic} is a shared inbox`, cl.isRole === true, JSON.stringify(cl));
   check(`${generic} cannot be used to name a person`, cl.canNamePerson === false);
 }
-check('a role inbox says why it is not evidence', /not evidence of who owns or runs/.test(classifyEmail('info@acme.com').note));
-check('info+quotes@ is still a shared inbox', classifyEmail('info+quotes@acme.com').isRole === true);
-check('INFO@ in capitals is still a shared inbox', classifyEmail('INFO@acme.com').isRole === true);
+check('a role inbox says why it is not evidence', /not evidence of who owns or runs/.test(classifyEmail('info@acme.test').note));
+check('info+quotes@ is still a shared inbox', classifyEmail('info+quotes@acme.test').isRole === true);
+check('INFO@ in capitals is still a shared inbox', classifyEmail('INFO@acme.test').isRole === true);
 
 // a personal-LOOKING address is still not proof
-let cl = classifyEmail('pat.lee@acme.com');
+let cl = classifyEmail('pat.lee@acme.test');
 check('a first.last address looks personal', cl.kind === 'possibly-personal');
 check('but still cannot name a person', cl.canNamePerson === false);
 check('and it admits the shape is a guess', /guess from its shape, not evidence/.test(cl.note), cl.note);
@@ -246,19 +246,19 @@ check('an empty address classifies as none', classifyEmail('').kind === 'none');
 
 // ---------------------------------------------------------------------------
 section('S12  a person is named only when something we read names them');
-let ev = decisionMakerEvidence({ name: 'Acme Flooring', email: 'info@acme.com', evidence: { rawTags: {} } });
+let ev = decisionMakerEvidence({ name: 'Acme Flooring', email: 'info@acme.test', evidence: { rawTags: {} } });
 check('a shared inbox alone gives no named person', ev.level === 'none' && ev.personName === null);
 check('and the basis explains it', /names nobody/.test(ev.basis), ev.basis);
-check('so the greeting is not personalised', greetingFor({ name: 'Acme', email: 'info@acme.com', evidence: { rawTags: {} } }).text === 'Hi,');
+check('so the greeting is not personalised', greetingFor({ name: 'Acme', email: 'info@acme.test', evidence: { rawTags: {} } }).text === 'Hi,');
 
-ev = decisionMakerEvidence({ name: 'Acme', email: 'pat@acme.com', evidence: { rawTags: {} } });
+ev = decisionMakerEvidence({ name: 'Acme', email: 'pat@acme.test', evidence: { rawTags: {} } });
 check('a personal-looking address still gives no named person', ev.canAddressByName === false, JSON.stringify(ev));
-check('and the greeting stays unpersonalised', greetingFor({ name: 'Acme', email: 'pat@acme.com', evidence: { rawTags: {} } }).named === false);
+check('and the greeting stays unpersonalised', greetingFor({ name: 'Acme', email: 'pat@acme.test', evidence: { rawTags: {} } }).named === false);
 
-ev = decisionMakerEvidence({ name: 'Acme', email: 'info@acme.com', evidence: { rawTags: { 'contact:person': 'Patricia Lee' } } });
+ev = decisionMakerEvidence({ name: 'Acme', email: 'info@acme.test', evidence: { rawTags: { 'contact:person': 'Patricia Lee' } } });
 check('a listing that names a person IS evidence', ev.level === 'named-in-listing' && ev.personName === 'Patricia Lee');
 check('and it cites which tag said so', /contact:person/.test(ev.basis), ev.basis);
-let g = greetingFor({ name: 'Acme', email: 'info@acme.com', evidence: { rawTags: { 'contact:person': 'Patricia Lee' } } });
+let g = greetingFor({ name: 'Acme', email: 'info@acme.test', evidence: { rawTags: { 'contact:person': 'Patricia Lee' } } });
 check('so the greeting uses their first name', g.text === 'Hi Patricia,' && g.named === true, g.text);
 
 ev = decisionMakerEvidence({ name: 'Acme', contactName: 'Sam Ortiz', contactNameSource: 'owner-entered' });
@@ -283,7 +283,7 @@ check('a stated position may be used', tc.claim === 'Owner' && /stated in the li
 section('S15  the composed message obeys the evidence');
 const { composeCold } = await import('../lib/campaigns.js');
 const OWNER2 = { name: 'Mondo Davis', business: 'Inspiring Websites LLC', postalAddress: '1 Example St, Plano TX' };
-const roleProspect = { name: 'Acme Flooring', email: 'info@acme.com', web: { status: WEB_STATUS.NOT_LINKED }, evidence: { rawTags: {} } };
+const roleProspect = { name: 'Acme Flooring', email: 'info@acme.test', web: { status: WEB_STATUS.NOT_LINKED }, evidence: { rawTags: {} } };
 let out = await composeCold(roleProspect, { owner: OWNER2 });
 check('a shared-inbox prospect gets an unnamed greeting', /^Hi,\n/.test(out.body), out.body.slice(0, 40));
 check('and the message records that it did not use a name', out.addressedByName === false);
@@ -295,7 +295,7 @@ check('a named prospect is addressed by first name', /^Hi Patricia,\n/.test(out.
 check('and the message says the name was evidenced', out.addressedByName === true && /listing names them/.test(out.greetingBasis), out.greetingBasis);
 
 // the business name must never become a person's name
-out = await composeCold({ name: 'Pat Lee Flooring', email: 'info@patlee.com', web: { status: WEB_STATUS.NOT_LINKED }, evidence: { rawTags: {} } }, { owner: OWNER2 });
+out = await composeCold({ name: 'Pat Lee Flooring', email: 'info@patlee.test', web: { status: WEB_STATUS.NOT_LINKED }, evidence: { rawTags: {} } }, { owner: OWNER2 });
 check('a business named after a person does NOT become a greeting', /^Hi,\n/.test(out.body), out.body.slice(0, 40));
 
 done();

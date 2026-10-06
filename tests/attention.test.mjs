@@ -387,7 +387,7 @@ check('it blocks the all-clear', r.allClear === false);
 // it ranks below a paying client's stuck work and above chasing new business
 r = buildAttention(clean({
   tickets: [ticket({ state: 'blocked', needsOwner: true })],
-  replies: [{ id: 'r1', from: 'a@b.com', subject: 'yes', kind: 'interested', needsOwner: true, at: NOW - 3600e3 }],
+  replies: [{ id: 'r1', from: 'a@b.test', subject: 'yes', kind: 'interested', needsOwner: true, at: NOW - 3600e3 }],
   deliverability: { stop: { known: true, stopped: true, reason: 'bad' }, result: { worst: 'pause', signals: [] } },
 }));
 const actKinds = r.items.filter((i) => i.severity === 'act').map((i) => i.kind);

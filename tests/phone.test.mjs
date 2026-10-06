@@ -19,18 +19,18 @@ import {
 } from '../lib/phone.js';
 import { makeConsentRecord, field as E } from '../lib/contacts.js';
 
-const REAL = '+12148675309';
+const REAL = '+12145557709';
 
 // ---------------------------------------------------------------------------
 section('P1  validation, with no provider involved');
-let p = parseNumber('(214) 867-5309');
+let p = parseNumber('(214) 555-7709');
 check('a formatted US number parses', p.ok === true && p.e164 === REAL, JSON.stringify(p));
-check('and keeps the national digits', p.national === '2148675309');
-check('a leading 1 is handled', parseNumber('1-214-867-5309').e164 === REAL);
+check('and keeps the national digits', p.national === '2145557709');
+check('a leading 1 is handled', parseNumber('1-214-555-7709').e164 === REAL);
 check('an already-E.164 number passes through', parseNumber(REAL).e164 === REAL);
 check('an international number is kept', parseNumber('+44 20 7946 0958').e164 === '+442079460958');
-check('an extension is separated, not treated as digits', parseNumber('214-867-5309 x204').ext === '204');
-check('and the number itself still parses', parseNumber('214-867-5309 x204').e164 === REAL);
+check('an extension is separated, not treated as digits', parseNumber('214-555-7709 x204').ext === '204');
+check('and the number itself still parses', parseNumber('214-555-7709 x204').e164 === REAL);
 
 // the ones that are impossible, not merely unusual
 check('too short is refused', parseNumber('555-1234').ok === false);
@@ -40,7 +40,7 @@ check('an exchange starting with 0 is impossible', parseNumber('214-055-1234').o
 check('and the reason names the exchange', /Exchange 055/.test(parseNumber('214-055-1234').problems[0].text));
 check('empty is refused without guessing', parseNumber('').ok === false);
 check('letters alone are refused', parseNumber('call me').ok === false);
-check('isValidNumber agrees with parseNumber', isValidNumber('214-867-5309') === true && isValidNumber('123-456-7890') === false);
+check('isValidNumber agrees with parseNumber', isValidNumber('214-555-7709') === true && isValidNumber('123-456-7890') === false);
 
 // ---------------------------------------------------------------------------
 section('P2  a placeholder parses, and is still nobody');
@@ -53,7 +53,7 @@ check('but is marked a placeholder', p.placeholder === true);
 check('and says it is reserved for fiction', /reserved for fiction/.test(p.problems[0].text));
 check('repeated digits are a placeholder', parseNumber('222-222-2222').placeholder === true);
 check('sequential digits are caught', parseNumber('123-456-7890').problems.some((x) => x.code === 'sequential'));
-check('a real number is not a placeholder', parseNumber('214-867-5309').placeholder === false);
+check('a real number is not a placeholder', parseNumber('214-555-7709').placeholder === false);
 check('a placeholder still yields an e164 for display', !!parseNumber('972-555-0101').e164);
 
 // ---------------------------------------------------------------------------

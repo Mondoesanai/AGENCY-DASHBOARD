@@ -107,6 +107,30 @@ export default async function handler(req, res) {
   // same per-site-paced, budget-capped tick, and a KV lock caps it at one run
   // per 8 minutes no matter who calls or how often.
   if (req.query.do === 'auto-poke') {
+    // R17.5 — PRODUCTION ONLY, and this is not a precaution.
+    //
+    // `vercel env ls` shows KV_URL, REDIS_URL and the three KV_REST_API_*
+    // variables scoped to **Production AND Preview**, while CRON_SECRET is
+    // Production-only. So a preview deployment is correctly `locked` for the
+    // admin surface — and this endpoint sits ABOVE that gate, deliberately, so
+    // that a browser or an uptime pinger can nudge the tick without a secret.
+    //
+    // Those two facts together are worse than either: every preview deployment
+    // would expose an unauthenticated endpoint that runs the real tick against
+    // the REAL production database. It would write auto:pokeAt, auto:trace and
+    // the heartbeat into production, could trip the deliverability check and
+    // PAUSE production automation, and — because DATAFORSEO_LOGIN/PASSWORD are
+    // also Preview-scoped — could spend real rank-tracking credits.
+    //
+    // The tick belongs to production. Anywhere else it is refused.
+    const env = process.env.VERCEL_ENV;
+    if (env && env !== 'production') {
+      return res.status(403).json({
+        ok: false,
+        error: `the tick only runs in production (this is "${env}")`,
+        why: 'Preview shares production\'s database, so a tick from here would write to live data.',
+      });
+    }
     const last = Number(await store.get('auto:pokeAt').catch(() => 0)) || 0;
     if (Date.now() - last < 8 * 60000) return res.status(200).json({ ok: true, skipped: 'ran recently' });
     await store.set('auto:pokeAt', String(Date.now()), { ex: 3600 }).catch(() => {});

@@ -317,3 +317,6 @@ for itself, and one person cannot give permission on another's behalf.
 |---|---|---|
 | R17.1 | Promotional SMS permission comes only from the recipient's own act; the owner's record is assessed against the message type | A published keyword and a web/QR form each produce promotional consent with the recipient's own act as evidence; an owner-recorded conversation is capped at a one-time follow-up and a promotional send is refused on it; a standing STOP is not overturned by a keyword |
 | R17.2 | Nobody can sign up a number that is not theirs | A web submission grants nothing; promotional permission requires a message received FROM that handset, and no message is sent to an unconfirmed number |
+| R17.3 | A release gate runs against the real production entry points, with negative controls | Auth in all three deployment modes, public endpoints, webhook forgery/tamper/replay, suppression in both key formats, duplicate events, budget refusal before the provider is called, and lease recovery after a worker dies |
+| R17.4 | Nothing published to a public repository identifies a real person or service | No fixture uses a resolving domain, an assignable number, or a credential shape |
+| R17.5 | The unauthenticated tick cannot run outside production | Preview and development deployments refuse it, naming the shared database |

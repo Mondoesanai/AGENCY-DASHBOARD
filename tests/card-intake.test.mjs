@@ -12,14 +12,14 @@ const clear = normaliseCard({
   side: 'front',
   name: { value: 'Dana Reyes', confidence: 0.99, uncertain: '' },
   businessName: { value: 'Reyes Roofing', confidence: 0.99, uncertain: '' },
-  email: { value: 'dana@reyesroofing.com', confidence: 0.97, uncertain: '' },
-  phone: { value: '(214) 867-5305', confidence: 0.96, uncertain: '' },
+  email: { value: 'dana@reyesroofing.test', confidence: 0.97, uncertain: '' },
+  phone: { value: '(214) 555-7705', confidence: 0.96, uncertain: '' },
 });
 check('a sharp card needs no review', reviewQueue(clear).length === 0, JSON.stringify(reviewQueue(clear)));
 const blurry = normaliseCard({
   side: 'front',
   name: { value: 'Dana Reyes', confidence: 0.9, uncertain: '' },
-  email: { value: 'dana@rey3sroofing.com', confidence: 0.55, uncertain: 'the 4th char could be e or 3' },
+  email: { value: 'dana@rey3sroofing.test', confidence: 0.55, uncertain: 'the 4th char could be e or 3' },
 });
 const q = reviewQueue(blurry);
 check('an uncertain email is flagged for a human', q.some((i) => i.field === 'email'), JSON.stringify(q));
@@ -27,14 +27,14 @@ check('…and the model’s note about what it struggled with is kept', /could b
 
 section('K2  our own format check overrides an over-confident model');
 const liar = normaliseCard({
-  email: { value: 'dana(at)reyesroofing.com', confidence: 0.99, uncertain: '' },
+  email: { value: 'dana(at)reyesroofing.test', confidence: 0.99, uncertain: '' },
   phone: { value: '555-01', confidence: 0.99, uncertain: '' },
   website: { value: 'reyesroofing', confidence: 0.99, uncertain: '' },
 });
 check('an unparseable email is downgraded despite 0.99 confidence', liar.email.needsReview === true && liar.email.confidence <= 0.4, String(liar.email.confidence));
 check('a too-short phone is downgraded', liar.phone.needsReview === true);
 check('a bare word that is not a domain is downgraded', liar.website.needsReview === true);
-check('…but nothing is deleted — the raw reading is preserved for the reviewer', liar.email.value === 'dana(at)reyesroofing.com');
+check('…but nothing is deleted — the raw reading is preserved for the reviewer', liar.email.value === 'dana(at)reyesroofing.test');
 
 section('K3  a field that is not on the card is left empty, never invented');
 const sparse = normaliseCard({ name: { value: 'Pat Ortiz', confidence: 0.95 }, email: { value: null, confidence: 0 }, phone: null });
@@ -44,16 +44,16 @@ check('…and we do NOT fabricate one from the name and a domain', !sparse.email
 
 section('K4  one photo, several cards; and front/back of the same card');
 const twoPeople = mergeCardSides([
-  normaliseCard({ side: 'front', name: { value: 'A One', confidence: 0.9 }, businessName: { value: 'Alpha Co', confidence: 0.95 }, email: { value: 'a@alpha.com', confidence: 0.9 } }),
-  normaliseCard({ side: 'front', name: { value: 'B Two', confidence: 0.9 }, businessName: { value: 'Beta Co', confidence: 0.95 }, email: { value: 'b@beta.com', confidence: 0.9 } }),
+  normaliseCard({ side: 'front', name: { value: 'A One', confidence: 0.9 }, businessName: { value: 'Alpha Co', confidence: 0.95 }, email: { value: 'a@alpha.test', confidence: 0.9 } }),
+  normaliseCard({ side: 'front', name: { value: 'B Two', confidence: 0.9 }, businessName: { value: 'Beta Co', confidence: 0.95 }, email: { value: 'b@beta.test', confidence: 0.9 } }),
 ]);
 check('two different businesses stay two contacts', twoPeople.length === 2, String(twoPeople.length));
 const frontBack = mergeCardSides([
   normaliseCard({ side: 'front', name: { value: 'Cy Vance', confidence: 0.95 }, businessName: { value: 'Vance HVAC', confidence: 0.95 } }),
-  normaliseCard({ side: 'back', businessName: { value: 'Vance HVAC', confidence: 0.9 }, phone: { value: '(469) 555-0188', confidence: 0.93 }, email: { value: 'cy@vancehvac.com', confidence: 0.94 } }),
+  normaliseCard({ side: 'back', businessName: { value: 'Vance HVAC', confidence: 0.9 }, phone: { value: '(469) 555-0188', confidence: 0.93 }, email: { value: 'cy@vancehvac.test', confidence: 0.94 } }),
 ]);
 check('front and back of one card become ONE contact', frontBack.length === 1, String(frontBack.length));
-check('…combining the details from both sides', frontBack[0].name?.value === 'Cy Vance' && frontBack[0].phone?.value === '(469) 555-0188' && frontBack[0].email?.value === 'cy@vancehvac.com');
+check('…combining the details from both sides', frontBack[0].name?.value === 'Cy Vance' && frontBack[0].phone?.value === '(469) 555-0188' && frontBack[0].email?.value === 'cy@vancehvac.test');
 check('…and records that both sides were seen', (frontBack[0].sides || []).includes('back'));
 
 section('K5  saving cards creates usable contacts with honest relationship context');
@@ -68,7 +68,7 @@ check('no SMS consent is recorded by default', effectiveConsent(cy, 'sms').scope
 const smsBlocked = await canContact(cy, { channel: 'sms', purpose: 'promotional' });
 check('a marketing text is refused', smsBlocked.ok === false, smsBlocked.reason);
 const withPermission = await saveCards(
-  [normaliseCard({ name: { value: 'Jo Ok', confidence: 0.95 }, businessName: { value: 'Ok Co', confidence: 0.95 }, email: { value: 'jo@okco.com', confidence: 0.95 }, phone: { value: '(214) 867-5306', confidence: 0.95 } })],
+  [normaliseCard({ name: { value: 'Jo Ok', confidence: 0.95 }, businessName: { value: 'Ok Co', confidence: 0.95 }, email: { value: 'jo@okco.test', confidence: 0.95 }, phone: { value: '(214) 555-7706', confidence: 0.95 } })],
   { relationship: 'met_in_person', smsConsent: { granted: true, scope: 'one_time_followup', source: 'verbal at meeting', wording: 'said to text her the preview link' } }
 );
 const jo = await getContact(withPermission[0].contact.id);
@@ -77,13 +77,13 @@ check('…and still does NOT authorise ongoing marketing', (await canContact({ .
 check('…but does authorise the promised follow-up', (await canContact({ ...jo, phoneType: 'mobile' }, { channel: 'sms', purpose: 'one_time_followup' })).ok === true);
 
 section('K7  "same networking group" is not the same claim as "we met"');
-const group = await saveCards([normaliseCard({ name: { value: 'Group Member', confidence: 0.9 }, businessName: { value: 'Member Co', confidence: 0.9 }, email: { value: 'gm@memberco.com', confidence: 0.95 } })], { relationship: 'same_networking_group', networkingGroup: 'BNI Plano' });
+const group = await saveCards([normaliseCard({ name: { value: 'Group Member', confidence: 0.9 }, businessName: { value: 'Member Co', confidence: 0.9 }, email: { value: 'gm@memberco.test', confidence: 0.95 } })], { relationship: 'same_networking_group', networkingGroup: 'BNI Plano' });
 const gm = await getContact(group[0].contact.id);
 check('the weaker, truthful claim is recorded', gm.relationship === 'same_networking_group' && gm.networkingGroup === 'BNI Plano');
 check('…and it does not masquerade as a meeting', gm.relationship !== 'met_in_person');
 
 section('K8  CSV parsing handles the messy files people actually have');
-const rows = parseCsv('Name,Company,Email\n"Smith, John",Acme Inc,john@acme.com\n"Say ""Hi""",Beta,b@beta.com\n\n');
+const rows = parseCsv('Name,Company,Email\n"Smith, John",Acme Inc,john@acme.test\n"Say ""Hi""",Beta,b@beta.test\n\n');
 check('a quoted comma does not split the field', rows[1][0] === 'Smith, John', JSON.stringify(rows[1]));
 check('escaped quotes are unescaped', rows[2][0] === 'Say "Hi"', JSON.stringify(rows[2]));
 check('blank lines are dropped', rows.length === 3, String(rows.length));
@@ -93,11 +93,11 @@ check('column headers are matched to fields', map.name === 0 && map.businessName
 section('K9  import preview writes nothing and tells the truth about each row');
 const csv = [
   'Name,Company,Email,Phone',
-  'Dana Reyes,Reyes Roofing,dana@reyesroofing.com,214-867-5305',
-  'Cy Vance,Vance HVAC,cy@vancehvac.com,469-555-0188',
+  'Dana Reyes,Reyes Roofing,dana@reyesroofing.test,214-555-7705',
+  'Cy Vance,Vance HVAC,cy@vancehvac.test,469-555-0188',
   'Broken Row,No Contact Co,,',
   'Bad Email,Oops Co,not-an-email,',
-  'Dana Reyes,Reyes Roofing,dana@reyesroofing.com,214-867-5305',
+  'Dana Reyes,Reyes Roofing,dana@reyesroofing.test,214-555-7705',
 ].join('\n');
 const before = (await listContacts({ limit: 500 })).total;
 const pv = await previewCsv(csv, null);
@@ -113,14 +113,14 @@ const res = await importCsv(csv, null, { relationship: 'none' });
 check('valid rows are imported', res.created >= 1 && res.ok, JSON.stringify(res));
 check('rows with nothing usable to contact are skipped, not half-created', res.skipped === 2, String(res.skipped));
  check('…and the owner is told which rows were dropped and why', res.errors.some((e) => /no usable email or phone/.test(e.error)), JSON.stringify(res.errors));
-const imported = (await listContacts({ limit: 500 })).contacts.find((c) => c.email?.value === 'dana@reyesroofing.com');
+const imported = (await listContacts({ limit: 500 })).contacts.find((c) => c.email?.value === 'dana@reyesroofing.test');
 check('the imported contact is real and usable', !!imported && (await canContact(imported, { channel: 'email' })).ok === true);
 check('an import grants NO sms consent on its own', effectiveConsent(imported, 'sms').scope === 'none');
-const withConsent = await importCsv('Name,Email\nCon Sent,consent@biz.com', { name: 0, email: 1 }, {
+const withConsent = await importCsv('Name,Email\nCon Sent,consent@biz.test', { name: 0, email: 1 }, {
   consent: { scope: 'promotional', channel: 'email', source: 'signup form on our site', wording: 'I agree to receive emails from Inspiring Websites', wordingVersion: 'v2' },
 });
 check('consent IS recorded when the owner supplies real wording and source', withConsent.created === 1);
-const cs = (await listContacts({ limit: 500 })).contacts.find((c) => c.email?.value === 'consent@biz.com');
+const cs = (await listContacts({ limit: 500 })).contacts.find((c) => c.email?.value === 'consent@biz.test');
 check('…with the exact wording stored as evidence', /I agree to receive emails/.test(cs.consentLog[0].wording) && cs.consentLog[0].wordingVersion === 'v2');
 
 section('K11  re-importing the same file does not duplicate anyone');
@@ -138,8 +138,8 @@ check('an oversize photo is refused with a plain message', huge.ok === false && 
 section('K13  reading a real photo end to end (model mocked)');
 W.anthropic.push(JSON.stringify({
   cards: [
-    { side: 'front', name: { value: 'Mia Chen', confidence: 0.97, uncertain: '' }, businessName: { value: 'Chen Dental', confidence: 0.98, uncertain: '' }, role: { value: 'Owner', confidence: 0.9, uncertain: '' }, email: { value: 'mia@chendental.com', confidence: 0.96, uncertain: '' }, phone: { value: '(972) 555-0122', confidence: 0.95, uncertain: '' }, website: { value: 'chendental.com', confidence: 0.94, uncertain: '' }, address: null, otherText: 'Plano, TX' },
-    { side: 'front', name: { value: 'Ravi Patel', confidence: 0.6, uncertain: 'surname may be Pate1' }, businessName: { value: 'Patel Law', confidence: 0.92, uncertain: '' }, email: { value: 'ravi@pate1law.com', confidence: 0.45, uncertain: 'l vs 1 in the domain' }, phone: null, website: null, address: null, otherText: '' },
+    { side: 'front', name: { value: 'Mia Chen', confidence: 0.97, uncertain: '' }, businessName: { value: 'Chen Dental', confidence: 0.98, uncertain: '' }, role: { value: 'Owner', confidence: 0.9, uncertain: '' }, email: { value: 'mia@chendental.test', confidence: 0.96, uncertain: '' }, phone: { value: '(972) 555-0122', confidence: 0.95, uncertain: '' }, website: { value: 'chendental.com', confidence: 0.94, uncertain: '' }, address: null, otherText: 'Plano, TX' },
+    { side: 'front', name: { value: 'Ravi Patel', confidence: 0.6, uncertain: 'surname may be Pate1' }, businessName: { value: 'Patel Law', confidence: 0.92, uncertain: '' }, email: { value: 'ravi@pate1law.test', confidence: 0.45, uncertain: 'l vs 1 in the domain' }, phone: null, website: null, address: null, otherText: '' },
   ],
 }));
 const read = await readCardImage({ base64: 'ZmFrZQ==', mimeType: 'image/jpeg', note: 'two cards from the chamber event' });

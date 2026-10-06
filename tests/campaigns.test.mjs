@@ -118,7 +118,7 @@ check('follow-ups are spaced by the cadence', plan[1].at === 1000 + 4 * 86400000
 
 // ---------------------------------------------------------------------------
 section('C8  a reply cancels EVERY pending follow-up, in every campaign (R5.4)');
-const a = await upsertContact({ source: 'discovery', name: E('Pat Lee'), businessName: E('Lone Star Flooring'), email: E('pat@lonestarflooring.com') });
+const a = await upsertContact({ source: 'discovery', name: E('Pat Lee'), businessName: E('Lone Star Flooring'), email: E('pat@lonestarflooring.test') });
 const contact = a.contact;
 const c2 = (await createCampaign({ name: 'second campaign', type: CAMPAIGN_TYPES.COLD_WEAK_SITE })).campaign;
 
@@ -149,9 +149,9 @@ check('and a late worker cannot resurrect them', mem.state === MEMBER_STATE.STOP
 
 // ---------------------------------------------------------------------------
 section('C9  an opted-out contact cannot be added at all');
-const b = await upsertContact({ source: 'discovery', name: E('Sam Ortiz'), businessName: E('Metroplex Floors'), email: E('sam@metroplexfloors.com') });
-await optOut({ email: 'sam@metroplexfloors.com', reason: 'unsubscribed' });
-const refreshed = (await upsertContact({ source: 'discovery', name: E('Sam Ortiz'), businessName: E('Metroplex Floors'), email: E('sam@metroplexfloors.com') })).contact;
+const b = await upsertContact({ source: 'discovery', name: E('Sam Ortiz'), businessName: E('Metroplex Floors'), email: E('sam@metroplexfloors.test') });
+await optOut({ email: 'sam@metroplexfloors.test', reason: 'unsubscribed' });
+const refreshed = (await upsertContact({ source: 'discovery', name: E('Sam Ortiz'), businessName: E('Metroplex Floors'), email: E('sam@metroplexfloors.test') })).contact;
 add = await addMember(camp.id, refreshed);
 check('adding an opted-out contact is refused', add.ok === false && add.refused === true, JSON.stringify(add));
 check('and the reason is consent', /opted out/i.test(add.reason), add.reason);
@@ -159,7 +159,7 @@ check('and the reason is consent', /opted out/i.test(add.reason), add.reason);
 // ---------------------------------------------------------------------------
 section('C10  a draft campaign sends nothing, and the window holds sends');
 const c3 = (await createCampaign({ name: 'draft one', type: CAMPAIGN_TYPES.COLD_NO_SITE })).campaign;
-const d = await upsertContact({ source: 'discovery', name: E('Dana Kim'), businessName: E('Trinity Tile'), email: E('dana@trinitytile.com') });
+const d = await upsertContact({ source: 'discovery', name: E('Dana Kim'), businessName: E('Trinity Tile'), email: E('dana@trinitytile.test') });
 await addMember(c3.id, d.contact);
 due = await dueSends(c3.id, { now: Date.now() });
 check('a draft campaign has nothing due', due.due.length === 0);
@@ -230,7 +230,7 @@ section('C14  the rule bites on a real card-sourced contact');
 const { saveCards } = await import('../lib/card-intake.js');
 // a card scanned at an event: relationship recorded, NO sms consent given
 const cardRes = await saveCards(
-  [{ name: E('Casey Nguyen'), businessName: E('Nguyen Tile'), phone: E('214-867-5304'), email: E('casey@nguyentile.test') }],
+  [{ name: E('Casey Nguyen'), businessName: E('Nguyen Tile'), phone: E('214-555-7704'), email: E('casey@nguyentile.test') }],
   { relationship: 'met_in_person', event: 'Plano chamber breakfast' }
 );
 const carded = cardRes[0]?.contact || cardRes.results?.[0]?.contact || (Array.isArray(cardRes) ? cardRes[0] : null);

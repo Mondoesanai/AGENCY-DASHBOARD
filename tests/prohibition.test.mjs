@@ -242,15 +242,15 @@ check('consent records', mayWrite('consent:someone@example.com').ok === false);
 check('the business settings, which hold pricing and sender identity', mayWrite('settings:business').ok === false);
 check('budgets', mayWrite('budget:settings').ok === false);
 check('and a reservation under budgets', mayWrite('budget:res:abc').ok === false);
-check('the refusal names the domain', mayWrite('suppress:email:x@y.com').domain === 'suppression');
+check('the refusal names the domain', mayWrite('suppress:email:x@y.test').domain === 'suppression');
 check('and states the rule and the reason', (() => {
   const w = mayWrite('budget:settings');
   return /spending limit|control the owner set/i.test(w.reason || '');
 })(), mayWrite('budget:settings').reason);
 check('an experiment key is not protected', mayWrite('experiment:exp-1').ok === true);
 check('nor the ledger itself', mayWrite('optimisation:log').ok === true);
-check('case does not get you past it', mayWrite('SUPPRESS:email:x@y.com').ok === false);
-check('nor does leading whitespace', mayWrite('  suppress:email:x@y.com').ok === false);
+check('case does not get you past it', mayWrite('SUPPRESS:email:x@y.test').ok === false);
+check('nor does leading whitespace', mayWrite('  suppress:email:x@y.test').ok === false);
 
 // fails closed: an unreadable target is not a safe target
 check('no key is refused', mayWrite('').ok === false);
@@ -258,7 +258,7 @@ check('a missing key is refused', mayWrite(undefined).ok === false && mayWrite(n
 check('a non-string key is refused', mayWrite({ key: 'suppress:x' }).ok === false && mayWrite(42).ok === false);
 check('and says why it could not be checked', /cannot be checked against the prohibitions/.test(mayWrite('').reason || ''), mayWrite('').reason);
 
-check('mayRevert checks the entry\'s target', mayRevert({ target: 'suppress:email:x@y.com' }).ok === false);
+check('mayRevert checks the entry\'s target', mayRevert({ target: 'suppress:email:x@y.test' }).ok === false);
 check('a normal entry may be reverted', mayRevert({ target: 'experiment:exp-1' }).ok === true);
 check('an entry with no target is refused', mayRevert({ target: null }).ok === false);
 check('and so is no entry at all', mayRevert(null).ok === false && mayRevert(undefined).ok === false);
@@ -338,7 +338,7 @@ check('no refusal path returns a bare object that reads as truthy success', (() 
   // caller does `if (result)` rather than `if (result.ok)`
   const shapes = [
     inspectVariants([{ id: 'b', subject: '$500' }]),
-    mayWrite('suppress:email:x@y.com'),
+    mayWrite('suppress:email:x@y.test'),
     mayRevert({ target: 'budget:settings' }),
   ];
   return shapes.every((s) => s && s.ok === false && (s.error || s.reason));

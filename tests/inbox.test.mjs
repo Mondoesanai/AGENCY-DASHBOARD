@@ -77,7 +77,7 @@ addMail({ id: 'nl', from: 'News <hello@newsletter.test>', subject: 'Deals', body
 // REGRESSION (live): an owner-notification email (sent FROM our own REPORT_FROM
 // address, e.g. a blocked-revision alert) landed back in this same inbox and
 // was read as a real client asking for a website redesign.
-addMail({ id: 'self', from: 'Inspiring Websites <reports@acme-agency.test>', subject: 'omtservices.com: blocked', body: "MARKER_CLIENT_REQ Cannot complete website redesign task involving three separate quizzes — please review" });
+addMail({ id: 'self', from: 'Inspiring Websites <reports@acme-agency.test>', subject: 'omtservices.test: blocked', body: "MARKER_CLIENT_REQ Cannot complete website redesign task involving three separate quizzes — please review" });
 addMail({ id: 'nm', from: 'Someone <someone@nowhere.test>', subject: 'hi', body: 'MARKER_NOMATCH can you change something' });
 addMail({ id: 'dom', from: 'Sam N <sam.new@acme.test>', subject: 'more', body: 'MARKER_CLIENT_REQ another hours tweak' });
 // REGRESSION (live): a verified client replying in a thread we'd already sent a
@@ -304,7 +304,7 @@ section('I13  Gmail sorts itself: Revisions vs Website Agent labels');
 const { looksLikeAgentMail } = await import('../lib/google.js');
 check('a Vercel deploy mail is recognised as agent mail', looksLikeAgentMail({ from: 'Vercel <notifications@vercel.com>', subject: 'Deployment ready' }));
 check('a GitHub PR mail is recognised as agent mail', looksLikeAgentMail({ from: 'GitHub <noreply@github.com>', subject: '[acme/site] Pull request merged' }));
-check('our own "Revision done" notice is agent mail', looksLikeAgentMail({ from: 'x@y.com', subject: 'Revision done: Acme Detailing' }));
+check('our own "Revision done" notice is agent mail', looksLikeAgentMail({ from: 'x@y.test', subject: 'Revision done: Acme Detailing' }));
 check('a real client asking for a change is NOT agent mail', !looksLikeAgentMail({ from: 'Sam <owner@acme.test>', subject: 'please change our hours' }));
 
 const labelsOf = (id) => W.gmail.inbox.find((m) => m.id === id)?.labels || [];
