@@ -296,6 +296,25 @@ check('and the message tells them plainly it is not confirmed',
 check('without claiming a time was booked',
   !/confirmed\./i.test(failed.message.split('NOT')[0]), failed.message);
 
+section('P8c3  a new lead TELLS somebody');
+// The failure this prevents is the one that let client revisions sit for days:
+// the work arrives, the record is written perfectly, and the only way anyone
+// finds out is by going to look.
+const prSrc = await readFile(new URL('../lib/preview-request.js', import.meta.url), 'utf8');
+check('the owner is notified on a successful request',
+  /notifyOwner\(/.test(prSrc), 'lib/preview-request.js');
+check('it carries who it is and how to reach them',
+  /New website request from \$\{businessName\}[\s\S]{0,400}\$\{email\}/.test(prSrc), 'lib/preview-request.js');
+check('and says whether a call was actually booked',
+  /Call booked:[\s\S]{0,200}No call booked yet/.test(prSrc),
+  'an owner reading it on a phone needs to know if a time is held');
+check('the notification happens AFTER the lead is stored',
+  prSrc.indexOf('store.set(dedupeKey(fp)') < prSrc.indexOf('notifyOwner('),
+  'notifying before storing risks telling the owner about a lead we then lose');
+check('and it cannot fail the submission',
+  /try \{[\s\S]{0,900}notifyOwner\([\s\S]{0,400}\} catch/.test(prSrc),
+  'a notifier that is down must not cost us a lead we already recorded');
+
 section('P8d  the same submission twice is one submission');
 const first = await submitRequest({
   name: 'Robin Example', businessName: 'Robin Signs', email: 'robin@example.test',
