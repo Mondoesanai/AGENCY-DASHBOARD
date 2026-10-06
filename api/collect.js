@@ -349,6 +349,15 @@ export default async function handler(req, res) {
   // reads as "fully booked" and the page has to be able to say the honest
   // thing instead: this is a call request, not a confirmed appointment.
   if (req.query?.hook === 'slots') {
+    // R19.7 — a form visit, recorded where the page actually asks the server
+    // for real times. It is its OWN funnel event and can never be a booking;
+    // `funnel.record` refuses a booking with no provider id, which is the
+    // mechanism rather than the intention.
+    try {
+      const { record: funnel, FUNNEL } = await import('../lib/funnel.js');
+      await funnel(FUNNEL.FORM_VISIT, { at: Date.now(), ref: String(req.query.ref || '') || null });
+    } catch { /* never fail the page over a counter */ }
+
     const { getScheduler } = await import('../lib/scheduling.js');
     const { consentCopy } = await import('../lib/request-sms.js');
     const sched = await getScheduler({});

@@ -1050,6 +1050,12 @@ export default async function handler(req, res) {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
       return res.status(200).json(await saveRules(body));
     }
+    case 'funnel': {
+      // R19.7 — where people actually drop out. Ten events that are not each
+      // other, and a booking counted only from a provider confirmation.
+      const { report, recent } = await import('../lib/funnel.js');
+      return res.status(200).json({ ok: true, funnel: await report(), recent: (await recent(30)).events });
+    }
     case 'preview-link': {
       // A shareable link to the form with this business pre-filled. The
       // reference is opaque and carries business fields only, so a link that
