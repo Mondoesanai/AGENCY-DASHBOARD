@@ -300,6 +300,26 @@
   .auto-sweeps>summary:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;border-radius:11px;}
   .auto-sweeps-in{padding:0 12px 12px;}
   .auto-sweep-list{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--muted);line-height:1.8;}
+  /* R18.5 — the four questions, answered at the top of the panel. */
+  .ans{border:1px solid var(--line);border-radius:12px;padding:13px 14px;margin:0 0 12px;background:var(--surface2);}
+  .ans-head{font:600 15px/1.4 'Fraunces',serif;margin-bottom:10px;}
+  .ans-figs{display:flex;gap:18px;flex-wrap:wrap;}
+  .ans-fig{display:flex;flex-direction:column;}
+  .ans-fig b{font:600 22px/1.1 'Fraunces',serif;}
+  .ans-fig span{font-size:11.5px;color:var(--faint);text-transform:uppercase;letter-spacing:.05em;}
+  .ans-fig.ans-bad b{color:var(--neg);}
+  .ans-fig.ans-good b{color:var(--pos);}
+  .ans-fig.ans-warn b{color:var(--warn);}
+  .ans-actions{margin:11px 0 0;padding-left:18px;font-size:13px;line-height:1.75;}
+  .ans-rows{list-style:none;margin:11px 0 0;padding:0;display:grid;gap:6px;font-size:12.5px;}
+  .ans-rows li{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;}
+  .ans-word{font:600 10.5px/1.6 "Inter",system-ui,sans-serif;text-transform:uppercase;letter-spacing:.05em;
+    border:1px solid var(--line-strong);border-radius:999px;padding:0 7px;white-space:nowrap;}
+  .ans-word.ans-healthy{color:var(--pos);border-color:var(--green);}
+  .ans-word.ans-blocked{color:var(--neg);border-color:var(--neg);}
+  .ans-word.ans-late{color:var(--warn);border-color:var(--warn);}
+  .ans-word.ans-never-ran{color:var(--faint);}
+  .ans-word.ans-unknown{color:var(--faint);}
   /* R16.12 — one-off plumbing, kept out of the way of the daily job. */
   .attn-setup{margin-top:10px;border:1px solid var(--line);border-radius:11px;background:var(--surface2);}
   .attn-setup>summary{cursor:pointer;padding:10px 12px;font-size:13px;font-weight:600;color:var(--muted);}

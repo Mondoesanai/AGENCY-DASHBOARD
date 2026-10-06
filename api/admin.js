@@ -89,7 +89,25 @@ export default async function handler(req, res) {
   // anyone who has not unlocked. PAUSING, which changes behaviour, is gated.
   if (req.query.do === 'automation-status') {
     const { automationStatus } = await import('../lib/heartbeat.js');
-    const automation = await automationStatus();
+    // R18.5 — the blockers are fetched HERE and passed in, because
+    // `recovery.js:diagnose` already calls `automationStatus`. Having the
+    // status fetch its own blockers made the two modules call each other until
+    // the process ran out of heap. The caller holds both; neither reaches for
+    // the other.
+    let blockers = [];
+    try {
+      const { diagnose } = await import('../lib/recovery.js');
+      const d = await diagnose({});
+      blockers = (d?.findings || [])
+        .filter((f) => f && (f.action || f.severity === 'needs-configuration'))
+        .map((f) => ({
+          worker: f.worker || null,
+          code: f.id || null,
+          text: f.what || '',
+          ownerAction: f.action || null,
+        }));
+    } catch { /* attempt-vs-success reasoning stands without them */ }
+    const automation = await automationStatus(Date.now(), { blockers });
     // R16.6/R16.7 — raised alerts and the sweep's own history. Without these the
     // panel can say every worker looks fine while the sweep that would have
     // noticed otherwise has not run for days, and an alert raised last week has

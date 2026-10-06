@@ -103,12 +103,50 @@ export function renderAutomation(a, opts = {}) {
       </div>`).join('');
 
   return `${pauseBox}
+    ${renderAnswer(a.health)}
     <div class="note ${h.tone === 'good' ? '' : h.tone}"><b>${esc(h.word)}</b>${h.detail ? ` — ${esc(h.detail)}` : ''}</div>
     ${renderEscalations(a.escalations, busy)}
     ${rows}
     <p class="note faint">Every line above is the last time that worker actually checked in, not a schedule.
       A worker that stopped shows its real silence here rather than a countdown to a run that will not happen.</p>
     ${renderSweeps(a.sweeps, a.sweepHealth)}`;
+}
+
+/**
+ * R18.5 — the one view that answers all four questions at once.
+ *
+ * What needs attention · what is running · what is blocked · what exact action
+ * would unblock it. Before this the owner could read six worker rows and still
+ * not know which of them needed them, because every row said "last ran N
+ * minutes ago" and none said whether it had WORKED.
+ *
+ * The actions are deduplicated: three workers stopped by one missing token is
+ * one thing to do, not three.
+ */
+export function renderAnswer(ans) {
+  if (!ans) return '';
+  const c = ans.counts || {};
+  const fig = (n, word, cls = '') => `<div class="ans-fig ${cls}"><b>${esc(n)}</b><span>${esc(word)}</span></div>`;
+  return `<div class="ans">
+    <div class="ans-head">${esc(ans.headline || '')}</div>
+    <div class="ans-figs">
+      ${fig(ans.needsYou || 0, 'need you', ans.needsYou ? 'ans-bad' : '')}
+      ${fig(ans.running || 0, 'running', ans.running ? 'ans-good' : '')}
+      ${fig(ans.blocked || 0, 'blocked', ans.blocked ? 'ans-bad' : '')}
+      ${c.unknown ? fig(c.unknown, 'outcome unknown', 'ans-warn') : ''}
+    </div>
+    ${(ans.actions || []).length ? `<ul class="ans-actions">${ans.actions.map((a) => `<li>
+      <b>${esc(a.action)}</b>
+      <span class="faint">— ${esc(a.because)}</span>
+    </li>`).join('')}</ul>` : ''}
+    ${(ans.rows || []).length ? `<ul class="ans-rows">${ans.rows.map((x) => `<li>
+      <span class="ans-word ans-${esc(x.health)}">${esc(x.word || x.health)}</span>
+      <b>${esc(x.label)}</b>
+      <span class="faint">${esc(x.why || '')}</span>
+    </li>`).join('')}</ul>` : ''}
+    ${c.unknown ? `<p class="note faint">A worker with no recorded outcome is shown separately rather than
+      counted as working: a timestamp proves it started, not that it achieved anything.</p>` : ''}
+  </div>`;
 }
 
 /**
