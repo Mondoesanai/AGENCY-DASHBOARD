@@ -165,6 +165,32 @@ const gateInbound = await maySend({ contact: inboundContact, campaignId: 'seg1',
 check('a cold send to somebody who came to us is refused', gateInbound.ok === false, JSON.stringify(gateInbound).slice(0, 200));
 check('and names the inbound segment', gateInbound.segment === SEGMENT.INBOUND_REQUEST, String(gateInbound.segment));
 
+section('T5b2  "preview_request" survives being stored, or none of that works');
+// Found in a browser, not a unit test: an unlisted source silently becomes
+// `manual`, so every person who filled in the form was stored as a manual
+// contact and the inbound check never matched them.
+const { SOURCES, INBOUND_SOURCES, upsertContact: up2, field: fld2, getContact: get2 } = await import('../lib/contacts.js');
+check('preview_request is an allowed source', SOURCES.includes('preview_request'),
+  'an unlisted source falls back to "manual" without complaint');
+const roundTripped = await up2({
+  source: 'preview_request',
+  name: fld2('Inbound Person', { confidence: 1, source: 'preview_request' }),
+  email: fld2('inbound-source@example.test', { confidence: 1, source: 'preview_request' }),
+});
+const back = await get2(roundTripped.contact.id);
+check('and it survives being stored', back.source === 'preview_request', back.source);
+check('the inbound sources are a shared list, not one hard-coded value',
+  INBOUND_SOURCES.includes('preview_request') && INBOUND_SOURCES.includes('inbound'),
+  INBOUND_SOURCES.join(', '));
+check('a referral counts as inbound too', INBOUND_SOURCES.includes('referral'),
+  'somebody introduced to us did not come from discovery, and is not a cold prospect');
+const referralGate = await maySend({
+  contact: { ...profileContact, id: 'seg_referral', source: 'referral',
+    websiteCheck: { status: WEB_STATUS.PRESENT, attempted: 'https://haleflooring.example', signals: ['a', 'b'] } },
+  campaignId: 'seg1', purpose: 'promotional',
+});
+check('and a referral is not cold-contacted', referralGate.segment === SEGMENT.INBOUND_REQUEST, String(referralGate.segment));
+
 section('T5b  NEGATIVE CONTROL: the segment gate is not what blocks everything');
 const okContact = { ...profileContact, id: 'seg_ok',
   websiteCheck: { status: WEB_STATUS.PRESENT, attempted: 'https://haleflooring.example', signals: ['business name', 'town'] } };
