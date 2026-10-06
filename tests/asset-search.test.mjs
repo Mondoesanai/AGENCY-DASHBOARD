@@ -121,4 +121,55 @@ check('a ticket with nothing outstanding is skipped',
 check('no tickets at all is survivable', (await recheckBlockedAssets([])).count === 0);
 check('undefined is survivable', (await recheckBlockedAssets(undefined)).count === 0);
 
+// ---------------------------------------------------------------------------
+section('A8  with no URL on file, the organisation is researched before anyone is asked');
+const officialSearch = async () => ([{ url: 'https://cpdstandards.com/brand-resources', title: 'Brand resources' }]);
+
+// terms permit an accredited party, and this client's entitlement is on file
+let found = await findAsset('official CPD Standards Office accreditation logo', {
+  ticket: { attachments: [] },
+  site: { slug: 'lo-down', accreditationOrg: 'CPD Standards Office', accreditationRef: 'Provider 51045' },
+  org: 'CPD Standards Office',
+  search: officialSearch,
+  fetchPage: async () => 'Accredited providers may display the CPD mark on their website and materials.',
+  fetchUrl: async () => ({ ok: true, bytes: 4096 }),
+});
+check('it is found from the official source', found.found === true, JSON.stringify(found.searched.slice(-1)));
+check('and the client is not asked', found.needsClient === false);
+
+// terms are silent — downloadable is not permitted
+found = await findAsset('official CPD Standards Office accreditation logo', {
+  ticket: { attachments: [] },
+  site: { slug: 'lo-down', accreditationOrg: 'CPD Standards Office', accreditationRef: 'Provider 51045' },
+  search: officialSearch,
+  fetchPage: async () => 'Download our logo pack here.',
+  fetchUrl: async () => ({ ok: true }),
+});
+check('silent terms do NOT produce a download', found.found === false, JSON.stringify(found.research));
+check('the client is asked instead', found.needsClient === true);
+check('and the ask names the real unresolved point',
+  /not permission/i.test(found.ask), found.ask);
+check('the research decision is carried', found.research?.decision === 'ask-client', JSON.stringify(found.research));
+
+// entitlement not on file
+found = await findAsset('official CPD Standards Office accreditation logo', {
+  ticket: { attachments: [] },
+  site: { slug: 'lo-down', accreditationOrg: 'CPD Standards Office' },
+  search: officialSearch,
+  fetchPage: async () => 'Accredited providers may display the mark.',
+  fetchUrl: async () => ({ ok: true }),
+});
+check('permission for someone is not permission for this client', found.found === false);
+check('and the ask says what to confirm', /provider\/membership number|currently is one/i.test(found.ask), found.ask);
+
+// no searcher configured at all — the real production state today
+found = await findAsset('official CPD Standards Office accreditation logo', {
+  ticket: { attachments: [] },
+  site: { slug: 'lo-down', accreditationOrg: 'CPD Standards Office' },
+});
+check('with no search provider it says so rather than pretending', found.research?.decision === 'needs-search',
+  JSON.stringify(found.research));
+check('and the owner action is to configure one or paste the URL',
+  /search provider|brand-resources URL/i.test(found.ask), found.ask);
+
 done();
