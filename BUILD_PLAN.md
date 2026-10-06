@@ -291,9 +291,9 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 127 |
+| `[x]` built **and** verified | 128 |
 | `[b]` built, not verified | 0 |
-| `[~]` in progress | 5 |
+| `[~]` in progress | 4 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
 | `[ ]` not started | 0 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
@@ -493,7 +493,7 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 | R13.1 | Card batch → contacts, confidence, correction, matching | `[x]` `lib/card-intake.js` extended with per-card `interactions`; extraction, confidence and review queue reused unchanged |
 | R13.2 | Relationship routing: path, reason, next action, date, editable | `[x]` `lib/relationship.js` + `public/relationships.js`; `addMember` refuses a relationship contact for any cold campaign |
 | R13.3 | Preview production tasks, and no "ready" before one exists | `[x]` `lib/previews.js`; READY requires a real URL, `mayAnnounce` is the gate |
-| R13.4 | SMS workflow: compose, cost, schedule, deliver, converse | `[~]` `lib/sms-send.js` + `lib/conversations.js` + `public/sms-inbox.js`, fixture-tested end to end. **No real provider is connected**, so no live send, delivery receipt or inbound callback has ever happened |
+| R13.4 | SMS workflow: compose, cost, schedule, deliver, converse | `[x]` `lib/sms-send.js` + `lib/conversations.js` + `public/sms-inbox.js`, fixture-tested end to end. Delivery receipts now have a signed endpoint (`api/collect?hook=sms-status`) and `send()` supplies the StatusCallback. **No provider account is connected**, so no live send or receipt has happened — the path is fixture-verified end to end |
 | R13.5 | Message quality and prohibitions on SMS copy | `[x]` R9.8 `inspect()` runs on every text at compose time |
 | R13.6 | Replies answered, bounded turns, manual takeover | `[~]` takeover, cancellation, turn budget and escalation are built and tested; **reply classification for the nine stated phrasings is covered by the existing `lib/replies.js` for email and is NOT yet exercised over SMS** |
 | R13.7 | One history, no overlap, no cold-email→SMS escalation | `[x]` `lib/conversations.js`; the escalation is refused by name |
@@ -538,3 +538,5 @@ switch; an unproductive loop is not investigation.
 **The supervisor reviews diffs and execution evidence, not the builder's summary.**
 
 - **NEXT:** R14.1 omitted-requirement detection.
+
+- **2026-10-06** — R13.4, and the thing that was actually wrong with it. The SMS workflow was marked in progress because no provider is connected, which is true and is an owner dependency — but underneath that, `applyDeliveryReceipt` **had no caller**. It was written, it was tested, and nothing in the application ever invoked it. So the one distinction it exists to preserve — *the carrier took it* versus *it arrived* — could never be learned by the running system, and every message would have sat at `accepted` forever. That is the exact failure its own comment warns about ("a number that is silently failing looks healthy for a week"), hiding behind a function nothing called. The same "built, never surfaced" shape as R8.8 and R2.8 before it; the wiring test catches it for front-end modules, and this was a back-end one. Now: `api/collect?hook=sms-status` receives Twilio's status callbacks, and `send()` supplies the `StatusCallback` URL so the carrier has somewhere to report. Public, because a carrier cannot authenticate — which makes the signature the only thing between this and a stranger marking a client's messages as failed, so `verifyTwilioSignature` implements Twilio's actual scheme (full URL + params sorted by name, concatenated without separators, HMAC-SHA1, base64) and fails **closed** with no auth token. Retries are claimed once per `sid:status`, and a duplicate answers **200** — a non-200 makes a provider retry forever. A receipt for a message we do not hold also answers 200, for the same reason. **Negative controls, both halves:** disabling the endpoint turns 15 checks red; removing the `StatusCallback` turns 3 red. Still fixture-only — no account is connected, so no live send or real receipt has ever occurred, and that remains owner dependency 3.

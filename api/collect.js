@@ -95,6 +95,53 @@ export default async function handler(req, res) {
     return res.status(out.ok ? 200 : 400).send(confirmPage({ address, token, done: true, ok: out.ok, message: out.message }));
   }
 
+  // R13.4 — SMS delivery receipts.
+  //
+  // `applyDeliveryReceipt` existed, was tested, and had no caller: the one
+  // thing it keeps apart — accepted by the provider versus actually delivered
+  // to a handset — could therefore never be learned. A message the carrier
+  // took and then failed to deliver stayed "accepted" forever, which is the
+  // exact failure that function's own comment warns about: a number that is
+  // silently failing looks healthy for a week.
+  //
+  // Public, because a carrier posts here and cannot authenticate. That makes
+  // the signature the only thing standing between this and a stranger marking
+  // a client's messages as failed, so it is verified before anything is read.
+  if (req.query?.hook === 'sms-status') {
+    const { verifyTwilioSignature, claimEventOnce } = await import('../lib/webhooks.js');
+    const body = typeof req.body === 'object' && req.body ? req.body : {};
+    // Twilio signs the full URL it posted to, including the query string
+    const proto = req.headers['x-forwarded-proto'] || 'https';
+    const host = req.headers['x-forwarded-host'] || req.headers.host || '';
+    const url = `${proto}://${host}${req.url || ''}`;
+
+    const v = verifyTwilioSignature({
+      header: req.headers['x-twilio-signature'],
+      url, params: body,
+      authToken: process.env.TWILIO_AUTH_TOKEN,
+    });
+    if (!v.ok) return res.status(401).json({ ok: false, error: v.reason });
+
+    const providerId = String(body.MessageSid || body.SmsSid || '');
+    const status = String(body.MessageStatus || body.SmsStatus || '');
+    if (!providerId || !status) return res.status(400).json({ ok: false, error: 'MessageSid and MessageStatus are required' });
+
+    // Carriers retry. The same receipt applied twice is harmless for a state
+    // change, but it would duplicate history entries, and a retried `failed`
+    // after a later `delivered` would walk the state backwards.
+    const once = await claimEventOnce('sms-status', `${providerId}:${status}`);
+    if (!once.fresh) return res.status(200).json({ ok: true, duplicate: true });
+
+    const { applyDeliveryReceipt } = await import('../lib/sms-send.js');
+    const out = await applyDeliveryReceipt({
+      providerId, status,
+      errorCode: body.ErrorCode ? String(body.ErrorCode) : null,
+    });
+    // 200 even when nothing matched: a receipt for a message we do not hold is
+    // not an error the carrier can act on, and a non-200 makes it retry forever
+    return res.status(200).json(out);
+  }
+
   if (req.query?.hook === 'delivery') {
     const { acceptWebhook } = await import('../lib/webhooks.js');
     const { applyDeliveryEvent } = await import('../lib/outreach-email.js');
