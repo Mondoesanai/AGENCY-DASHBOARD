@@ -309,7 +309,7 @@ done that can be checked rather than asserted. Rows marked `[ ]` are open work.
 | R16.9 | `lib/contrast.js` — the WCAG contrast checker is not reachable from anything, including the test suite's own gate | Colour tokens can drop below 4.5:1 and nothing notices. The module was written to prevent exactly this | **P3** | none | The token set is checked automatically and a deliberately failing token turns the suite red | `[x]` |
 | R16.10 | `lib/jobs.js:enqueue` — a second scheduling mechanism with no users | Two ways to schedule work, one of them dead, invites a future change to the wrong one | **P4** | none | Either given a real trigger or deleted, with the decision recorded | `[x]` |
 | R16.11 | `lib/suggestions.js:clientSuggestions` — a back-compat alias whose last mention is a stale comment | Two names for one function; a future edit lands on the wrong one | **P4** | none | Alias and stale comment removed, `clientActions` left as the single name | `[x]` |
-| R16.12 | The owner reports the dashboard "still feels terrible to use" | The product can be correct and still unusable. An owner who avoids the tool gets no value from any of the above | **P2** | none | Walked as a new employee on desktop **and** mobile against the real preview, with actual taps and form submissions. The everyday path is Today → People → Conversations → Meetings; whether email is available, whether SMS is permitted, why, and the next lawful action are visible without hunting. Diagnostics move to Settings. Existing functionality still works | `[ ]` |
+| R16.12 | The owner reports the dashboard "still feels terrible to use" | The product can be correct and still unusable. An owner who avoids the tool gets no value from any of the above | **P2** | none | Walked as a new employee on desktop **and** mobile against the real preview, with actual taps and form submissions. The everyday path is Today → People → Conversations → Meetings; whether email is available, whether SMS is permitted, why, and the next lawful action are visible without hunting. Diagnostics move to Settings. Existing functionality still works | `[x]` |
 
 **Standing constraints for this part:** the release hold stays on, `outreach.active` stays
 false, nothing is pushed or deployed, and no prospect outreach is sent. A discovered phone
@@ -331,11 +331,11 @@ no report should give a single number for both.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 150 (requirements, not operational readiness — see Part 13) |
+| `[x]` built **and** verified | 151 (requirements, not operational readiness — see Part 13) |
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 0 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 1 |
+| `[ ]` not started | 0 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.

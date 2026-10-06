@@ -44,7 +44,11 @@
 export const VIEWS = Object.freeze([
   { id: 'overview', label: 'Today', short: 'Today', icon: 'M3 11l9-8 9 8M5 10v10h14V10', hint: 'What needs attention today' },
   { id: 'clients', label: 'Clients', short: 'Clients', icon: 'M16 20v-2a4 4 0 00-8 0v2M12 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7', hint: 'Each client, their analytics, sites and revisions' },
-  { id: 'contacts', label: 'Contacts', short: 'Contacts', icon: 'M20 21v-2a4 4 0 00-3-3.87M4 21v-2a4 4 0 013-3.87M16 7a4 4 0 11-8 0 4 4 0 018 0', hint: 'Who we can contact, by which channel, and why' },
+  // R16.12 — "People", not "Contacts". The owner's everyday path is
+  // Today → People → Conversations → Meetings, and "contacts" is CRM jargon
+  // for the thing a new employee just calls people. The id stays `contacts`
+  // so existing links and tests keep working; only the word changes.
+  { id: 'contacts', label: 'People', short: 'People', icon: 'M20 21v-2a4 4 0 00-3-3.87M4 21v-2a4 4 0 013-3.87M16 7a4 4 0 11-8 0 4 4 0 018 0', hint: 'Who we can contact, by which channel, and why' },
   { id: 'conversations', label: 'Conversations', short: 'Messages', icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z', hint: 'What is being said, and what we promised people' },
   { id: 'meetings', label: 'Meetings', short: 'Meetings', icon: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z', hint: 'Booked, cancelled and missed — confirmed by the scheduler' },
   { id: 'automations', label: 'Automation', short: 'Health', icon: 'M22 12h-4l-3 9L9 3l-3 9H2', hint: 'What is running, what is paused, what is blocked' },

@@ -418,6 +418,29 @@ export const SHOW_FIRST = 6;
  * overview that renders blank while it is still fetching, or after a failed
  * fetch, is a dashboard telling you everything is fine when it has no idea.
  */
+/**
+ * R16.12 — setting the thing up is not the same job as running it.
+ *
+ * A new employee opening Today was met by six boxes about Vercel crons, GitHub
+ * Actions, a missing repository and a tracking snippet, before a single line
+ * about a person. All six are real and worth fixing — but they are ONE-OFF
+ * PLUMBING, done once by whoever set the account up, and they are not what
+ * anybody comes to this screen for. Sorting purely by severity put them on top
+ * every single day, which is most of why the dashboard "feels terrible": the
+ * first thing it says is always that something technical is broken.
+ *
+ * So they are separated rather than hidden. Work first, plumbing underneath
+ * with a count. Nothing is removed, and a setup item still says it needs doing.
+ */
+const SETUP_KINDS = new Set([
+  'automation-stalled', // the cron or the GitHub schedule was never set up
+  'no-repo', // nobody linked a repository
+  'no-tracker', // the snippet was never installed on the client's site
+  'deliverability-unknown', // nothing has been checked yet
+]);
+
+export const isSetup = (item) => SETUP_KINDS.has(item?.kind);
+
 export function renderAttention(result, opts = {}) {
   const { loading = false, error = '', expanded = false } = opts;
 
@@ -439,27 +462,30 @@ export function renderAttention(result, opts = {}) {
     return `<div class="attn-block"><div class="note${allClear ? ' good' : ' warn'}">${body}</div></div>`;
   }
 
-  const shown = expanded ? items : items.slice(0, SHOW_FIRST);
-  const rest = items.length - shown.length;
+  // Work first, one-off plumbing underneath. Order within each group is
+  // unchanged, so severity still decides what comes first among real work.
+  const work = items.filter((i) => !isSetup(i));
+  const setup = items.filter(isSetup);
 
-  const rows = shown
-    .map(
-      (i) => `<div class="attn-item sev-${esc(i.severity)}">
+  const shown = expanded ? work : work.slice(0, SHOW_FIRST);
+  const rest = work.length - shown.length;
+
+  const row = (i) => `<div class="attn-item sev-${esc(i.severity)}">
         <span class="attn-sev">${esc(SEVERITY_LABEL[i.severity] || i.severity)}</span>
         <div class="attn-body">
           <div class="attn-t">${esc(i.title)}</div>
           <div class="attn-d">${esc(i.detail || '')}</div>
         </div>
         ${
-          // only the things that need a person get a loud button — six equally
-          // bright calls to action is the same as none
-          i.action
-            ? `<button class="btn sm${i.severity === 'act' ? '' : ' ghost'} attn-go" data-attn="${esc(i.id)}">${esc(i.action.label)}</button>`
-            : ''
-        }
-      </div>`
-    )
-    .join('');
+  // only the things that need a person get a loud button — six equally
+  // bright calls to action is the same as none
+  i.action
+    ? `<button class="btn sm${i.severity === 'act' ? '' : ' ghost'} attn-go" data-attn="${esc(i.id)}">${esc(i.action.label)}</button>`
+    : ''
+}
+      </div>`;
+
+  const rows = shown.map(row).join('');
 
   const skipped = notChecked.length
     ? `<div class="note" style="margin:8px 0 0">${esc(listOut(notChecked))} could not be checked, so
@@ -468,10 +494,46 @@ export function renderAttention(result, opts = {}) {
 
   const more = rest > 0 ? `<button class="link attn-more" type="button">Show ${rest} more</button>` : '';
 
+  const nothingToDo = !work.length
+    ? `<div class="note good"><b>Nothing needs you right now.</b>${setup.length
+      ? ' The only open items are setting things up, below.' : ''}</div>`
+    : '';
+
+  // Open by default when there is no real work, so an empty day does not look
+  // like an empty dashboard — and closed when there is, so it stays out of the
+  // way of the actual job.
+  const setupBlock = setup.length
+    ? `<details class="attn-setup"${work.length ? '' : ' open'}>
+        <summary>${esc(setup.length)} thing${setup.length === 1 ? '' : 's'} still to set up</summary>
+        <p class="note faint">One-off plumbing — done once by whoever sets the account up, not part of
+          the daily job. Everything here is real and still needs doing.</p>
+        ${setup.map(row).join('')}
+      </details>`
+    : '';
+
+  // The headline counts the WORK, with setup named separately. Counting both
+  // together said "3 need you" while all three sat folded away in the setup
+  // block — a true total that pointed at nothing the reader could see.
+  const head = headlineFor(work, setup, result);
+
   return `<div class="attn-block">
-    <div class="attn-head"><b>${esc(attentionSummary(result))}</b></div>
-    ${rows}${more}${skipped}
+    <div class="attn-head"><b>${esc(head)}</b></div>
+    ${nothingToDo}${rows}${more}${setupBlock}${skipped}
   </div>`;
+}
+
+/** "2 for information · 5 still to set up" — never a count you cannot see. */
+export function headlineFor(work, setup, result) {
+  if (!work.length && !setup.length) return attentionSummary(result);
+  const c = { act: 0, watch: 0, info: 0 };
+  for (const i of work) c[i.severity] = (c[i.severity] || 0) + 1;
+  const parts = [];
+  if (c.act) parts.push(`${c.act} need${c.act === 1 ? 's' : ''} you`);
+  if (c.watch) parts.push(`${c.watch} worth a look`);
+  if (c.info) parts.push(`${c.info} for information`);
+  if (!parts.length) parts.push('Nothing needs you right now');
+  if (setup.length) parts.push(`${setup.length} still to set up`);
+  return parts.join(' · ');
 }
 
 /** Look an item up by the id its button carries. */

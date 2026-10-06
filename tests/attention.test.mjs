@@ -17,6 +17,7 @@ import {
   KIND_RANK,
   SEVERITY as SEVERITY_ORDER,
   SHOW_FIRST,
+  isSetup,
 } from '../public/attention.js';
 
 const NOW = new Date('2026-10-20T12:00:00Z').getTime();
@@ -232,14 +233,38 @@ check('and the rendered order is severity-descending throughout',
 
 // ---------------------------------------------------------------------------
 section('A7  the overview stays an overview');
+// R16.12 — the cap applies to WORK. These eleven are all `no-repo`, which is
+// one-off plumbing, so they belong in the setup block; an earlier version of
+// this test used them to check the cap and started counting setup rows too.
 const many = Array.from({ length: 11 }, (_, i) => site({ slug: `c${i}`, name: `Client ${i}`, repo: '' }));
 r = buildAttention(clean({ sites: many }));
 check('all of them are counted', r.items.length === 11, String(r.items.length));
 html = renderAttention(r);
-const rowCount = (html.match(/class="attn-item/g) || []).length;
-check(`only ${SHOW_FIRST} are shown at once`, rowCount === SHOW_FIRST, String(rowCount));
-check('the rest are offered, not hidden', /Show 5 more/.test(html), html.slice(-300));
-check('the count in the header is the true total', /11 need you/.test(html), html.slice(0, 200));
+check('all eleven are setup items, not daily work', r.items.every(isSetup), r.items.map((i) => i.kind).join(','));
+check('so they are grouped as things to set up', /11 things still to set up/.test(html), html.slice(0, 400));
+check('and the day reads as clear, rather than as eleven emergencies',
+  /Nothing needs you right now/.test(html), html.slice(0, 400));
+check('the header counts them as setup, not as eleven things needing you',
+  /Nothing needs you right now · 11 still to set up/.test(html), html.slice(0, 260));
+check('so the headline never names a count the reader cannot see',
+  !/11 need you/.test(html),
+  'the first version said "11 need you" while all eleven sat folded away in the setup block');
+check('nothing is hidden — every one is still rendered',
+  (html.match(/class="attn-item/g) || []).length === 11, String((html.match(/class="attn-item/g) || []).length));
+
+section('A7b  and real work IS capped');
+// Overdue reports are the daily job, not plumbing.
+const overdue = Array.from({ length: 11 }, (_, i) => site({
+  slug: `w${i}`, name: `Client ${i}`, billingDay: 1, report: { month: '2020-01' },
+}));
+const rw = buildAttention(clean({ sites: overdue, now: Date.parse('2026-10-20T12:00:00Z') }));
+check('all eleven are real work', rw.items.length === 11 && !rw.items.some(isSetup),
+  rw.items.map((i) => i.kind).join(','));
+const workHtml = renderAttention(rw);
+check(`only ${SHOW_FIRST} are shown at once`, (workHtml.match(/class="attn-item/g) || []).length === SHOW_FIRST,
+  String((workHtml.match(/class="attn-item/g) || []).length));
+check('the rest are offered, not hidden', /Show 5 more/.test(workHtml), workHtml.slice(-300));
+check('and no setup block appears when there is no plumbing', !/still to set up/.test(workHtml));
 
 // only the things needing a person get a loud button
 html = renderAttention(buildAttention(clean({ sites: [site({ repo: '' }), site({ slug: 'b', name: 'B', hasTracker: false })] })));
