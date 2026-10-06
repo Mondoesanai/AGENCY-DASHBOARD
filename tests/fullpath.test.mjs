@@ -27,6 +27,7 @@ import crypto from 'node:crypto';
 import puppeteer from 'puppeteer';
 import fs from 'node:fs';
 import { check, section, done } from './world.mjs';
+import { outboundProspectInput } from './harness/outbound-prospect.mjs';
 import { store } from '../lib/store.js';
 import { startLocalApi, providerFixture } from './harness/local-api.mjs';
 
@@ -198,7 +199,10 @@ for (const code of ['no-cold-sender', 'no-sending-domain', 'no-pricing', 'outrea
 check('and every blocker is written in words, not a code alone', readiness.blockers.every((b) => b.text && b.text.length > 10));
 
 const sent = await sendProspectEmail({
-  contact: { id: found ? found.id : 'fullpath', email: { value: PROSPECT }, name: 'Full Path Roofing' },
+  // A real outbound prospect: R19.5 refuses a cold send to anybody without a
+  // verified website of their own, so the fixture has to be one. The point of
+  // this section is the CONFIGURATION blockers, not the segment.
+  contact: { id: found ? found.id : 'fullpath', email: { value: PROSPECT }, name: 'Full Path Roofing', ...outboundProspectInput() },
   campaignId: 'fullpath',
   message: { subject: 'A quick question about your website', text: 'I built you a preview.', html: '<p>I built you a preview.</p>' },
   env: { RESEND_API_KEY: 'fixture-key', OUTREACH_FROM_DOMAIN: 'outreach.example.invalid', PUBLIC_BASE_URL: api.origin },
@@ -310,7 +314,7 @@ const noName = await composeCold(
 check('and one with no sender name is refused too', noName.ok === false, JSON.stringify(noName).slice(0, 160));
 
 const liveFixture = providerFixture();
-const liveContact = { id: found ? found.id : 'fullpath-live', email: { value: PROSPECT }, business: 'Full Path Roofing' };
+const liveContact = { id: found ? found.id : 'fullpath-live', email: { value: PROSPECT }, business: 'Full Path Roofing', ...outboundProspectInput() };
 const sentLive = await sendProspectEmail({
   contact: liveContact,
   campaignId: 'fullpath-live',

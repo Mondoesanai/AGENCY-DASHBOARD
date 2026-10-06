@@ -10,6 +10,7 @@ import { saveSettings, saveSender } from '../lib/settings.js';
 import { upsertContact, optOut, field } from '../lib/contacts.js';
 const E = (v) => field(v, { confidence: 1, source: 'manual' });
 import { store } from '../lib/store.js';
+import { outboundProspectInput } from './harness/outbound-prospect.mjs';
 
 const res = (status, body = {}) => ({ ok: status >= 200 && status < 300, status, text: async () => JSON.stringify(body), headers: { get: () => null } });
 
@@ -88,20 +89,20 @@ await store.set('settings:business', JSON.stringify({ ...raw, outreach: { ...raw
 rd = await sendReadiness({ env: fullEnv });
 check('with the owner switch on, it is ready', rd.ready === true, JSON.stringify(rd.blockers));
 
-const a = await upsertContact({ source: 'discovery', name: E('Pat Lee'), businessName: E('Lone Star Flooring'), email: E('pat@lonestarflooring.test') });
+const a = await upsertContact({ ...outboundProspectInput(), name: E('Pat Lee'), businessName: E('Lone Star Flooring'), email: E('pat@lonestarflooring.test') });
 const contact = a.contact;
 let gate = await maySend({ contact, campaignId: 'c1', env: fullEnv });
 check('a fresh eligible contact may be sent to', gate.ok === true, JSON.stringify(gate));
 
 await optOut({ email: 'pat@lonestarflooring.test', reason: 'unsubscribed' });
-const after = (await upsertContact({ source: 'discovery', name: E('Pat Lee'), businessName: E('Lone Star Flooring'), email: E('pat@lonestarflooring.test') })).contact;
+const after = (await upsertContact({ ...outboundProspectInput(), name: E('Pat Lee'), businessName: E('Lone Star Flooring'), email: E('pat@lonestarflooring.test') })).contact;
 gate = await maySend({ contact: after, campaignId: 'c1', env: fullEnv });
 check('after opting out, the gate refuses', gate.ok === false, JSON.stringify(gate));
 check('and the reason is consent, not configuration', gate.code === 'not-contactable', gate.code);
 
 // ---------------------------------------------------------------------------
 section('O4  a retry cannot send the same message twice (R11.2)');
-const b = await upsertContact({ source: 'discovery', name: E('Sam Ortiz'), businessName: E('Metroplex Floors'), email: E('sam@metroplexfloors.test') });
+const b = await upsertContact({ ...outboundProspectInput(), name: E('Sam Ortiz'), businessName: E('Metroplex Floors'), email: E('sam@metroplexfloors.test') });
 gate = await maySend({ contact: b.contact, campaignId: 'c2', env: fullEnv });
 check('the first send is allowed', gate.ok === true, JSON.stringify(gate));
 await markSent(b.contact.id, 'c2', { provider: 'instantly' });
@@ -152,7 +153,7 @@ check('a 500 surfaces as an error', out.ok === false && out.status === 500, JSON
 
 // ---------------------------------------------------------------------------
 section('O6  the single send path refuses when anything is missing');
-const c = await upsertContact({ source: 'discovery', name: E('Dana Kim'), businessName: E('Trinity Tile'), email: E('dana@trinitytile.test') });
+const c = await upsertContact({ ...outboundProspectInput(), name: E('Dana Kim'), businessName: E('Trinity Tile'), email: E('dana@trinitytile.test') });
 let sent = await sendProspectEmail({ contact: c.contact, campaignId: 'c9', message: {}, env: {}, fetchImpl: fakeFetch });
 check('with no provider key, nothing is sent', sent.sent === false, JSON.stringify(sent));
 check('and the reason is actionable',

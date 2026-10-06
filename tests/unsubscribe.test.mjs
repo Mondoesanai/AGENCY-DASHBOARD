@@ -17,6 +17,7 @@ import {
 } from '../lib/unsubscribe.js';
 import { identityProblems } from '../lib/settings.js';
 import { unsubscribeFor } from '../lib/campaigns.js';
+import { outboundProspectInput } from './harness/outbound-prospect.mjs';
 
 const ENV = { UNSUBSCRIBE_SECRET: 'test-unsub-secret', PUBLIC_BASE_URL: 'https://dash.test' };
 const ADDR = 'pat@lonestarflooring.test';
@@ -116,7 +117,7 @@ section('U3c  and the send puts them on the wire');
 
   const WIRE = 'wire@lonestarflooring.test';
   await st.set(`suppress:email:${WIRE}`, '').catch(() => {});
-  const c = (await upsertContact({ source: 'discovery', name: field('Wire Test'), email: field(WIRE) })).contact;
+  const c = (await upsertContact({ ...outboundProspectInput(), name: field('Wire Test'), email: field(WIRE) })).contact;
 
   let posted = null;
   const envSend = { INSTANTLY_API_KEY: 'k', OUTREACH_FROM_DOMAIN: 'o.test', ...ENV };
@@ -180,7 +181,7 @@ check('an unconfigured deployment says so instead of silently failing',
 {
   const { maySend } = await import('../lib/outreach-email.js');
   const { upsertContact, field } = await import('../lib/contacts.js');
-  const c = (await upsertContact({ source: 'discovery', name: field('Pat'), email: field(ADDR) })).contact;
+  const c = (await upsertContact({ ...outboundProspectInput(), name: field('Pat'), email: field(ADDR) })).contact;
   const gate = await maySend({ contact: c, campaignId: 'any', env: { INSTANTLY_API_KEY: 'k', OUTREACH_FROM_DOMAIN: 'o.test', ...ENV } });
   check('the send gate refuses an unsubscribed address', gate.ok === false, JSON.stringify(gate));
 }

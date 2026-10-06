@@ -9,6 +9,7 @@ import {
   PROHIBITED, findEvasion, findRedirectChains, checkSendingDomains,
   acceptEngagement, checkOutgoing, ENGAGEMENT_SOURCE,
 } from '../lib/integrity.js';
+import { outboundProspectInput } from './harness/outbound-prospect.mjs';
 
 // ---------------------------------------------------------------------------
 section('I1  the three prohibitions are written down with reasons');
@@ -124,7 +125,7 @@ section('I7  the real send path refuses, rather than the module merely offering 
 
   const ADDR = 'integrity@lonestarflooring.test';
   await store.set(`suppress:email:${ADDR}`, '').catch(() => {});
-  const c = (await upsertContact({ source: 'discovery', name: field('Integrity Test'), email: field(ADDR) })).contact;
+  const c = (await upsertContact({ ...outboundProspectInput(), name: field('Integrity Test'), email: field(ADDR) })).contact;
   const env = {
     INSTANTLY_API_KEY: 'k', OUTREACH_FROM_DOMAIN: 'o.test',
     PUBLIC_BASE_URL: 'https://dash.test', UNSUBSCRIBE_SECRET: 's',

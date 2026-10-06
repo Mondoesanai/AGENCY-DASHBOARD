@@ -52,21 +52,36 @@ const DAY = 24 * 3600e3;
 const START = Date.UTC(2026, 9, 5, 9, 0); // Monday 09:00 UTC
 const PEOPLE = 20;
 
-// a cohort of prospects, each at their own business
+// A cohort of prospects, each at their own business.
+//
+// R19.5 — these used to be "no website found" businesses on a COLD_NO_SITE
+// campaign. That is no longer the outbound segment: proactive outreach goes to
+// established businesses that already have a verified website of their own. The
+// simulation now models that population, because a week-long simulation of a
+// campaign the send gate correctly refuses proves nothing about the week.
 for (let i = 0; i < PEOPLE; i++) {
   await store.set(`prospect:sim-${i}`, JSON.stringify({
     id: `sim-${i}`,
     name: `Sim Business ${i}`,
     contactName: `Owner ${i}`,
     email: `owner${i}@simbiz${i}.example`,
-    phone: '',
-    website: '',
+    phone: `+1555777${String(1000 + i).slice(-4)}`,
+    address: `${i + 1} Mill Street`,
+    city: 'Springfield',
+    website: `https://simbiz${i}.example`,
     sourceId: 'r12.5-simulation',
-    qualification: { segment: 'no-site-found' },
+    qualification: { segment: 'has-site' },
+    web: {
+      status: 'verified-present',
+      attempted: `https://simbiz${i}.example`,
+      checkedAt: START,
+      signals: ['business name', 'town name'],
+      observation: 'the site loads and matches this business',
+    },
   }));
 }
 
-const made = await createCampaign({ name: 'Simulated week', type: CAMPAIGN_TYPES.COLD_NO_SITE });
+const made = await createCampaign({ name: 'Simulated week', type: CAMPAIGN_TYPES.COLD_HAS_SITE });
 const campaignId = made.ok && made.campaign.id;
 // anchored to the simulated start, not the real clock — otherwise the plan is
 // scheduled from whenever the suite happens to run and the week drifts past it

@@ -11,6 +11,7 @@ import {
 } from '../lib/outreach-email.js';
 import { clampToSchema } from '../lib/untrusted.js';
 import { normaliseCard } from '../lib/card-intake.js';
+import { outboundProspectInput } from './harness/outbound-prospect.mjs';
 
 // ---------------------------------------------------------------------------
 section('Z1  a timeout is distinguished from a refusal');
@@ -126,7 +127,7 @@ const raw = JSON.parse(await store.get('settings:business'));
 await store.set('settings:business', JSON.stringify({ ...raw, outreach: { ...raw.outreach, active: true } }));
 const envOK = { INSTANTLY_API_KEY: 'k', OUTREACH_FROM_DOMAIN: 'outreach.test', PUBLIC_BASE_URL: 'https://dash.test', UNSUBSCRIBE_SECRET: 'unsub-test-secret' };
 
-const person = (await upsertContact({ source: 'discovery', name: E('Timeout Test'), businessName: E('TT Co'), email: E('tt@timeout.test') })).contact;
+const person = (await upsertContact({ ...outboundProspectInput(), name: E('Timeout Test'), businessName: E('TT Co'), email: E('tt@timeout.test') })).contact;
 
 // 1. a send that TIMES OUT is recorded as ambiguous, not as a failure
 let calls = 0;
@@ -161,7 +162,7 @@ check('the provider was still not called again', calls === before, `${before} ->
 check('and the provider id is carried through', out.providerId === 'msg_live_1');
 
 // 4. a clean send records CONFIRMED
-const person2 = (await upsertContact({ source: 'discovery', name: E('Clean Send'), businessName: E('CS Co'), email: E('cs@timeout.test') })).contact;
+const person2 = (await upsertContact({ ...outboundProspectInput(), name: E('Clean Send'), businessName: E('CS Co'), email: E('cs@timeout.test') })).contact;
 out = await sendProspectEmail({
   contact: person2, campaignId: 'camp-clean', message: {}, env: envOK,
   fetchImpl: async () => ({ ok: true, status: 200, text: async () => JSON.stringify({ id: 'msg_clean' }) }),
