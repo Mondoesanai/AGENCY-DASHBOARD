@@ -274,6 +274,68 @@ export default async function handler(req, res) {
       ]);
       return res.status(200).json({ ok: true, followUps: due, previews });
     }
+    // R15.2 — who we may contact, on which channel, and why.
+    //
+    // Email and SMS are computed separately and each carries its own reason
+    // and next action, because the requirement this exists for is that a
+    // contact marked emailable must never look SMS-eligible.
+    case 'contact-status': {
+      const { statusTable } = await import('../lib/optin.js');
+      const { listContacts } = await import('../lib/contacts.js');
+      const contacts = await listContacts({ limit: Number(req.query.limit) || 200 });
+      return res.status(200).json({ ok: true, ...(await statusTable(contacts.contacts || contacts || [])) });
+    }
+
+    // R15.1 — the invitation. GET reviews, POST sends.
+    //
+    // A GET never sends anything: the owner sees exactly who would be written
+    // to, who would be skipped and why, and the composed message, before
+    // anything leaves. That separation is deliberate — a one-click bulk send
+    // with no preview is how an unfinished message reaches 400 businesses.
+    case 'invite-review': {
+      const { invitationCandidates, sendInvitations } = await import('../lib/optin.js');
+      const { listContacts, getContact } = await import('../lib/contacts.js');
+      const ids = String(req.query.ids || '').split(',').map((s) => s.trim()).filter(Boolean);
+      const contacts = ids.length
+        ? (await Promise.all(ids.map((id) => getContact(id)))).filter(Boolean)
+        : ((await listContacts({ limit: 200 })).contacts || []);
+      const cands = await invitationCandidates(contacts);
+      const { getSettings } = await import('../lib/settings.js');
+      const s = await getSettings();
+      const owner = { name: s.business?.ownerName, businessName: s.business?.name, postalAddress: s.business?.postalAddress };
+      // dry run: composes every message and applies every refusal, sends none
+      const preview = await sendInvitations(
+        contacts.filter((c) => cands.eligible.some((e) => e.id === c.id)),
+        { owner, previewUrlFor: async () => null, dryRun: true }
+      );
+      return res.status(200).json({ ok: true, candidates: cands, preview, sendsNothing: true });
+    }
+    case 'invite-send': {
+      if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'sending is a POST' });
+      const { sendInvitations } = await import('../lib/optin.js');
+      const { getContact } = await import('../lib/contacts.js');
+      const body = typeof req.body === 'object' && req.body ? req.body : {};
+      const ids = Array.isArray(body.ids) ? body.ids : [];
+      if (!ids.length) return res.status(400).json({ ok: false, error: 'no contacts selected' });
+      const contacts = (await Promise.all(ids.map((id) => getContact(id)))).filter(Boolean);
+      const { getSettings } = await import('../lib/settings.js');
+      const s = await getSettings();
+      // The owner's master switch governs this exactly as it governs every
+      // other outbound path. With outreach off, nothing is sent and it says so.
+      if (!s.outreach?.active) {
+        return res.status(200).json({ ok: false, error: 'outreach is switched off, so no invitation was sent', paused: true, selected: ids.length });
+      }
+      const owner = { name: s.business?.ownerName, businessName: s.business?.name, postalAddress: s.business?.postalAddress };
+      const out = await sendInvitations(contacts, { owner, previewUrlFor: async () => null, send: null });
+      return res.status(200).json(out);
+    }
+    case 'attest-consent': {
+      if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'this is a POST' });
+      const { attestConsent } = await import('../lib/optin.js');
+      const body = typeof req.body === 'object' && req.body ? req.body : {};
+      return res.status(200).json(await attestConsent({ contactIds: body.ids || [], by: body.by || 'owner', basis: body.basis || '' }));
+    }
+
     case 'relationship-get': {
       const { getRoute, describe } = await import('../lib/relationship.js');
       const rel = await getRoute(req.query.contactId);
