@@ -187,4 +187,21 @@ check('one has no mobile', table.unknown === 1, String(table.unknown));
 await clearAttestation(c3.id);
 check('an attestation can be withdrawn', (await attestationFor(c3.id)) === null);
 
+// ---------------------------------------------------------------------------
+section('O6  the observation, including when there is not one');
+const { observationFor } = await import('../lib/optin.js');
+let ob = await observationFor({ web: { status: 'not-linked-in-listing' } });
+check('a listing with no site is worth contacting', ob.has === true);
+check('and the caveat is carried with it', /fact about the listing/.test(ob.why), ob.why);
+ob = await observationFor({ web: { status: 'verified-present' } });
+check('a working site means NO honest opening', ob.has === false, JSON.stringify(ob));
+check('and says why that is not a reason to write anyway', /opinion we have not earned/.test(ob.why), ob.why);
+check('the advice is to leave them alone', /Leave them alone/.test(ob.next));
+ob = await observationFor({ web: { status: 'uncertain' } });
+check('uncertain is not treated as missing', ob.has === false, JSON.stringify(ob));
+check('and says so in those words', /Uncertain is not the same as missing/.test(ob.why), ob.why);
+ob = await observationFor({});
+check('unchecked is its own answer', ob.has === false && ob.status === null);
+check('and asks for the check rather than guessing', /Run a web check/.test(ob.next), ob.next);
+
 done();

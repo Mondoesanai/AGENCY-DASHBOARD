@@ -50,6 +50,25 @@ export function renderSummary(data) {
   </div>`;
 }
 
+/**
+ * Why this business is worth contacting — or that there is no honest reason.
+ *
+ * Shown on the row rather than inside the composer, because it is the thing
+ * the owner is actually deciding on. The "nothing to say" case is rendered as
+ * prominently as the positive one: a business that already has a working site
+ * is one to leave alone, and burying that is how a weaker reason gets reached
+ * for.
+ */
+function observation(o) {
+  if (!o) return '';
+  return `<div class="cs-obs${o.has ? ' cs-obs-yes' : ' cs-obs-no'}">
+    <span class="cs-obs-v">${o.has ? 'Worth contacting' : 'No honest opening'}</span>
+    <span class="cs-obs-s">${esc(o.summary || '')}</span>
+    <span class="cs-obs-w">${esc(o.why || '')}</span>
+    ${o.next ? `<span class="cs-obs-n">→ ${esc(o.next)}</span>` : ''}
+  </div>`;
+}
+
 /** One channel block. Never combined with the other. */
 function channel(kind, c) {
   if (!c) return '';
@@ -71,6 +90,7 @@ export function renderStatusList(data) {
   return `<div class="cs-list">${rows.map((r) => `
     <div class="cs-row${r.suppressed ? ' cs-row-stop' : ''}" data-contact="${esc(r.id || '')}">
       <div class="cs-name">${esc(r.name || '(no name)')}</div>
+      ${observation(r.observation)}
       <div class="cs-channels">
         ${channel('Email', r.email)}
         ${channel('Text', r.sms)}

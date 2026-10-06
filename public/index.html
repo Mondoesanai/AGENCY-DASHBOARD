@@ -591,7 +591,20 @@
     transition:transform .14s cubic-bezier(.2,.9,.3,1.2),border-color .14s ease;border-left:3px solid transparent;}
   .cs-row:hover{transform:translateY(-1px);border-left-color:var(--green);}
   .cs-row-stop{opacity:.72;}
-  .cs-name{font-weight:600;font-size:15px;margin-bottom:9px;}
+  .cs-name{font-weight:600;font-size:15px;margin-bottom:7px;}
+  /* The evidence-based observation. "No honest opening" is given the same
+     weight as the positive case on purpose — a business that already has a
+     working site is one to leave alone, and a quiet version of that is how a
+     weaker reason gets reached for. */
+  .cs-obs{display:grid;gap:2px;margin:0 0 10px;padding:9px 11px;border-radius:10px;
+    background:var(--surface2);border-left:3px solid var(--line);}
+  .cs-obs-yes{border-left-color:var(--green-br);}
+  .cs-obs-no{border-left-color:var(--faint);}
+  .cs-obs-v{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
+  .cs-obs-yes .cs-obs-v{color:var(--green-br);}
+  .cs-obs-s{font-size:13.5px;font-weight:600;}
+  .cs-obs-w{font-size:12.5px;color:var(--muted);line-height:1.45;}
+  .cs-obs-n{font-size:12.5px;color:var(--green-br);margin-top:2px;}
   .cs-channels{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
   .cs-ch{border:1px solid var(--line);border-radius:11px;padding:9px 11px;background:var(--surface2);min-width:0;}
   .cs-ch-k{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}

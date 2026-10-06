@@ -158,4 +158,26 @@ check('the quote that would end the attribute is escaped', /&quot;/.test(html) |
 check('a label is escaped', !/<b>x<\/b>/.test(html));
 check('a reason is escaped', !/<i>z<\/i>/.test(html));
 
+// ---------------------------------------------------------------------------
+section('U8  why this business is worth contacting, or that it is not');
+const worth = { id: "w1", name: "Dana", email: emailOnly.email, sms: emailOnly.sms,
+  observation: { has: true, summary: "No website is linked from their listing.",
+    why: "That is a fact about the listing, not about the business.", next: "A preview is worth building." } };
+html = renderStatusList({ ok: true, rows: [worth] });
+check('a contactable prospect is marked worth contacting', /Worth contacting/.test(html), html.slice(0, 200));
+check('the observation itself is shown', /No website is linked from their listing/.test(html));
+check('with the caveat that keeps it honest', /fact about the listing, not about the business/.test(html));
+check('and the action it implies', /A preview is worth building/.test(html));
+
+const notWorth = { id: "w2", name: "Cy", email: emailOnly.email, sms: emailOnly.sms,
+  observation: { has: false, summary: "They already have a working website.",
+    why: "There is no honest observation to open with.", next: "Leave them alone unless something else connects you." } };
+html = renderStatusList({ ok: true, rows: [notWorth] });
+check('a business with a working site says there is NO honest opening', /No honest opening/.test(html), html.slice(0, 220));
+check('and is not dressed up as an opportunity', !/Worth contacting/.test(html));
+check('the advice is to leave them alone', /Leave them alone/.test(html));
+check('it is given the same visual weight, not hidden', /cs-obs-no/.test(html) && /cs-obs-s/.test(html),
+  "a quiet version of this is how a weaker reason gets reached for");
+check('a row with no observation still renders', /cs-row/.test(renderStatusList({ ok: true, rows: [emailOnly] })));
+
 done();
