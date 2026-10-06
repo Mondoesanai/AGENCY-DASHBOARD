@@ -1,5 +1,10 @@
 # Integration readiness
 
+> **The setup list lives in [RELEASE_CANDIDATE.md](RELEASE_CANDIDATE.md).**
+> That is the one ordered list, and it is the one to follow. This file is the per-integration readiness detail,
+> kept for reference — if the two ever disagree, RELEASE_CANDIDATE.md is right.
+
+
 Checked 2026-10-05 by asking each module what it reports and by listing the
 real project's environment variable **names** (never values) from Vercel.
 

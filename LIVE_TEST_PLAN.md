@@ -1,5 +1,10 @@
 # Live integration test plan
 
+> **The setup list lives in [RELEASE_CANDIDATE.md](RELEASE_CANDIDATE.md).**
+> That is the one ordered list, and it is the one to follow. This file is the expanded live-test detail,
+> kept for reference — if the two ever disagree, RELEASE_CANDIDATE.md is right.
+
+
 Everything in this file requires a real third party and **cannot** be run until
 the matching item in `OWNER_SETUP.md` is done. Until then every one of these is
 **unverified**, and the system says so rather than assuming it works.

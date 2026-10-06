@@ -1,5 +1,10 @@
 # Inspiring Websites — Portfolio Dashboard
 
+> **The setup list lives in [RELEASE_CANDIDATE.md](RELEASE_CANDIDATE.md).**
+> That is the one ordered list, and it is the one to follow. This file is the per-feature reference,
+> kept for reference — if the two ever disagree, RELEASE_CANDIDATE.md is right.
+
+
 A private dashboard that pulls traffic, SEO, speed and uptime from every client
 site you've published, tracks month-over-month growth, and drafts (or auto-sends)
 a branded monthly report + email on each client's billing date.

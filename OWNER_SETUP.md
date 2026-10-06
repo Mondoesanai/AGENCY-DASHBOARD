@@ -1,5 +1,10 @@
 # Setup handoff
 
+> **The setup list lives in [RELEASE_CANDIDATE.md](RELEASE_CANDIDATE.md).**
+> That is the one ordered list, and it is the one to follow. This file is the longer-form handoff notes,
+> kept for reference — if the two ever disagree, RELEASE_CANDIDATE.md is right.
+
+
 Everything that could be built and verified without you is done. This is what
 is left, in the order that unblocks the most.
 
