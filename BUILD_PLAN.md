@@ -350,6 +350,22 @@ Starting point `f05673c`. Priorities are in order; each row is one checklist ite
 
 ---
 
+## PART 17 — One branded preview-request and booking form (R19)
+
+Brief: `.claude/supervisor/MISSION.md`. From `ca07f8a`. Google Calendar is the
+production path; Calendly has no credentials and is not bought.
+
+| Req | Task | Status |
+|---|---|---|
+| R19.1 | Scheduling adapter + genuine Google free/busy availability, owner rules, preview lead time | `[ ]` |
+| R19.2 | The branded /request page: slots, two separate checkboxes, mobile-first | `[ ]` |
+| R19.3 | Booking endpoint: revalidate, concurrency, dedup, uncertain-outcome reconciliation | `[ ]` |
+| R19.4 | Preview production task + CRM connection + owner view | `[ ]` |
+| R19.5 | Targeting: established businesses with a verified website | `[ ]` |
+| R19.6 | Release record: Resend vs cold outreach, STOP through a KV outage | `[ ]` |
+
+---
+
 ## Tally
 
 Counted by the plan parser, not by hand — my first hand tally was wrong by 3 and this
@@ -367,7 +383,7 @@ no report should give a single number for both.
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 0 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 0 |
+| `[ ]` not started | 6 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.

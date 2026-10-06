@@ -334,3 +334,18 @@ supervisor does not overwrite.
 | R18.4 | The six everyday journeys are connected end to end | Each traced browser/scheduler → API → durable state → worker → provider boundary → visible result, with negative controls; anything unwired is repaired or marked disconnected |
 | R18.5 | The owner can run the agency from one view | Scheduled workers have defined healthy/late/blocked/never-ran states from durable data; retryable failures recover within bounds; permanent blockers become named owner actions; one view answers what needs attention, what runs, what is blocked, and what unblocks it |
 | R18.6 | The release decision separates code, configuration, live proof and activation | Four gates stated separately; rollback reviewed against consent, suppression, budget and job schema, with an emergency-stop procedure if it is unsafe |
+
+## Part 17 — One branded preview-request and booking form (owner task, 2026-10-06)
+
+Integration state established, not assumed: **no Calendly credentials exist**;
+**Google Calendar is already authorized** and already creates events but cannot yet
+read free/busy. Google is the production path, behind an adapter boundary.
+
+| Req | Requirement | Acceptance criteria |
+|---|---|---|
+| R19.1 | Genuine availability behind an adapter boundary | Real free/busy is read; owner working hours, buffers, capacity and preview lead time are applied; no slot is ever invented; with no credentials it reports disconnected and collects a call request, not a confirmed appointment |
+| R19.2 | One branded, mobile-first request page | Short flow, slots in the visitor's timezone with date/time/duration/timezone, exactly two separate checkboxes (SMS optional and unticked; attendance an acknowledgment), SMS never a condition of booking, accessible errors that preserve input |
+| R19.3 | Booking is confirmed by the provider, once | Slot revalidated on submit; exactly one of two racers wins; duplicate submit and provider timeout create no duplicate booking or task; uncertain outcomes reconciled before retry; a booking counts only after provider confirmation |
+| R19.4 | A durable preview task and an honest CRM connection | Contact matched without overwriting consent or suppression; source attribution preserved; task states requested/researching/building/review/ready/blocked with ready requiring a real URL and review; a call sooner than capacity is called introductory |
+| R19.5 | Outbound targets established businesses with a verified website | Targeting config, filters, copy and reporting agree; an unverified listing link is never labelled verified; an inbound person without a website is not placed in the outbound segment |
+| R19.6 | The release record distinguishes transactional email from cold outreach | The cold campaign cannot route through Resend; the permitted cold sender is named as an owner dependency; the client-report path is preserved; STOP is proven to survive a KV outage |
