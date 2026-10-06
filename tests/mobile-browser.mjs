@@ -184,94 +184,89 @@ check('no JS errors so far', page.__errors.length === 0, page.__errors.join(' | 
 await page.close();
 
 // ===========================================================================
-section('M5  charts respond to a tap, not only to a mouse');
+section('M5  one mechanism per chart, not two competing for the same tap');
 page = await phone();
-// the visitor trend sparklines live on the client cards
+await tap(page, '.tabbtn[data-view="clients"]');
+await new Promise((r) => setTimeout(r, 1200));
+// The trend charts are handled by their own readout (M5b). The tooltip layer
+// must therefore NOT also claim their points: when both were wired, two
+// handlers fought over one tap and the tooltip's "tap again to close" stopped
+// working. The tooltip remains for charts that have no readout of their own.
+const dual = await page.evaluate(() => {
+  const t = document.querySelector('[id^="view-"]:not([hidden]) .trend');
+  return {
+    trendPoints: t ? t.querySelectorAll('.sparkhit').length : 0,
+    trendPointsClaimedByTooltip: t ? t.querySelectorAll('[data-tap-tip="1"]').length : 0,
+    tooltipOpen: !!document.getElementById('chartTip') && !document.getElementById('chartTip').hidden,
+  };
+});
+check('the trend chart has points', dual.trendPoints > 0, String(dual.trendPoints));
+check('the tooltip layer does not also claim them', dual.trendPointsClaimedByTooltip === 0,
+  `${dual.trendPointsClaimedByTooltip} of ${dual.trendPoints} points are double-wired`);
+check('and no tooltip is left hanging open', dual.tooltipOpen === false);
+check('no JS errors', page.__errors.length === 0, page.__errors.join(' | '));
+await page.close();
+
+// ===========================================================================
+section('M5b  the chart is operable without hitting a 10px band');
+page = await phone();
 await tap(page, '.tabbtn[data-view="clients"]');
 await new Promise((r) => setTimeout(r, 1200));
 
-const VISIBLE_PT = '[id^="view-"]:not([hidden]) [data-tap-tip="1"]';
-let chart = await page.evaluate((sel) => {
-  const pts = [...document.querySelectorAll(sel)];
+const sem = await page.evaluate(() => {
+  const t = document.querySelector('[id^="view-"]:not([hidden]) .trend');
+  if (!t) return { missing: true };
+  const navs = [...t.querySelectorAll('.trend-nav')].map((b) => {
+    const r = b.getBoundingClientRect();
+    return { w: Math.round(r.width), h: Math.round(r.height), label: b.getAttribute('aria-label'), disabled: b.disabled };
+  });
+  const out = t.querySelector('.trend-read');
   return {
-    wired: pts.length,
-    labelled: pts.filter((p) => (p.getAttribute('aria-label') || '').length > 3).length,
-    focusable: pts.filter((p) => p.getAttribute('tabindex') === '0').length,
-    asButton: pts.filter((p) => p.getAttribute('role') === 'button').length,
-    firstLabel: pts[0]?.getAttribute('aria-label') || '',
+    // THE semantic check: interactive chart content must not live inside the
+    // client card's <button>. stopPropagation stopped the navigation but left
+    // a button containing buttons, which is invalid and flattens for a screen
+    // reader.
+    insideAButton: !!t.closest('button'),
+    navCount: navs.length,
+    navs,
+    readoutIsLive: out?.getAttribute('aria-live') === 'polite',
+    readoutTag: out?.tagName,
+    cardIsStillAButton: !!document.querySelector('[id^="view-"]:not([hidden]) button.card'),
+    nestedControls: t.querySelectorAll('button button, button [role="button"]').length,
   };
-}, VISIBLE_PT);
-check('chart points are wired for tapping', chart.wired > 0, `${chart.wired} points`);
-if (chart.wired > 0) {
-  check('each carries its detail as an accessible label', chart.labelled === chart.wired, `${chart.labelled}/${chart.wired}`);
-  check('each is keyboard focusable', chart.focusable === chart.wired, `${chart.focusable}/${chart.wired}`);
-  check('and announced as something you can press', chart.asButton === chart.wired);
-  check('the label carries real values, not a placeholder', /\d/.test(chart.firstLabel), chart.firstLabel.slice(0, 70));
+});
+check('a trend chart is present', !sem.missing);
+check('it is NOT inside the client card button', sem.insideAButton === false,
+  'this is the semantic fix; stopPropagation did not address it');
+check('the card is still a button in its own right', sem.cardIsStillAButton === true);
+check('and nothing is nested inside anything interactive', sem.nestedControls === 0);
+check('there are previous/next controls', sem.navCount === 2, String(sem.navCount));
+check('both are comfortable targets', sem.navs.every((n) => n.w >= 44 && n.h >= 44), JSON.stringify(sem.navs));
+check('both are labelled for screen readers', sem.navs.every((n) => /previous|next/i.test(n.label || '')), JSON.stringify(sem.navs.map((n) => n.label)));
+check('the readout is a live region', sem.readoutIsLive === true, String(sem.readoutTag));
 
-  await tapAt(page, VISIBLE_PT);
-  let t = await page.evaluate(() => {
-    const el = document.getElementById('chartTip');
-    if (!el || el.hidden) return { open: false };
-    const r = el.getBoundingClientRect();
-    return { open: true, text: el.textContent, left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth, vh: innerHeight };
-  });
-  check('tapping a point opens its detail', t.open === true);
-  check('the detail has content', (t.text || '').length > 5, (t.text || '').slice(0, 70));
-  check('the tooltip stays on screen horizontally', t.open && t.left >= 0 && t.right <= t.vw + 1, `${t.left}..${t.right} of ${t.vw}`);
-  check('and vertically', t.open && t.top >= 0 && t.bottom <= t.vh + 1, `${t.top}..${t.bottom} of ${t.vh}`);
+// step with the real buttons and read the result
+const stepped = await page.evaluate(() => {
+  const t = document.querySelector('[id^="view-"]:not([hidden]) .trend');
+  const next = t.querySelector('.trend-nav[data-dir="1"]');
+  const read = () => t.querySelector('.trend-read').textContent;
+  const before = read();
+  next.click();
+  const one = read();
+  next.click(); next.click();
+  const three = read();
+  const prev = t.querySelector('.trend-nav[data-dir="-1"]');
+  prev.click();
+  return { before, one, three, afterBack: read(), selected: t.dataset.selected,
+    backDisabledAtStart: (() => { for (let i = 0; i < 40; i++) prev.click(); return prev.disabled; })() };
+});
+check('stepping changes the readout', stepped.one !== stepped.before, `${stepped.before} -> ${stepped.one}`);
+check('each press moves one reading', /Reading 3 of|Sep/.test(stepped.three), stepped.three);
+check('and back steps back', stepped.afterBack !== stepped.three);
+check('the readout names a value', /\d/.test(stepped.one), stepped.one);
+check('at the first reading, previous is disabled rather than dead', stepped.backDisabledAtStart === true);
 
-  // dismissal — a tooltip you cannot close sits on top of the navigation.
-  // The tap has to land on inert space: the client cards are <button>s, so a
-  // naive tap near the left edge opens a drawer and the next check then
-  // measures a different screen.
-  // Probe for a point that lands on nothing interactive, rather than guessing
-  // a coordinate. Guessing cost a hang: a tap near the left edge hit a client
-  // card (they are <button>s), the drawer opened, and its scrim then swallowed
-  // the next touch event until the protocol timed out.
-  const inert = await page.evaluate(() => {
-    const interactive = 'button,a,input,select,textarea,[role="button"],[data-tap-tip],[onclick]';
-    for (let y = 8; y < window.innerHeight - 80; y += 12) {
-      for (const x of [4, window.innerWidth - 4, window.innerWidth / 2]) {
-        const el = document.elementFromPoint(x, y);
-        if (!el) continue;
-        if (el.closest(interactive)) continue;
-        return { x, y };
-      }
-    }
-    return null;
-  });
-  check('there is somewhere inert to tap', !!inert, 'every probed point was interactive');
-  if (inert) {
-    await page.touchscreen.tap(inert.x, inert.y);
-    await new Promise((r) => setTimeout(r, 250));
-    check('tapping elsewhere dismisses it', (await page.evaluate(() => !!document.getElementById('chartTip')?.hidden)) === true);
-    check('and that tap did not open a drawer',
-      (await page.evaluate(() => !document.querySelector('.drawer.open'))) === true);
-  }
-
-  await tapAt(page, VISIBLE_PT);
-  check('it reopens', (await page.evaluate(() => !document.getElementById('chartTip')?.hidden)) === true);
-  await tapAt(page, VISIBLE_PT);
-  check('tapping the same point again closes it', (await page.evaluate(() => !!document.getElementById('chartTip')?.hidden)) === true);
-
-  await tapAt(page, VISIBLE_PT);
-  await page.keyboard.press('Escape');
-  await new Promise((r) => setTimeout(r, 200));
-  check('Escape closes it too', (await page.evaluate(() => !!document.getElementById('chartTip')?.hidden)) === true);
-
-  await tapAt(page, VISIBLE_PT);
-  await page.evaluate(() => window.scrollBy(0, 200));
-  await new Promise((r) => setTimeout(r, 300));
-  check('scrolling away closes it rather than leaving it floating',
-    (await page.evaluate(() => !!document.getElementById('chartTip')?.hidden)) === true);
-
-  check('the tooltip never blocks the tab bar',
-    (await page.evaluate(() => {
-      const t = document.getElementById('chartTip');
-      return !t || t.hidden || getComputedStyle(t).pointerEvents === 'none';
-    })) === true);
-}
-check('no JS errors from the chart layer', page.__errors.length === 0, page.__errors.join(' | '));
+check('no JS errors from the trend controls', page.__errors.length === 0, page.__errors.join(' | '));
 await page.close();
 
 // ===========================================================================

@@ -260,3 +260,15 @@ own remedy — a short disclosed opt-in or QR flow — is the supported path.
 | R13.7 | Email and SMS share one history and never overlap; an unanswered cold email never becomes a text | Opt-out scope is honoured across channels |
 | R13.8 | Relationship and SMS results are reported separately from cold discovery | Delivery is not interest; a scanned card is not a qualified lead |
 | R13.9 | The real user journeys are demonstrated, with fixtures until services are configured and live checks labelled separately | Nothing is sent to prospects as a test |
+
+### Part 14 — Review gaps before release (owner addendum, 2026-10-05)
+
+The four blockers from the latest review. Each is a hole that the previous
+round's fix moved rather than closed.
+
+| Req | What it means | Notes |
+|---|---|---|
+| R14.1 | A requested outcome can never be silently omitted: the request is compared against the extracted task list before execution, and against the completion evidence before closing, with an explicit disposition for every ask | A second review is a safeguard, not a guarantee. "Could not tell" must behave as "no" at a gate whose failure mode is lying to a client |
+| R14.2 | When no source URL is on file, the organisation's official site and brand/usage terms are researched and identity verified before an asset is selected | Public availability is not permission. Ambiguity about identity, eligibility or rights is a question for the client, not a judgement call |
+| R14.3 | A dense chart on a phone is operable without hitting a 10px band, and its controls are not nested inside another control | `stopPropagation` hides a semantic nesting problem rather than fixing it |
+| R14.4 | The release trigger is established from the repository-to-host configuration itself | Version drift and stale responses establish difference, not cause |

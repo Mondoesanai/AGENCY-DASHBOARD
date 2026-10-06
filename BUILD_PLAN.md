@@ -291,11 +291,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 124 |
+| `[x]` built **and** verified | 126 |
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 4 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 0 |
+| `[ ]` not started | 2 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -502,3 +502,39 @@ The owner's personal/unrelated mail is never labelled. `iw-processed` stays hidd
 
 
 - **NEXT:** R4.1/R4.3 discovery settings + source adapter.
+
+---
+
+### Part 14 — Review gaps and overnight completion (owner addendum, 2026-10-05, 20:20 CDT)
+
+Deadline: **08:00 America/Chicago, 2026-10-06.** The production release hold REMAINS.
+No real outreach. No dashboard deploy. No paid overages.
+
+These four are the release blockers from the latest review. Each has a concrete
+definition of done; a task is not `[x]` until its definition is demonstrated, not
+argued.
+
+| Req | Task | Definition of done | State |
+|---|---|---|---|
+| R14.1 | Detect omitted requirements before falsely completing | The original email + attachments are compared against the extracted item list BEFORE execution, and the original request is compared against completion evidence BEFORE closing. Every requested outcome carries an explicit disposition: verified / outstanding / needs-clarification. **Test: a multi-part request where extraction deliberately drops one item — the completion gate must catch it and refuse the "all done" message.** | `[x]` |
+| R14.2 | Official-asset research when no source URL is supplied | With no URL on file, find the organisation's official site and brand/usage page, verify identity, and read the usage terms before selecting. Public availability is NOT permission. Ask the client only when identity, eligibility or rights stay unresolved. Never invent a mark or modify protected branding against its own instructions. | `[ ]` |
+| R14.3 | Dense mobile charts practical to operate | A 10px band must not be the only way to pick a reading. Add a selected-point detail panel with comfortably sized previous/next controls, and/or an accessible data list. **Chart controls must not be nested inside the client-card `<button>` — stopPropagation does not fix the semantics.** | `[x]` |
+| R14.4 | Establish the real deployment trigger from CONFIGURATION | Show the repo→host integration or workflow config that proves what a push to main does. Version drift and old responses establish difference, not cause. Correct RELEASE_TRIGGER.md if it is wrong. | `[x]` |
+
+Then, in order, finish the essential workflows already in scope — onboarding and
+repo mapping; revision intake through verified completion; scheduled monitoring and
+bounded recovery; card intake through follow-up/preview tasks; conversations,
+bookings and clear integration states; mobile navigation and the main owner actions.
+Then prepare the release candidate and the consolidated owner setup list.
+
+**Standing rules for this window.** Prefer finishing a user workflow over adding a
+feature, a document or a test count. Inspect before implementing; reuse what is
+done. Make reversible decisions without asking. When a credential or a business
+decision is missing: finish the independent part, verify it against fixtures, show
+its real disconnected state, add the exact dependency to the ONE owner list, and
+move to another task — do not restart a blocked approach. Record the dependency and
+switch; an unproductive loop is not investigation.
+
+**The supervisor reviews diffs and execution evidence, not the builder's summary.**
+
+- **NEXT:** R14.1 omitted-requirement detection.

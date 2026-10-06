@@ -113,6 +113,12 @@ export function wireCharts(root = document, { doc = document } = {}) {
     // an <svg><title> describes its parent shape, so wire the shape
     const target = el.tagName?.toLowerCase() === 'title' ? el.parentElement : el;
     if (!target || target.dataset.tapTip === '1') continue;
+    // A trend chart has its own persistent readout and ‹ › stepping, which is
+    // a better answer for a dense series than a tooltip that appears and goes.
+    // Wiring both meant two handlers fighting over one tap — the tooltip's
+    // "tap again to close" stopped working because the other one kept
+    // re-selecting the point. One mechanism per chart.
+    if (target.closest?.('.trend')) continue;
     const text = detailOf(el);
     if (!text) continue;
     target.dataset.tapTip = '1';

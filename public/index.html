@@ -297,7 +297,27 @@
   .section-h h2{font-size:17px;} .section-h span{color:var(--faint);font-size:13px;}
 
   .sites{display:grid;gap:11px;}
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 18px;box-shadow:var(--shadow);display:grid;grid-template-columns:1.7fr 46px .9fr .9fr .6fr 88px auto;align-items:center;gap:16px;text-align:left;width:100%;border-left:3px solid transparent;transition:transform .14s cubic-bezier(.2,.9,.3,1.2),border-color .14s ease;color:var(--ink);}
+  /* The card and its trend chart are siblings, not parent and child — a chart
+     you can tap and focus is interactive content, and that may not live inside
+     a <button>. The wrapper is the grid item and lays the two out side by side
+     so the row looks exactly as it did. */
+  /* The WRAPPER is the visual card: one border, one radius, one shadow, and
+     overflow hidden so the attention triangle is clipped to the real corner
+     rather than to the middle of the row. The button and the chart are plain
+     panels inside it, so the row looks exactly as it did before they were
+     separated. */
+  .cardwrap{display:grid;grid-template-columns:minmax(0,1fr) 112px;align-items:stretch;gap:0;
+    background:var(--surface);border:1px solid var(--line);border-left:3px solid transparent;
+    border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;position:relative;
+    transition:transform .14s cubic-bezier(.2,.9,.3,1.2),border-color .14s ease;}
+  .cardwrap:hover{transform:translateY(-2px);border-left-color:var(--green);}
+  .cardwrap>.card{background:none;border:0;border-radius:0;box-shadow:none;}
+  .cardwrap>.card:hover{transform:none;}
+  .trend{display:flex;flex-direction:column;justify-content:center;align-items:center;gap:2px;padding:10px 14px 10px 0;min-width:0;}
+  .trend .trend-ctl{display:none;}
+  .sparkhit{cursor:pointer;}
+  .sparkhit.on{fill:rgba(87,199,140,.22);}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:15px 18px;box-shadow:var(--shadow);display:grid;grid-template-columns:1.7fr 46px .9fr .9fr .6fr auto;align-items:center;gap:16px;text-align:left;width:100%;border-left:3px solid transparent;transition:transform .14s cubic-bezier(.2,.9,.3,1.2),border-color .14s ease;color:var(--ink);}
   .card:hover{transform:translateY(-2px);border-left-color:var(--green);}
   .card:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .card .name{font-weight:600;font-size:15px;}
@@ -507,8 +527,22 @@
        "we decided not to show it". It stays, spanning the card's full width
        where there is more room for it than in the desktop column, and taller
        so the points are big enough to hit. */
-    .card .spark{display:block;grid-column:1/-1;width:100%;height:46px;margin-top:2px;}
-    .sparkhit{cursor:pointer;}
+    /* the chart goes under the card and gets its own controls, because a 10px
+       band cannot be the only way to pick a day */
+    .cardwrap{grid-template-columns:minmax(0,1fr);}
+    .trend{border-top:1px solid var(--line);padding:6px 14px 12px;align-items:stretch;}
+    .trend .spark{display:block;width:100%;height:52px;}
+    .trend .trend-ctl{display:grid;grid-template-columns:44px minmax(0,1fr) 44px;align-items:center;gap:8px;margin-top:6px;}
+    .trend-nav{
+      appearance:none;min-height:44px;min-width:44px;border-radius:11px;
+      border:1px solid var(--line-strong,var(--line));background:var(--surface2);color:var(--ink);
+      font-size:20px;line-height:1;cursor:pointer;-webkit-tap-highlight-color:transparent;
+    }
+    .trend-nav:active{background:rgba(255,255,255,.07);}
+    .trend-nav:disabled{opacity:.35;cursor:default;}
+    .trend-nav:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
+    .trend-read{display:block;text-align:center;font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+    .trend svg:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:8px;}
   }
 
   .tabbar{display:none;}
@@ -1127,7 +1161,8 @@ function render(data){
 
   $('#sites').innerHTML=data.sites.map(siteCard).join('');
   $('#sites').classList.toggle('picking',selectMode);
-  data.sites.forEach(s=>$(`[data-slug="${s.slug}"]`)?.addEventListener('click',(e)=>cardClick(e,s.slug)));
+  data.sites.forEach(s=>$(`#sites .card[data-slug="${s.slug}"]`)?.addEventListener('click',(e)=>cardClick(e,s.slug)));
+  window.IWwireTrend?.($('#sites'));
   updateBulkBar();
   warmAudits();
 }
@@ -1150,10 +1185,14 @@ async function warmAudits(){
         cur.audit=a; cur.auditPending=!!a.pending;
         if(a&&a.ok){
           cur.grade=cur.grade||{};
-          const el=$(`#sites [data-slug="${s.slug}"]`);
+          // the wrapper is the grid item now; the click belongs on the button
+          // inside it, not on the wrapper, or the chart beside it would
+          // navigate too
+          const el=$(`#sites [data-card="${s.slug}"]`);
           if(el){ const fresh=siteCard(cur); const tmp=document.createElement('div'); tmp.innerHTML=fresh; const node=tmp.firstElementChild;
-            node.addEventListener('click',(e)=>cardClick(e,s.slug));
-            el.replaceWith(node); }
+            node.querySelector('.card')?.addEventListener('click',(e)=>cardClick(e,s.slug));
+            el.replaceWith(node);
+            window.IWwireTrend?.(node); }
         }
       }catch{/* leave pending; next load retries */}
     }
@@ -1950,7 +1989,18 @@ function siteCard(s){
     : '<span class="tag" style="color:var(--warn);background:#2c2a17">no tracker</span>';
   const trialTag = s.onTrial ? `<span class="tag" style="color:var(--green-br);background:var(--green-soft)">trial · ${s.trialDaysLeft}d</span>` : '';
   const isSel=selected.has(s.slug);
-  return `<button class="card ${isSel?'sel':''}" data-slug="${s.slug}">
+  const trend=trendOf(s), labels=trendLabelsOf(s);
+  // The chart lives OUTSIDE the card button, as its sibling.
+  //
+  // It used to be inside it. A chart whose points you can tap, focus and
+  // read is interactive content, and interactive content inside a <button>
+  // is invalid HTML: a screen reader flattens the whole card into one
+  // control, keyboard order makes no sense, and a tap on a data point also
+  // activated the card. Catching that tap in the capture phase stopped the
+  // navigation but left the semantics exactly as wrong. Moving it out is the
+  // actual fix; nothing is nested in anything it should not be.
+  return `<div class="cardwrap ${isSel?'sel':''}" data-card="${s.slug}">
+  <button class="card ${isSel?'sel':''}" data-slug="${s.slug}">
     ${attn&&!selectMode?'<span class="attn-tri" title="Needs attention"></span>':''}
     ${selectMode?`<span class="cbx">${isSel?'✓':''}</span>`:''}
     <div>
@@ -1961,9 +2011,19 @@ function siteCard(s){
     <div class="col-hide"><div class="cell-k">Visitors 30d</div><div class="cell-v">${st.hasData?fmt(st.visitors):'—'} ${st.hasData?deltaHTML(st.deltas?.visitors):''}</div></div>
     <div class="col-hide"><div class="cell-k">Conversions</div><div class="cell-v">${st.hasData?(st.conversions??0):'—'} ${st.hasData?deltaHTML(st.deltas?.conversions):''}</div></div>
     <div class="col-hide"><div class="cell-k">Ranking</div><div class="cell-v">${rankLabel}${rankSub?` <span style="font-size:10.5px;color:var(--faint)">${rankSub}</span>`:''}</div></div>
-    ${sparkline(trendOf(s),84,30,trendLabelsOf(s),'visitors')}
     <span class="chip ${s.openCount?'':'zero'}">${s.openCount||0} to-do${s.openCount===1?'':'s'} ›</span>
-  </button>`;
+  </button>
+  <div class="trend" data-trend="${s.slug}"
+       data-values="${esc(JSON.stringify(trend||[]))}"
+       data-labels="${esc(JSON.stringify(labels||[]))}">
+    ${sparkline(trend,84,30,labels,'visitors')}
+    <div class="trend-ctl">
+      <button type="button" class="trend-nav" data-dir="-1" aria-label="Previous reading">‹</button>
+      <output class="trend-read" aria-live="polite">${trend&&trend.length?'Tap the chart, or step through it':'No readings yet'}</output>
+      <button type="button" class="trend-nav" data-dir="1" aria-label="Next reading">›</button>
+    </div>
+  </div>
+</div>`;
 }
 
 function bars(items){
@@ -3486,6 +3546,13 @@ import('/nav.js')
     // screen. This adds tap and keyboard access to the same text without
     // touching any chart's drawing code, and re-scans after each redraw
     // because the panels re-render constantly.
+    // the trend charts: tap, 44px prev/next, and arrow keys, all feeding one
+    // live readout — because a 10px band cannot be the only way in
+    const tr = await import('/trend.js').catch(() => null);
+    if (tr) {
+      window.IWwireTrend = (root) => tr.wireTrends(root || document);
+      window.IWwireTrend(document);
+    }
     const ct = await import('/chart-touch.js').catch(() => null);
     if (!ct) return;
     ct.initChartTouch(document);

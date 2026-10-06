@@ -50,6 +50,11 @@ const WIRING = [
   // is that the page both initialises it AND re-scans after each redraw, since
   // the panels are rebuilt rather than patched.
   { mod: 'chart-touch.js', host: 'index.html', calls: ['initChartTouch', 'wireCharts'], mount: [] },
+  // The trend readout and its ‹ › stepping. Its mount point is created by
+  // siteCard() rather than living in the page, so there is no static id to
+  // assert — what matters is that the page wires it on first render AND
+  // re-wires a card that is replaced after a background audit.
+  { mod: 'trend.js', host: 'index.html', calls: ['wireTrends', 'IWwireTrend'], mount: [] },
   // states.js is a library for the other modules, not for the page
   { mod: 'states.js', host: 'acquisition.js', calls: ['renderPanel', 'panelState'], mount: [] },
 ];
