@@ -62,7 +62,7 @@ const files = [...listJs('tests', '.mjs'), ...listJs('lib', '.js'), ...listJs('a
 const offenders = [];
 for (const f of files) {
   // This file names the bad shapes on purpose — see VALIDATOR_FIXTURES below.
-  if (f === 'tests/public-repo.test.mjs') continue;
+  if (f === 'tests/public-repo.test.mjs' || f === 'tests/secret-scan.test.mjs') continue;
   const src = read(f);
   for (const m of src.matchAll(/[a-zA-Z0-9._%+-]+@([a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g)) {
     const d = m[1].toLowerCase().replace(/[.,)'"]+$/, '');
@@ -93,7 +93,13 @@ section('R2  no fixture phone number could ring a real person');
 // This file is exempt from its own number rule for the same reason: it has to
 // name the shapes it catches, and a scanner that cannot describe what it looks
 // for is harder to review than one that can.
-const VALIDATOR_FIXTURES = new Set(['tests/phone.test.mjs', 'tests/public-repo.test.mjs']);
+// `tests/secret-scan.test.mjs` joins them for the same reason: it proves the
+// pre-commit scanner catches a contactable address and a real-looking number,
+// which requires containing one of each. A rule that forbade them would forbid
+// testing the rule — the same trap as phone.test.mjs.
+const VALIDATOR_FIXTURES = new Set([
+  'tests/phone.test.mjs', 'tests/public-repo.test.mjs', 'tests/secret-scan.test.mjs',
+]);
 
 const badNumbers = [];
 for (const f of listJs('tests', '.mjs')) {

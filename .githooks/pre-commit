@@ -1,0 +1,21 @@
+#!/bin/sh
+# R18.3 — refuse to commit a credential, a real client address, or a number
+# that could ring somebody.
+#
+# This repository is PUBLIC. A commit is publication, and publication cannot be
+# undone by a later fix: the object stays fetchable and anyone who cloned has it
+# already. So the only check worth having is the one that runs BEFORE the commit.
+#
+# Enable it once per clone (git does not do this for you, by design):
+#
+#     git config core.hooksPath .githooks
+#
+# It scans STAGED CONTENT ONLY, so legitimate configuration held outside Git —
+# .env files, Vercel environment variables, anything gitignored — is untouched.
+# That is the point: the rule is "do not commit it", not "do not have it".
+#
+# To commit anyway, with your eyes open: git commit --no-verify
+# The repository root IS client-dashboard — the outer "Inspiring Websites
+# website" directory is a separate repo holding many projects. Getting this
+# wrong is why the first version of this hook silently did nothing.
+exec node "$(git rev-parse --show-toplevel)/tools/pre-commit-scan.mjs"
