@@ -4,6 +4,7 @@
 //   /api/admin?do=receipts          -> ledger / receipts / tax (?one=, ?format=csv)
 //   /api/admin?do=repos             -> GitHub repo list + match (?match=<url>)
 import '../lib/boot.js'; // patches console to redact secrets — must be first
+import { guardSharedStore } from '../lib/environment.js';
 import { coachHandler } from '../lib/coach.js';
 import { authed, authError } from '../lib/auth.js';
 import { receiptsHandler } from '../lib/receipts.js';
@@ -42,6 +43,9 @@ async function siteBySlug(slug) {
 
 
 export default async function handler(req, res) {
+  // R18.2 — refuse to run against the live database from a non-production
+  // deployment. Preview shares production's KV (see lib/environment.js).
+  if (guardSharedStore(req, res)) return;
   // ticket status is client-request/scheduling info, not financial — same
   // trust level as the public /api/sites feed, so it's never password-gated.
   // Same for system-health — it's config/uptime flags (same trust level
@@ -123,11 +127,15 @@ export default async function handler(req, res) {
     // also Preview-scoped — could spend real rank-tracking credits.
     //
     // The tick belongs to production. Anywhere else it is refused.
-    const env = process.env.VERCEL_ENV;
-    if (env && env !== 'production') {
+    // Classified by lib/environment.js rather than by a second hand-rolled
+    // check — two answers to "is this production" drift apart eventually, and
+    // this one decides whether real money is spent.
+    const { deploymentEnv, MAY_TOUCH_LIVE } = await import('../lib/environment.js');
+    const where = deploymentEnv();
+    if (!MAY_TOUCH_LIVE.includes(where)) {
       return res.status(403).json({
         ok: false,
-        error: `the tick only runs in production (this is "${env}")`,
+        error: `the tick only runs in production (this is "${where}")`,
         why: 'Preview shares production\'s database, so a tick from here would write to live data.',
       });
     }

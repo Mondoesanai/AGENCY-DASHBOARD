@@ -1,6 +1,7 @@
 // Create / update / delete a client site, plus builder notes and the
 // "what we did this month" changelog. All writes require CRON_SECRET.
 import '../lib/boot.js'; // patches console to redact secrets — must be first
+import { guardSharedStore } from '../lib/environment.js';
 import { store } from '../lib/store.js';
 import { authed, authError } from '../lib/auth.js';
 import {
@@ -188,6 +189,9 @@ async function readLog(slug) {
 }
 
 export default async function handler(req, res) {
+  // R18.2 — refuse to run against the live database from a non-production
+  // deployment. Preview shares production's KV (see lib/environment.js).
+  if (guardSharedStore(req, res)) return;
   if (req.method !== 'POST') return res.status(405).json({ ok: false });
   if (!authed(req)) return res.status(401).json({ ok: false, error: authError() });
 

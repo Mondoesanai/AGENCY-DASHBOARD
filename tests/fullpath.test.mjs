@@ -102,13 +102,22 @@ check('because the Overview tile has to be honest before anyone unlocks', !!j.au
   const savedSecret = process.env.CRON_SECRET;
   const savedVercel = process.env.VERCEL;
   delete process.env.CRON_SECRET;
+  // R18.2 — VERCEL_ENV too: 'deployed' with no VERCEL_ENV now classifies as
+
+  // preview, which the shared-store guard refuses before auth is reached.
+
+  // These assertions are about AUTH on a deployment, so production isolates them.
+
   process.env.VERCEL = '1';
+
+  process.env.VERCEL_ENV = 'production';
   const locked = await startLocalApi();
   const a = (await locked.get(`/api/admin?do=contacts-list`)).json || {};
   const b = (await locked.get(`/api/admin?do=contacts-list&secret=anything`)).json || {};
   const open = (await locked.get(`/api/admin?do=automation-status`)).json || {};
   await locked.stop();
   process.env.CRON_SECRET = savedSecret;
+  delete process.env.VERCEL_ENV;
   if (savedVercel === undefined) delete process.env.VERCEL; else process.env.VERCEL = savedVercel;
 
   check('deployed with NO secret, an admin call is refused — not served', a.ok === false, JSON.stringify(a).slice(0, 120));

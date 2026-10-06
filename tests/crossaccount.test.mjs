@@ -135,13 +135,22 @@ section('X5  with no secret on a deployment, the link does NOT fall open');
   const saved = process.env.CRON_SECRET;
   const savedVercel = process.env.VERCEL;
   delete process.env.CRON_SECRET;
+  // R18.2 — VERCEL_ENV too: 'deployed' with no VERCEL_ENV now classifies as
+
+  // preview, which the shared-store guard refuses before auth is reached.
+
+  // These assertions are about AUTH on a deployment, so production isolates them.
+
   process.env.VERCEL = '1';
+
+  process.env.VERCEL_ENV = 'production';
   const deployed = await startLocalApi();
   const noTok = await deployed.get(`/api/public-report?slug=${B}`);
   const anyTok = await deployed.get(`/api/public-report?slug=${B}&t=anything`);
   const noTokBody = noTok.text;
   await deployed.stop();
   process.env.CRON_SECRET = saved;
+  delete process.env.VERCEL_ENV;
   if (savedVercel === undefined) delete process.env.VERCEL; else process.env.VERCEL = savedVercel;
 
   check('deployed with no secret, a report link with no token is refused', noTok.status === 403, String(noTok.status));

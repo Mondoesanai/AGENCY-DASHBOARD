@@ -1,6 +1,7 @@
 // Monthly report card image.  /api/card?slug=relax-tax  ->  SVG.
 // Non-sensitive — safe to link in an email.
 import '../lib/boot.js'; // patches console to redact secrets — must be first
+import { guardSharedStore } from '../lib/environment.js';
 import { listSites } from '../lib/registry.js';
 import { getHistory } from '../lib/history.js';
 import { siteStats } from '../lib/stats.js';
@@ -11,6 +12,9 @@ import { buildCardSVG, renderPNG } from '../lib/card.js';
 const MONTH_LABEL = new Date().toLocaleString('en-US', { month: 'long', year: 'numeric' });
 
 export default async function handler(req, res) {
+  // R18.2 — refuse to run against the live database from a non-production
+  // deployment. Preview shares production's KV (see lib/environment.js).
+  if (guardSharedStore(req, res)) return;
   const slug = req.query.slug;
   if (!slug) return res.status(400).json({ error: 'missing slug' });
 

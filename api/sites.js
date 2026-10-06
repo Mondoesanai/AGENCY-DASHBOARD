@@ -1,5 +1,6 @@
 // Main dashboard feed.
 import '../lib/boot.js'; // patches console to redact secrets — must be first
+import { guardSharedStore } from '../lib/environment.js';
 import { listSites } from '../lib/registry.js';
 import { authed, authError } from '../lib/auth.js';
 import { runAudit } from '../lib/audit.js';
@@ -50,6 +51,9 @@ async function readArr(key) {
 const readLog = (slug) => readArr(`changelog:${slug}`);
 
 export default async function handler(req, res) {
+  // R18.2 — refuse to run against the live database from a non-production
+  // deployment. Preview shares production's KV (see lib/environment.js).
+  if (guardSharedStore(req, res)) return;
   // R1.8/R11.7 — this endpoint had NO authorization at all, and it returns
   // every client's email, phone, monthly price, setup fee, expenses, private
   // notes and changelog. Anyone who knew the deployment URL could read the

@@ -114,12 +114,29 @@ section('G1e  the one unauthenticated endpoint that DOES work is production-only
 // real tick against the real production database.
 setEnv({ CRON_SECRET: null, VERCEL: '1', VERCEL_ENV: 'preview' });
 const pokePreview = await get('/api/admin?do=auto-poke');
-check('auto-poke is refused on a preview deployment', pokePreview.status === 403, `${pokePreview.status}`);
+// R18.2 added a shared-store guard at the top of every handler, so a preview
+// request is now refused with 503 before auto-poke's own 403 is reached. Both
+// are refusals and the broader one wins; what matters is that it does not run.
+check('auto-poke is refused on a preview deployment',
+  pokePreview.status === 503 || pokePreview.status === 403, `${pokePreview.status}`);
 check('and says why, naming the shared database',
-  /production.s database|live data/i.test(pokePreview.json?.why || ''), JSON.stringify(pokePreview.json).slice(0, 160));
+  /production.s database|live client data/i.test(JSON.stringify(pokePreview.json || {})),
+  JSON.stringify(pokePreview.json).slice(0, 170));
 
 setEnv({ CRON_SECRET: null, VERCEL: '1', VERCEL_ENV: 'development' });
-check('and on a development deployment', (await get('/api/admin?do=auto-poke')).status === 403);
+const pokeDev = await get('/api/admin?do=auto-poke');
+check('and on a development deployment', pokeDev.status === 503 || pokeDev.status === 403, `${pokeDev.status}`);
+
+// Its own production-only check still exists underneath, proven directly so the
+// outer guard cannot be the only thing holding it.
+// setEnv only knows the three auth variables, so this one is set directly.
+setEnv({ CRON_SECRET: null, VERCEL: '1', VERCEL_ENV: 'preview' });
+process.env.PREVIEW_KV_ISOLATED = '1';
+const pokeIsolated = await get('/api/admin?do=auto-poke');
+check('even an ISOLATED preview does not run the tick', pokeIsolated.status === 403, `${pokeIsolated.status}`);
+check('because the tick belongs to production regardless of the store',
+  /only runs in production/.test(pokeIsolated.json?.error || ''), JSON.stringify(pokeIsolated.json).slice(0, 140));
+delete process.env.PREVIEW_KV_ISOLATED;
 
 section('G1f  NEGATIVE CONTROL: it still runs where it is meant to');
 setEnv({ CRON_SECRET: null, VERCEL: null, VERCEL_ENV: null });

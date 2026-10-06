@@ -1,6 +1,7 @@
 // Receives tracking beacons from t.js and rolls them into daily counters.
 // Cost: $0 — it's just your own function writing to your own KV store.
 import '../lib/boot.js'; // patches console to redact secrets — must be first
+import { guardSharedStore } from '../lib/environment.js';
 import { store, dayKey } from '../lib/store.js';
 import { slugify, slugForHost, rememberHost, matchExistingSite } from '../lib/registry.js';
 
@@ -41,6 +42,9 @@ function refHost(ref) {
 }
 
 export default async function handler(req, res) {
+  // R18.2 — refuse to run against the live database from a non-production
+  // deployment. Preview shares production's KV (see lib/environment.js).
+  if (guardSharedStore(req, res)) return;
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, GET, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');

@@ -2,6 +2,7 @@
 // Deliberately omits builder notes, client contact details, pricing and the
 // blunt technical findings.
 import '../lib/boot.js'; // patches console to redact secrets — must be first
+import { guardSharedStore } from '../lib/environment.js';
 import { listSites } from '../lib/registry.js';
 import { getHistory } from '../lib/history.js';
 import { runAudit } from '../lib/audit.js';
@@ -40,6 +41,9 @@ async function recentWork(slug) {
 }
 
 export default async function handler(req, res) {
+  // R18.2 — refuse to run against the live database from a non-production
+  // deployment. Preview shares production's KV (see lib/environment.js).
+  if (guardSharedStore(req, res)) return;
   const slug = req.query.slug;
   if (!slug) return res.status(400).json({ error: 'missing slug' });
   if (!tokenOk(slug, req.query.t)) return res.status(403).json({ error: 'this report link is not valid' });

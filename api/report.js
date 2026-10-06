@@ -6,6 +6,7 @@
 // Always: snapshots this month's numbers, builds a rotating client email, and
 // (on send) attaches a branded PNG report card + links the shareable report page.
 import '../lib/boot.js'; // patches console to redact secrets — must be first
+import { guardSharedStore } from '../lib/environment.js';
 import { listSites } from '../lib/registry.js';
 import { authed, authError } from '../lib/auth.js';
 import { runAudit } from '../lib/audit.js';
@@ -582,6 +583,9 @@ async function sendLatest(site, { req }) {
 }
 
 export default async function handler(req, res) {
+  // R18.2 — refuse to run against the live database from a non-production
+  // deployment. Preview shares production's KV (see lib/environment.js).
+  if (guardSharedStore(req, res)) return;
   if (!authed(req)) return res.status(401).json({ ok: false, error: authError() });
 
   const t0 = Date.now();

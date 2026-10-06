@@ -3,9 +3,13 @@
 // weekly on their side. We bucket the URL by week so it refreshes on its own
 // without us ever running a browser or spending API calls.
 import '../lib/boot.js'; // patches console to redact secrets — must be first
+import { guardSharedStore } from '../lib/environment.js';
 import { listSites } from '../lib/registry.js';
 
 export default async function handler(req, res) {
+  // R18.2 — refuse to run against the live database from a non-production
+  // deployment. Preview shares production's KV (see lib/environment.js).
+  if (guardSharedStore(req, res)) return;
   const slug = req.query.slug;
   let url = req.query.url;
   if (slug && !url) {
