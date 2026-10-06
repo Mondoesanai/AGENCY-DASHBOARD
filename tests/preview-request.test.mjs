@@ -106,26 +106,46 @@ section('P4c  the ceiling actually refuses');
 const RQ = `rq_${Math.random().toString(36).slice(2, 8)}`;
 let granted = 0;
 for (const kind of TEXTABLE_KINDS) {
-  const r = await claimRequestText({ requestId: RQ, kind });
+  // bookingConfirmed is true throughout this section: it is about the CAP,
+  // and the separate booking requirement is checked in P4c2.
+  const r = await claimRequestText({ requestId: RQ, kind, bookingConfirmed: true });
   if (r.ok) granted++;
 }
 check(`all ${MAX_REQUEST_TEXTS} planned texts are allowed once`, granted === MAX_REQUEST_TEXTS);
-const again = await claimRequestText({ requestId: RQ, kind: TEXTABLE_KINDS[0] });
+const again = await claimRequestText({ requestId: RQ, kind: TEXTABLE_KINDS[0], bookingConfirmed: true });
 check('the same kind twice is refused', again.ok === false && again.alreadySent === true,
   'a retried job must not re-text somebody');
 // Negative control: a fresh request must still be able to send, or the above
 // would pass simply because everything is refused.
 const RQ2 = `rq_${Math.random().toString(36).slice(2, 8)}`;
-const fresh = await claimRequestText({ requestId: RQ2, kind: TEXTABLE_KINDS[0] });
+const fresh = await claimRequestText({ requestId: RQ2, kind: TEXTABLE_KINDS[0], bookingConfirmed: true });
 check('a DIFFERENT request still gets its allowance', fresh.ok === true,
   'negative control — proves the refusal above is per-request, not blanket');
-const notOurs = await claimRequestText({ requestId: RQ2, kind: 'calendar-invitation' });
+const notOurs = await claimRequestText({ requestId: RQ2, kind: 'calendar-invitation', bookingConfirmed: true });
 check('a calendar-owned notification cannot be texted', notOurs.ok === false);
-const unknown = await claimRequestText({ requestId: RQ2, kind: 'anything-at-all' });
+const unknown = await claimRequestText({ requestId: RQ2, kind: 'anything-at-all', bookingConfirmed: true });
 check('an unplanned kind is refused', unknown.ok === false);
-const noId = await claimRequestText({ kind: TEXTABLE_KINDS[0] });
+const noId = await claimRequestText({ kind: TEXTABLE_KINDS[0], bookingConfirmed: true });
 check('no request id is refused', noId.ok === false,
   'an uncounted text is an uncapped text');
+
+section('P4c2  only a CONFIRMED appointment gets reminders');
+const RQ3 = `rq_${Math.random().toString(36).slice(2, 8)}`;
+for (const kind of ['reminder-24h', 'reminder-1h', 'booking-confirmation', 'reschedule-or-cancel', 'no-show-followup']) {
+  const r = await claimRequestText({ requestId: RQ3, kind, bookingConfirmed: false });
+  check(`"${kind}" is refused when nothing was booked`, r.ok === false && r.needsBooking === true, JSON.stringify(r));
+}
+const unknownBooking = await claimRequestText({ requestId: RQ3, kind: 'reminder-24h' });
+check('and refused when we cannot say whether it was booked',
+  unknownBooking.ok === false && unknownBooking.needsBooking === true,
+  'a missing answer must not read as "yes"');
+check('the refusal says why it matters',
+  /clear the time for it/i.test(unknownBooking.reason), unknownBooking.reason);
+// The texts that make sense for an unbooked REQUEST still do.
+const stillFine = await claimRequestText({ requestId: RQ3, kind: 'preview-ready', bookingConfirmed: false });
+check('NEGATIVE CONTROL: a preview-ready text does not need an appointment', stillFine.ok === true, JSON.stringify(stillFine));
+const withBooking = await claimRequestText({ requestId: RQ3, kind: 'reminder-24h', bookingConfirmed: true });
+check('NEGATIVE CONTROL: with a confirmed booking the reminder is allowed', withBooking.ok === true, JSON.stringify(withBooking));
 
 const ledger = await requestTextLedger(RQ);
 check('the ledger reports the allowance spent', ledger.used === MAX_REQUEST_TEXTS && ledger.remaining === 0);
@@ -133,7 +153,7 @@ check('the ledger reports the allowance spent', ledger.used === MAX_REQUEST_TEXT
 section('P4d  a store outage must not make texting easier');
 const realIncr = store.incr;
 store.incr = async () => { throw new Error('kv down'); };
-const duringOutage = await claimRequestText({ requestId: `rq_out_${Date.now()}`, kind: TEXTABLE_KINDS[1] });
+const duringOutage = await claimRequestText({ requestId: `rq_out_${Date.now()}`, kind: TEXTABLE_KINDS[1], bookingConfirmed: true });
 store.incr = realIncr;
 check('the allowance fails CLOSED when the counter cannot be read',
   duringOutage.ok === false && duringOutage.retryable === true,
