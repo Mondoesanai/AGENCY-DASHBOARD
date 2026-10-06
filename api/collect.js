@@ -194,9 +194,24 @@ export default async function handler(req, res) {
       return res.status(405).json({ ok: false, error: 'POST only — a fetched link must never enrol anyone' });
     }
     const body = typeof req.body === 'string' ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })() : (req.body || {});
-    const { recordWebOptIn } = await import('../lib/optin-public.js');
+
+    // R17.2 — a public write needs a ceiling. Without one, this endpoint is a
+    // free way to fill KV with pending records, and a way to hammer the number
+    // of a person somebody dislikes. Two limits, because they stop different
+    // abuses: per-number stops one victim being targeted repeatedly, per-caller
+    // stops one source enumerating many numbers.
+    const { rateLimit } = await import('../lib/ratelimit.js');
+    const caller = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+    const perNumber = await rateLimit(`optin:num:${String(body.phone || '').replace(/\D/g, '')}`, { max: 3, windowSec: 3600 });
+    const perCaller = await rateLimit(`optin:ip:${caller}`, { max: 10, windowSec: 3600 });
+    if (!perNumber.ok || !perCaller.ok) {
+      // One message for both, so the response cannot be used to tell which limit
+      // was hit and therefore whether a number has been submitted before.
+      return res.status(429).json({ ok: false, error: 'too many requests — please try again later' });
+    }
+
+    const { recordWebOptIn, OPTIN_KEYWORD } = await import('../lib/optin-public.js');
     const { getSettings } = await import('../lib/settings.js');
-    const { findDuplicates } = await import('../lib/contacts.js');
     const s = await getSettings().catch(() => null);
     const out = await recordWebOptIn({
       phone: body.phone,
@@ -204,15 +219,17 @@ export default async function handler(req, res) {
       agreed: body.agreed === true,
       pageUrl: body.pageUrl,
       business: s?.business?.name || undefined,
-      findContact: async (num) => {
-        const matches = await findDuplicates({ phone: num });
-        return (matches || []).find((m) => m.certainty === 'exact' || m.certainty === 'likely')?.contact || null;
-      },
+      // No contact lookup: the form grants nothing, so there is nothing to
+      // attach, and looking a number up here would make the endpoint able to
+      // confirm whether we hold somebody.
     });
-    // Never echo back whether the number was already known: that would turn
-    // this public form into a way of testing whether we hold somebody.
+    // Never echo back whether the number was already known, and never say that
+    // a suppressed number was suppressed: both would turn this public form into
+    // a way of testing whether we hold a given person.
     return res.status(out.ok ? 200 : 400).json(
-      out.ok ? { ok: true } : { ok: false, error: out.error, why: out.why || undefined },
+      out.ok
+        ? { ok: true, pending: true, keyword: OPTIN_KEYWORD, to: process.env.TWILIO_SMS_FROM || null }
+        : { ok: false, error: out.needsPerson ? 'that number cannot be signed up here' : out.error, why: out.why || undefined },
     );
   }
 

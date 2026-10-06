@@ -110,9 +110,12 @@ web = await recordWebOptIn({
   pageUrl: 'https://example.invalid/optin', business: 'Inspiring Websites', findContact: findBy(c3),
 });
 check('a real submission is accepted', web.ok === true, JSON.stringify(web).slice(0, 140));
-check('at promotional scope', web.scope === 'promotional');
+// R17.2 — this used to grant promotional scope outright, which meant anybody
+// could sign up anybody. The form now records an intention; possession of the
+// handset is what grants. tests/optin-confirm.test.mjs drives the whole flow.
+check('but it grants NOTHING on its own', web.scope === 'none' && web.pending === true, JSON.stringify(web).slice(0, 160));
 check('the page it came from is recorded', /example\.invalid\/optin/.test(web.record.source), web.record.source);
-check('and that they submitted it themselves', /submitted the form themselves/.test(web.record.evidence), web.record.evidence);
+check('and it names what would confirm it', /text PREVIEW from that phone/i.test(web.confirmBy || ''), web.confirmBy);
 
 // ---------------------------------------------------------------------------
 section('P6  a permission that arrives before the contact is not thrown away');

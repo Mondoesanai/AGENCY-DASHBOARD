@@ -316,3 +316,4 @@ for itself, and one person cannot give permission on another's behalf.
 | Req | Requirement | Acceptance criteria |
 |---|---|---|
 | R17.1 | Promotional SMS permission comes only from the recipient's own act; the owner's record is assessed against the message type | A published keyword and a web/QR form each produce promotional consent with the recipient's own act as evidence; an owner-recorded conversation is capped at a one-time follow-up and a promotional send is refused on it; a standing STOP is not overturned by a keyword |
+| R17.2 | Nobody can sign up a number that is not theirs | A web submission grants nothing; promotional permission requires a message received FROM that handset, and no message is sent to an unconfirmed number |

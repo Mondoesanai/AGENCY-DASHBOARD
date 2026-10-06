@@ -72,7 +72,20 @@
 
     <button type="submit" id="go">Send me the preview</button>
     <div class="msg" id="msg" role="status" aria-live="polite"></div>
-    <p class="terms">We only text the number you enter here. Reply STOP at any time and we stop immediately.</p>
+    <!--
+      The disclosures a 10DLC campaign registration is checked against. They have
+      to be visible at the point somebody decides, not a click away, which is why
+      the frequency, the rates line and both reply keywords are in the consent
+      text above rather than only here.
+    -->
+    <p class="terms">
+      We only text the number you enter, and only after you confirm it from that phone.
+      Reply <b>STOP</b> at any time and we stop immediately. Reply <b>HELP</b> for help.
+      Message frequency varies. Message and data rates may apply.
+      <br />
+      <a href="/optin-terms.html">Terms</a> · <a href="/optin-privacy.html">Privacy</a>
+      — we do not sell or share your number, and we do not share it with anyone for marketing.
+    </p>
   </form>
 </main>
 
@@ -114,8 +127,14 @@
       });
       const j = await r.json();
       if (j.ok) {
+        // Deliberately not "thank you, you're signed up". Nothing is signed up
+        // until a message arrives from that handset, and saying otherwise would
+        // let somebody who typed a stranger's number believe they had enrolled
+        // them — which is exactly what this step exists to stop.
         msg.className = 'msg ok';
-        msg.textContent = 'Thank you — we will text that number when your preview is ready.';
+        msg.innerHTML = '<b>One more step.</b> Text <b>' + (j.keyword || 'PREVIEW')
+          + '</b> to <b>' + (j.to || 'our number') + '</b> from that phone to confirm it is yours. '
+          + 'We will not text you until you do.';
         $('#f').reset();
       } else {
         msg.className = 'msg err';
