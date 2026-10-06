@@ -100,10 +100,28 @@ export default async function handler(req, res) {
     // second consent record, a second queued draft, a second conversation
     // entry. STOP is idempotent, so the retry that matters least is the only
     // one that was safe before.
+    // R19.6 — an opt-out is never dropped for being possibly-a-duplicate.
+    //
+    // The de-duplication protects against applying an event twice. For most
+    // inbound messages that is the right trade: a second consent record or a
+    // second queued draft is a real harm, so an unknown answer means do not
+    // apply. For STOP it is exactly backwards — applying it twice is a no-op,
+    // losing it means continuing to text somebody who said stop. During a store
+    // outage `claimEventOnce` cannot claim anything, so EVERY inbound message
+    // took the duplicate branch and was discarded with an empty 200.
+    //
+    // The message is already signature-verified at this point, so classifying
+    // it before the gate adds no trust that was not already there.
+    const { classifyInbound, INBOUND: KIND } = await import('../lib/sms-inbound.js');
+    const isOptOut = classifyInbound(body.Body || '').kind === KIND.STOP;
+
     const sid = String(body.MessageSid || body.SmsSid || '');
     if (sid) {
       const once = await claimEventOnce('sms-inbound', sid);
-      if (!once.fresh) {
+      // A KNOWN duplicate is dropped whatever it says — that one really was
+      // handled. Only an UNKNOWN answer is overridden, and only for an opt-out.
+      const dropIt = !once.fresh && !(once.unknown && isOptOut);
+      if (dropIt) {
         res.setHeader('Content-Type', 'text/xml; charset=utf-8');
         return res.status(200).send('<Response/>');
       }
@@ -118,6 +136,22 @@ export default async function handler(req, res) {
     });
     res.setHeader('Content-Type', 'text/xml; charset=utf-8');
     const esc = (t) => String(t || '').replace(/[<>&"']/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;', "'": '&apos;' }[ch]));
+
+    // R19.6 — an opt-out we could not record must not answer 200.
+    //
+    // 200 is what this endpoint says to the carrier to mean "handled". Saying
+    // it after a failed suppression write makes a lost opt-out indistinguishable
+    // from a recorded one, in the one log that would otherwise show it: Twilio's
+    // error log is the only place outside our own store where this becomes
+    // visible, and a 200 keeps it out of there.
+    //
+    // The person is still told they are unsubscribed, because they are — our
+    // send path refuses every number while the suppression list is unreadable,
+    // and Twilio's own opt-out handling is not ours to undo. What the status
+    // code carries is that OUR record is missing and has to be re-applied.
+    if (out.kind === 'stop' && out.recorded === false) {
+      return res.status(503).send(out.reply ? `<Response><Message>${esc(out.reply)}</Message></Response>` : '<Response/>');
+    }
     return res.status(200).send(out.reply ? `<Response><Message>${esc(out.reply)}</Message></Response>` : '<Response/>');
   }
 
