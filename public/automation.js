@@ -104,9 +104,80 @@ export function renderAutomation(a, opts = {}) {
 
   return `${pauseBox}
     <div class="note ${h.tone === 'good' ? '' : h.tone}"><b>${esc(h.word)}</b>${h.detail ? ` — ${esc(h.detail)}` : ''}</div>
+    ${renderEscalations(a.escalations, busy)}
     ${rows}
     <p class="note faint">Every line above is the last time that worker actually checked in, not a schedule.
-      A worker that stopped shows its real silence here rather than a countdown to a run that will not happen.</p>`;
+      A worker that stopped shows its real silence here rather than a countdown to a run that will not happen.</p>
+    ${renderSweeps(a.sweeps, a.sweepHealth)}`;
+}
+
+/**
+ * R16.6 — raised alerts, and a way to put them down.
+ *
+ * An escalation that can be raised but never cleared trains the owner to ignore
+ * the area it lives in, which quietly disables every other alert beside it. So
+ * each one gets an acknowledge button, and the button says plainly what it does
+ * and does not do: it clears the alert, not the cause, and the next sweep will
+ * raise it again if the problem is still there.
+ */
+export function renderEscalations(list, busy = false) {
+  if (!list?.length) return '';
+  return `<div class="auto-esc">
+    <h4>Raised for your attention</h4>
+    ${list.map((e) => `<div class="auto-esc-row" data-esc="${esc(e.id || '')}">
+      <div><b>${esc(e.title || e.text || 'Something needs looking at')}</b></div>
+      ${e.at ? `<div class="faint">since ${esc(whenWords(e.at))}</div>` : ''}
+      ${e.detail ? `<div class="faint">${esc(e.detail)}</div>` : ''}
+      <button class="btn sm ghost auto-ack" ${busy ? 'disabled' : ''}>Acknowledge</button>
+    </div>`).join('')}
+    <p class="note faint">Acknowledging clears the alert, not the cause. If the problem is still there the
+      next sweep raises it again.</p>
+  </div>`;
+}
+
+/**
+ * R16.7 — has the sweep been running at all?
+ *
+ * The worker rows above say what is wrong now. On their own they cannot tell
+ * "the sweep ran and found nothing" from "the sweep has not run since Tuesday",
+ * and those call for opposite responses — the first is good news, the second
+ * means none of the other reassurance on this screen is current.
+ */
+export function renderSweeps(sweeps, health) {
+  // `sweepHistory()` answers `{ ok, sweeps: [...] }` and `sweepHealth()` answers
+  // `{ ok, everRan, lastAt, ageMs, note }` — staleness is `ok === false`, with
+  // the explanation in `note`. Read from the real shapes rather than a guessed
+  // one, and tolerate an array in case a caller passes the list directly.
+  const runs = Array.isArray(sweeps) ? sweeps : (sweeps?.sweeps || sweeps?.runs || null);
+  if (!runs && !health) return '';
+  const stale = !!health && health.ok === false;
+  const count = (r, ...keys) => {
+    for (const k of keys) {
+      const v = r?.[k];
+      if (Array.isArray(v)) return v.length;
+      if (Number.isFinite(Number(v))) return Number(v);
+    }
+    return 0;
+  };
+  return `<details class="auto-sweeps"${stale ? ' open' : ''}>
+    <summary>Recovery sweeps${stale ? ' — not running' : ''}</summary>
+    <div class="auto-sweeps-in">
+      ${stale
+    ? `<div class="note warn"><b>The sweep has not run recently.</b> ${esc(health.note || '')}.
+         Nothing else on this screen can be trusted as current while this is true — an absent sweep
+         finds nothing, which looks exactly like a sweep that found nothing wrong.</div>`
+    : '<div class="note">The sweep is running on schedule.</div>'}
+      ${runs?.length
+    ? `<ul class="auto-sweep-list">${runs.slice(0, 10).map((r) => {
+      const f = count(r, 'findings', 'ids');
+      const e = count(r, 'escalated');
+      const a = count(r, 'acted', 'actions');
+      return `<li>${esc(whenWords(r.at))} — ${f} finding${f === 1 ? '' : 's'}${
+        e ? `, ${e} escalated` : ''}${a ? `, ${a} fixed` : ''}</li>`;
+    }).join('')}</ul>`
+    : '<p class="note faint">No sweep has been recorded yet.</p>'}
+    </div>
+  </details>`;
 }
 
 /**
@@ -170,6 +241,13 @@ export function wireAutomation(root, handlers = {}) {
     }
     if (t.closest('#autoResume')) {
       if (typeof handlers.resume === 'function') handlers.resume();
+      return;
+    }
+    // R16.6 — acknowledging a raised escalation.
+    const ack = t.closest('.auto-ack');
+    if (ack) {
+      const row = ack.closest('[data-esc]');
+      if (row && typeof handlers.acknowledge === 'function') handlers.acknowledge(row.getAttribute('data-esc'));
       return;
     }
     if (t.closest('[data-retry="automation"]')) {

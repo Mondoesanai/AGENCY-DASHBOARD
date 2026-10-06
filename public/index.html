@@ -289,6 +289,17 @@
   .cs-perm-in input{background:var(--surface2);border:1px solid var(--line-strong);border-radius:9px;padding:9px 10px;color:var(--ink);font:inherit;min-width:0;}
   .cs-perm-in input:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
   .cs-perm-in .btn{justify-self:start;}
+  /* R16.6/R16.7 — raised alerts you can put down, and whether the sweep ran. */
+  .auto-esc{border:1px solid var(--warn);border-radius:11px;padding:11px 12px;margin:10px 0;background:var(--surface2);}
+  .auto-esc h4{margin:0 0 8px;font:600 13px/1.4 "Inter",system-ui,sans-serif;color:var(--warn);}
+  .auto-esc-row{border-top:1px solid var(--line);padding:9px 0;font-size:13px;}
+  .auto-esc-row:first-of-type{border-top:0;}
+  .auto-esc-row .btn{margin-top:6px;}
+  .auto-sweeps{margin:10px 0;border:1px solid var(--line);border-radius:11px;background:var(--surface2);}
+  .auto-sweeps>summary{cursor:pointer;padding:10px 12px;font-size:13px;font-weight:600;}
+  .auto-sweeps>summary:focus-visible{outline:2px solid var(--focus);outline-offset:-2px;border-radius:11px;}
+  .auto-sweeps-in{padding:0 12px 12px;}
+  .auto-sweep-list{margin:8px 0 0;padding-left:18px;font-size:12.5px;color:var(--muted);line-height:1.8;}
   .acq-draft{border-top:1px solid var(--line);margin-top:10px;padding-top:10px;}
   .acq-pre{white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px;margin:6px 0;overflow-x:auto;}
   .acq-pre.quoted{border-left:3px solid var(--green);color:var(--muted);}
@@ -3297,6 +3308,15 @@ function renderAutomationPanel(){
     pause:()=>setAutomationPaused(true),
     resume:()=>setAutomationPaused(false),
     retry:()=>loadAutomation(),
+    // R16.6 — clears the alert, not the cause. Said in the confirm so nobody
+    // acknowledges a problem thinking they have fixed it.
+    acknowledge:async (id)=>{
+      if(!id) return;
+      if(!confirm('Acknowledge this alert?\n\nIt clears the alert, not the cause. If the problem is still there the next sweep will raise it again.')) return;
+      const out=await acqApi('recovery-ack',{id});
+      toast(out&&out.ok?'Acknowledged.':'Could not acknowledge.',out&&out.ok?'':'err');
+      loadAutomation();
+    },
   });
 }
 

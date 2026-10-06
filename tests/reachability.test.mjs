@@ -61,6 +61,8 @@ const list = (dir, ext) => fs.readdirSync(path.join(ROOT, dir)).filter((f) => f.
 //          consequence is stated, not softened.
 // OWNER  — a real capability with no screen pointing at it yet. Reachable the
 //          moment a caller is added; harmless until then.
+// TOOL   — a build or test-time gate. Having no production caller is its
+//          CORRECT state, not a defect, so it is never asked what would wire it.
 // INTERNAL — a helper or constant kept for the module's own readers.
 // ---------------------------------------------------------------------------
 const ALLOWED = {
@@ -124,20 +126,22 @@ const ALLOWED = {
 
   // --- GAP: unwired, and something is worse for it ------------------------
   'lib/contrast.js': {
-    cls: 'GAP',
+    cls: 'TOOL',
     module: true,
-    why: 'The WCAG contrast checker. No api/ entry imports it, so the colour tokens it was written to police are never actually checked. '
-      + 'Consequence: a future token change can drop below 4.5:1 and nothing notices. It is still exercised by its own tests, which is why it reads as finished.',
-    wiredBy: 'a build or test step that reads public/ tokens; it needs no runtime caller',
+    why: 'The WCAG contrast checker, and correctly never reachable from production — it is a gate, not a feature. '
+      + 'R16.9 first recorded this as a GAP on the reasoning that "the tokens it polices are never actually checked". '
+      + 'That was wrong: tests/contrast.test.mjs reads the real token values out of public/index.html and does the '
+      + 'arithmetic on every run. Verified by negative control — setting --muted to #1b231f turns 3 checks red at '
+      + '1.01:1. Having no runtime caller is the correct state for this module, so there is nothing to wire.',
   },
-  'lib/recovery.js:sweepHistory': { cls: 'GAP', why: 'The record of past sweeps. Unwired, so the Checks panel shows the latest sweep but not whether sweeps have been running.', wiredBy: 'a history row on the Checks panel' },
-  'lib/recovery.js:clearEscalation': { cls: 'GAP', why: 'Clears a raised escalation. With no caller an escalation can be raised but never lowered from the UI.', wiredBy: 'an acknowledge button' },
-  'lib/jobs.js:enqueue': { cls: 'GAP', why: 'The generic job queue. Everything schedules through the daily cron instead, so this is a second mechanism with no users.', wiredBy: 'nothing planned; a candidate for deletion' },
-  'lib/suggestions.js:clientSuggestions': {
-    cls: 'GAP',
-    why: 'A back-compat alias for `clientActions` with no importers left — its last mention anywhere is inside a comment in lib/email.js. '
-      + 'Consequence is small but real: two names for one function invite a future edit to the wrong one.',
-    wiredBy: 'nothing. Delete the alias and the stale comment; `clientActions` is the live name',
+  'lib/jobs.js:enqueue': {
+    cls: 'HELD',
+    why: 'R16.10 first recorded this as "a second scheduling mechanism with no users", and that was wrong. '
+      + 'lib/jobs.js is the durable queue and most of it IS in use — listJobs, cancelJob, queueHealth, drain and '
+      + 'replayDead all have production callers, and the recovery sweep reads it every run. Only the PRODUCER has '
+      + 'none, so the queue is correctly managed and always empty. Its one producer is the campaign send path, '
+      + 'which is held, so this is held with it rather than being dead code to delete.',
+    wiredBy: 'the first real campaign send — the same thing that wires guardedSend',
   },
 
   // --- OWNER: a real capability with no screen pointing at it yet ---------
@@ -310,7 +314,7 @@ for (const o of orphans) {
 
 section('R3  every recorded reason says enough to act on');
 for (const [key, e] of Object.entries(ALLOWED)) {
-  check(`${key} has a class`, ['HELD', 'GAP', 'OWNER', 'INTERNAL'].includes(e.cls), e.cls);
+  check(`${key} has a class`, ['HELD', 'GAP', 'OWNER', 'INTERNAL', 'TOOL'].includes(e.cls), e.cls);
   check(`${key} explains itself in a sentence, not a word`, (e.why || '').length > 30, e.why);
   // The two classes that describe something temporary must say what ends it.
   if (e.cls === 'HELD' || e.cls === 'GAP') {
@@ -375,7 +379,13 @@ const byClass = (c) => Object.values(ALLOWED).filter((e) => e.cls === c).length;
 check('the audit covered every lib module', libFiles.length > 80, `${libFiles.length} modules`);
 check('the orphan set is fully accounted for', orphans.every((o) => !!ALLOWED[o.key]),
   `${orphans.filter((o) => !ALLOWED[o.key]).length} unaccounted`);
-check('the gaps are written down rather than rounded off', byClass('GAP') >= 1, `${byClass('GAP')} GAP entries`);
+// Written as "every gap carries its consequence", not "there is at least one
+// gap". The first version demanded a minimum of one, which was true when ten
+// existed and became a failure the moment the last was closed — a check that
+// punishes finishing the work is a check pointing the wrong way.
+check('every remaining gap states its consequence and what would close it',
+  Object.values(ALLOWED).filter((e) => e.cls === 'GAP').every((e) => e.why?.length > 30 && e.wiredBy),
+  `${byClass('GAP')} GAP entries`);
 check('held-back work names its unblocking condition',
   Object.values(ALLOWED).filter((e) => e.cls === 'HELD').every((e) => e.wiredBy),
   `${byClass('HELD')} HELD entries`);

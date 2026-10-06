@@ -85,7 +85,20 @@ export default async function handler(req, res) {
   // anyone who has not unlocked. PAUSING, which changes behaviour, is gated.
   if (req.query.do === 'automation-status') {
     const { automationStatus } = await import('../lib/heartbeat.js');
-    return res.status(200).json({ ok: true, automation: await automationStatus() });
+    const automation = await automationStatus();
+    // R16.6/R16.7 — raised alerts and the sweep's own history. Without these the
+    // panel can say every worker looks fine while the sweep that would have
+    // noticed otherwise has not run for days, and an alert raised last week has
+    // no way to be put down.
+    try {
+      const { sweepHistory, sweepHealth, listEscalations } = await import('../lib/recovery.js');
+      automation.sweeps = await sweepHistory({ limit: 10 }).catch(() => null);
+      automation.sweepHealth = await sweepHealth({}).catch(() => null);
+      if (typeof listEscalations === 'function') {
+        automation.escalations = await listEscalations().catch(() => []);
+      }
+    } catch { /* the worker rows above stand on their own */ }
+    return res.status(200).json({ ok: true, automation });
   }
   // GitHub throttles scheduled workflows hard (a "every 10 min" job actually
   // ran every 4-6 hours), so the automation can't depend on one scheduler.
@@ -251,8 +264,32 @@ export default async function handler(req, res) {
     // `diagnose` looks and changes nothing, so the dashboard can call it on
     // every load. `recover` acts, and is reached by the independent scheduler.
     case 'recovery-diagnose': {
-      const { diagnose } = await import('../lib/recovery.js');
-      return res.status(200).json(await diagnose({}));
+      const { diagnose, sweepHistory, sweepHealth } = await import('../lib/recovery.js');
+      const out = await diagnose({});
+      // R16.7 — the diagnosis says what is wrong NOW. On its own that cannot
+      // distinguish "the sweep ran and found nothing" from "the sweep has not
+      // run for three days", and those need opposite responses. The history and
+      // the staleness check are what tell them apart.
+      return res.status(200).json({
+        ...out,
+        sweeps: await sweepHistory({ limit: 10 }).catch(() => null),
+        sweepHealth: await sweepHealth({}).catch(() => null),
+      });
+    }
+    // R16.6 — an escalation that can be raised but never lowered teaches the
+    // owner to ignore the whole alert area, which defeats every other alert in
+    // it. Acknowledging is an owner action and is recorded as one.
+    case 'recovery-ack': {
+      if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      if (!body.id) return res.status(400).json({ ok: false, error: 'which escalation?' });
+      const { clearEscalation } = await import('../lib/recovery.js');
+      const out = await clearEscalation(body.id);
+      return res.status(200).json({
+        ...out,
+        note: 'Acknowledged. If the underlying problem is still there, the next sweep will raise it again — '
+          + 'this clears the alert, not the cause.',
+      });
     }
     case 'recovery-run': {
       const { recover } = await import('../lib/recovery.js');
