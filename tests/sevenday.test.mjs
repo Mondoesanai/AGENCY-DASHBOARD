@@ -68,7 +68,9 @@ for (let i = 0; i < PEOPLE; i++) {
 
 const made = await createCampaign({ name: 'Simulated week', type: CAMPAIGN_TYPES.COLD_NO_SITE });
 const campaignId = made.ok && made.campaign.id;
-const enrolled = await enrolProspects(campaignId, Array.from({ length: PEOPLE }, (_, i) => `sim-${i}`));
+// anchored to the simulated start, not the real clock — otherwise the plan is
+// scheduled from whenever the suite happens to run and the week drifts past it
+const enrolled = await enrolProspects(campaignId, Array.from({ length: PEOPLE }, (_, i) => `sim-${i}`), { startAt: START });
 await setCampaignStatus(campaignId, 'running');
 
 const contactIds = (enrolled.enrolledDetail || []).map((e) => e.contactId);

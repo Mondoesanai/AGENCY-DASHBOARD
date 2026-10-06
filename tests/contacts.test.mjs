@@ -12,12 +12,12 @@ const E = (v, c = 1) => field(v, { confidence: c, source: 'manual' });
 section('C1  normalisation decides what counts as a duplicate');
 check('gmail dots and +tags collapse', normEmail('First.Last+leads@Gmail.com') === 'firstlast@gmail.com');
 check('other providers keep their dots (different mailboxes)', normEmail('first.last@acme.com') === 'first.last@acme.com');
-check('a display-name header is unwrapped', normEmail('Angie May <Angie@OMT.com>') === 'angie@omt.com');
+check('a display-name header is unwrapped', normEmail('Angie May <Angie@OMT.test>') === 'angie@omt.test');
 check('nonsense is rejected rather than stored', normEmail('not an email') === '' && normEmail('') === '');
 check('10-digit US number becomes E.164', normPhone('(972) 555-0199') === '+19725550199');
 check('already-E.164 is left alone', normPhone('+19725550199') === '+19725550199');
 check('a too-short number is refused, not padded', normPhone('555-0199') === '');
-check('domain strips scheme/www/path', normDomain('https://www.OMTServices.com/services.html') === 'omtservices.com');
+check('domain strips scheme/www/path', normDomain('https://www.OMTServices.test/services.html') === 'omtservices.test');
 check('free-mail hosts are not business domains', normDomain('gmail.com') === '' && normDomain('yahoo.co.uk') === '');
 
 section('C2  a field never silently invents data, and low confidence is flagged');
@@ -59,12 +59,12 @@ const landline = { id: 's3', phone: E('+19728675303'), phoneType: 'landline', co
 check('a landline is refused even with consent', (await canContact(landline, { channel: 'sms', purpose: 'promotional' })).ok === false);
 
 section('C6  dedup: exact match merges, same-business does NOT');
-const a = await upsertContact({ source: 'business_card', name: E('Angie May'), businessName: E('OMT Services'), email: E('angie@omtservices.com'), phone: E('(972) 555-0150'), website: E('https://www.omtservices.com') });
+const a = await upsertContact({ source: 'business_card', name: E('Angie May'), businessName: E('OMT Services'), email: E('angie@omtservices.test'), phone: E('(972) 555-0150'), website: E('https://www.omtservices.test') });
 check('first contact is created', a.action === 'created');
-const again = await upsertContact({ source: 'csv_import', name: E('Angelete May'), email: E('Angie@OMTServices.com'), role: E('Owner') });
+const again = await upsertContact({ source: 'csv_import', name: E('Angelete May'), email: E('Angie@OMTServices.test'), role: E('Owner') });
 check('same email merges instead of duplicating', again.action === 'merged' && again.matchedId === a.contact.id, again.action);
 check('merge fills in a field we did not have', again.contact.role?.value === 'Owner');
-const colleague = await upsertContact({ source: 'csv_import', name: E('Different Person'), businessName: E('OMT Services'), email: E('bob@omtservices.com') });
+const colleague = await upsertContact({ source: 'csv_import', name: E('Different Person'), businessName: E('OMT Services'), email: E('bob@omtservices.test') });
 check('a colleague at the same business is NOT merged into her record', colleague.action === 'created' && colleague.contact.id !== a.contact.id, colleague.action);
 const samePhone = await upsertContact({ source: 'manual', name: E('A M'), phone: E('972-555-0150') });
 check('same phone, different name → held for review, never auto-merged', samePhone.action === 'review' && samePhone.candidates.includes(a.contact.id), samePhone.action);
@@ -110,9 +110,9 @@ section('C10  listing and indexes');
 const l = await listContacts({ limit: 100 });
 check('contacts are listed', l.total >= 4 && l.contacts.length >= 4, String(l.total));
 check('deleted contacts are excluded', !l.contacts.some((c) => c.id === d.contact.id));
-const dupes = await findDuplicates({ email: 'angie@omtservices.com' });
+const dupes = await findDuplicates({ email: 'angie@omtservices.test' });
 check('lookup by email finds the right record', dupes.some((x) => x.contact.id === a.contact.id && x.certainty === 'exact'));
-const byDomain = await findDuplicates({ website: 'omtservices.com' });
+const byDomain = await findDuplicates({ website: 'omtservices.test' });
 check('lookup by domain finds everyone at that business', byDomain.length >= 2 && byDomain.every((x) => x.certainty === 'same_business' || x.certainty === 'exact'), String(byDomain.length));
 
 section('C11  budget-style atomic reservation (store.reserve) is concurrency safe');
