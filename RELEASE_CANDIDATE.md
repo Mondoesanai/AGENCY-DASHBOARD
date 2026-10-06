@@ -1,144 +1,128 @@
 # Release candidate — 2026-10-06
 
-**Commit:** `HEAD` of `main`, 98 commits ahead of `origin/main`.
 **Rollback target:** `30bf2d0` — the commit currently live in production.
-**Status: NOT deployed.** The production hold stands and `outreach.active` is `false`.
+**Status: NOT deployed.** All work is local. `outreach.active` is `false`.
 
-**154 tracked requirements `[x]`, 0 open.**
-**6197 checks across 100 test files, 0 failing, 0 crashed.**
-**10 of 14 user journeys demonstrated end to end; 4 stop at a service that is not connected.**
+**162 tracked requirements, 0 open · 6501 checks across 106 test files, 0 failing.**
 
 ---
 
-## WHAT HAS NOT BEEN PROVEN
+# THE FOUR GATES
 
-Read this before anything else.
+These are separate questions. Passing the first does not advance the others, and
+**no combination of the first two makes the system live.**
 
-Every check in this build is one of two kinds, and **neither proves the product
-works with a real provider**:
+## GATE 1 — Code verified locally ✅ PASSED
 
-* **Local browser checks.** A real Chrome, driving the real page, against
-  `preview.mjs` — an in-memory store with invented data. They prove the screens
-  render, forms submit, refusals appear and nothing throws.
-* **Fixture provider checks.** The real modules driven to the exact HTTP request
-  a provider would receive, with the provider replaced. They prove we would send
-  the right request and would handle the documented response.
+What was actually exercised, and how.
 
-**Specifically unproven:**
-
-| Not proven | What would prove it |
-|---|---|
-| A real Twilio **send** | A text arriving on a designated handset |
-| A real **delivery callback** | That send moving `accepted` → `delivered` from Twilio's webhook |
-| A real **inbound reply** | Texting back and seeing it in Conversations |
-| A real **STOP** | Texting STOP and seeing the number suppressed |
-| A real **Calendly booking** | Booking a slot and seeing a verified meeting |
-
-No text has been sent. No outreach has gone out. Nothing has been deployed.
-**This is not a live-ready system; it is a candidate that has passed local checks.**
-
----
-
-## DEPLOYMENT PATH — VERIFIED, NOT ASSUMED
-
-| Question | Answer | How it was established |
+| Area | Evidence | Kind |
 |---|---|---|
-| Is the repository public? | **YES — public** | Unauthenticated `GET api.github.com/repos/Mondoesanai/AGENCY-DASHBOARD` → 200, `"private": false` |
-| Does pushing trigger production? | **YES** | `.vercel/project.json` links `prj_WbIraHjIN…`; prior `vercel[bot]` deployment records on push to `main` |
-| Does Preview share production KV? | **YES** | `vercel env ls`: `KV_URL`, `REDIS_URL`, `KV_REST_API_URL`, `KV_REST_API_TOKEN`, `KV_REST_API_READ_ONLY_TOKEN` all scoped **Production, Preview** |
-| Is the admin surface open on Preview? | **No** | `CRON_SECRET` is **Production-only**, so Preview is `authMode() === 'locked'` and every admin request is refused |
-| Could `auto-poke` run before auth? | **It could — now fixed** | It sits above the auth gate by design. Combined with shared KV that meant any preview deployment could run the real tick against **live data** and spend Preview-scoped `DATAFORSEO_*` credits. It now refuses unless `VERCEL_ENV === 'production'` |
+| Six owner journeys end to end | `owner-journeys.test.mjs` — real `api/` over a socket, each with a negative control | API |
+| Public opt-in under every ordering | `optin-ordering.test.mjs`, `optin-confirm.test.mjs` | API + browser |
+| Release gate on the real entry points | `release-gate.test.mjs` — auth in all three deployment modes, webhook forgery/tamper/replay, suppression in both key formats, duplicate events, budget refusal before the provider is called, lease recovery | API |
+| Preview isolation | `preview-guard.test.mjs` — every handler guarded, verified in production / preview / local | API |
+| Worker health and the answering view | `worker-health.test.mjs` | API + browser |
+| Public-repository exposure | `secret-scan.test.mjs`, plus real `git commit` controls | git |
+| Rollback compatibility | `rollback-safety.test.mjs` — reads `30bf2d0` out of git and compares | git |
+| Screens at 1440×900 and 390×844 | opt-in page, Settings, Today, automation answer panel | real Chrome |
 
-**Still true and not fixable in code:** Preview writes to the production database
-for anything that does reach the store. The durable fix is a separate Preview KV,
-which is an owner action in Vercel.
+**What this gate does NOT cover:** any real provider. See Gate 3.
 
----
+## GATE 2 — Configuration pending ⬜ NOT STARTED
 
-## THE RELEASE SEQUENCE — DO NOT RUN THIS YET
+Each is an owner action. Nothing in code can complete them.
 
-Written to be followed exactly. Steps 1–3 are decisions, not commands.
+| # | Item | Unblocks | Observable proof |
+|---|---|---|---|
+| 1 | Business identity + postal address | all email; the invitation refuses to compose without it | People screen stops saying "set both in Settings first" |
+| 2 | Spending limit | nothing — but every later step spends | panel says the limit is applied |
+| 3 | **Isolated Preview KV** + `PREVIEW_KV_ISOLATED=1` | any use of a preview deployment | a preview URL answers instead of 503 |
+| 4 | **Repository visibility decision** | nothing technical; it is a disclosure decision | see `REPO_EXPOSURE.md` |
+| 5 | `PUBLIC_BASE_URL` | delivery receipts | set; proven at Gate 3 |
+| 6 | Sender domain (Resend) | client reports, the preview invitation | Settings shows Email connected; a report arrives |
+| 7 | Twilio number + **A2P 10DLC campaign** | all texting | Settings shows Text connected; campaign approved |
+| 8 | Calendly + `CALENDLY_WEBHOOK_KEY` | meetings; the weekly target has no input without it | a slot you book appears as **verified** |
+| 9 | Search credentials | asset research stops reporting `needs-search` | lookups return results |
 
-1. **Decide the repository.** Pushing publishes 98 commits to a **public** repo.
-   `tests/public-repo.test.mjs` now scans every fixture for a real address,
-   number or credential shape, and this pass moved a real client's domain
-   (`omtservices.com`) and several resolving domains to reserved ones. That scan
-   is a floor, not a guarantee. **Either make the repo private first, or accept
-   publication knowingly.**
-2. **Decide the Preview environment.** Until Preview has its own KV, every
-   preview deployment reads and writes production data. Either give Preview its
-   own store or accept that previews touch live records.
-3. **Confirm the hold.** `outreach.active` must still be `false` and automation
-   unpaused-or-paused deliberately, not by accident.
-4. **Tag the rollback point.** `git tag pre-r17 30bf2d0` so the target is named
-   rather than remembered.
-5. **Push.** `git push origin main`. This triggers a production deployment.
-6. **Watch the deployment**, then check `/api/admin?do=automation-status` — it is
-   public and reports the heartbeat without a secret.
-7. **Verify auth is enforced, not locked.** `GET /api/admin?do=budget-status`
-   with no secret must return 401 naming `CRON_SECRET`. With the secret it must
-   return 200. If it names a missing `CRON_SECRET`, production has no secret and
-   the dashboard is correctly locked — set it before anything else.
-8. **Walk the five everyday screens** in a browser before touching any setting.
-9. **Only then** begin the owner setup below.
+## GATE 3 — Live proof pending ⬜ NOT STARTED
 
-### Rollback limits
+**This gate is why nothing above may be called working.** Every provider check in
+this build is a fixture: the real modules driven to the exact HTTP request a
+provider would receive, with the provider replaced.
 
-`git revert` to `30bf2d0` restores the **code**. It does not restore data, and
-three things written by this build are read differently by the old code:
-
-| Written now | What `30bf2d0` does with it |
-|---|---|
-| `suppress:phone:<E.164>` | The old code reads a digits-only key for some paths — **a suppression could stop matching.** This is the one that can cause real harm |
-| `budget:res:*` reservations | Unknown to it; harmless, but the ledger will diverge |
-| `optin:pending:*`, new consent sources | Unknown; a pending opt-in would be invisible, and promotional consent recorded here reads as an ordinary consent entry |
-
-**So a rollback is code-only and one-way in practice.** If it is ever needed,
-do not also roll back the data, and re-check suppression behaviour immediately.
-
----
-
-## OWNER SETUP — the shortest sequence that works
-
-Each step: **who acts**, what stays disconnected until it is done, and the
-**observable proof**. Nothing earlier depends on anything later.
-
-| # | Step | Who acts | Disconnected until done | Observable proof |
-|---|---|---|---|---|
-| 1 | **Business identity + postal address** — Settings | Owner, in the dashboard | All email. The invitation path refuses to compose without a postal address (CAN-SPAM) | People screen stops showing "set both in Settings first"; invitations become sendable |
-| 2 | **Spending limit** — Settings → Spending | Owner, in the dashboard | Nothing — but every later step spends | Panel says the limit is applied and shows it in the table |
-| 3 | **`PUBLIC_BASE_URL`** — Vercel | Owner, in Vercel | Delivery receipts. The status-callback URL is attached at send time | Set. Read at send time; proof arrives at step 6 |
-| 4 | **Email sending domain** — Resend: verify the domain, set `RESEND_API_KEY` + `REPORT_FROM` | Owner, at Resend + Vercel | Client reports and the preview invitation | Settings → "Is each service connected?" shows Email (Resend) set up; a report email arrives |
-| 5 | **Search** — `BRAVE_SEARCH_API_KEY` | Owner, in Vercel | Asset research; it reports `needs-search` without it | Asset lookups stop returning `needs-search` |
-| 6 | **SMS number + A2P campaign** — a **dedicated** outreach number, separate from owner alerts; `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_SMS_FROM`; then register brand + campaign | Owner at Twilio; **carriers decide**, takes days | All texting | Settings shows Text messages set up; the campaign shows approved |
-| 7 | **Publish the opt-in** — put `/optin` behind a QR code; publish keyword `PREVIEW` with the terms wherever the call-to-action appears | Owner | Nothing technical — but it is the only lawful source of promotional consent | Scanning the code loads the page; a test number reaches "One more step" |
-| 8 | **Designated-handset round trip** — the eight checks below | Owner, with a phone they control | **"SMS works" is not a true statement until this passes** | See below |
-| 9 | **Calendly** — connect in Settings, `CALENDLY_WEBHOOK_KEY`, webhook → `/api/collect?hook=booking` | Owner at Calendly + Vercel | Meetings; the six-a-week target has no input | Booking a slot yourself appears as a **verified** meeting and the target moves |
-
-### Step 8 in full — the round trip
-
-With outreach still **off** for everyone else:
+With a designated handset you control, outreach still off for everyone else:
 
 1. Text `PREVIEW` to the outreach number from the handset.
-2. The dashboard records **promotional** consent with that message as evidence.
-3. Turn outreach on. Compose and send one text to that handset.
-4. The text **arrives**.
-5. It moves `accepted` → `delivered` on the dashboard.
+2. The dashboard records **promotional** consent, citing that message.
+3. Turn outreach on. Send one text to that handset.
+4. **It arrives.**
+5. It moves `accepted` → `delivered` from Twilio's own callback.
 6. Reply from the handset; the reply appears and the conversation pauses.
 7. Text `STOP`; the number is suppressed and a further send is refused.
-8. Book a Calendly slot; it appears as a verified meeting.
+8. Book a Calendly slot; it appears as a verified meeting. Cancel it; the result changes.
 
-**Only after all eight does "SMS works" become true.**
+**Not proven until all eight pass:** a real Twilio send, a real delivery callback,
+a real inbound reply, a real STOP, a real booking, a real cancellation.
+**No text has been sent to anyone.**
 
-### Still disconnected, and by whom
+## GATE 4 — Production activation pending ⬜ NOT STARTED
 
-| Item | Blocked by | Owner action? |
-|---|---|---|
-| Real send, delivery, inbound, STOP | Twilio account + 10DLC **carrier** approval | Owner starts it; carriers decide |
-| Real bookings | Calendly connection | Owner |
-| Phone line-type lookup | A paid provider — not authorised | Owner's decision; eligibility stays documented-consent-only without it |
-| Deliverability figures | Having sent anything to measure | Follows from step 8 |
-| A/B findings | Enough observed outcomes; the holdout rules refuse below the floor | Time |
+Owner review, after Gate 3:
+
+* the metrics and what each one counts (`?do=metric-definitions`)
+* the spending limit, and the caps that only warn
+* the exact message samples that would go out
+* the pause control, tested once
+* a **narrow first campaign** — a handful of people, not a list
+
+---
+
+# ROLLBACK — reviewed against the records, not assumed
+
+`rollback-safety.test.mjs` reads `30bf2d0` out of git on every run, so this stays
+true as the code moves rather than freezing today's answer into prose.
+
+| Record | Written now | What `30bf2d0` does | Risk |
+|---|---|---|---|
+| `suppress:phone:<E.164>` | yes | **reads it with a byte-identical `normPhone`** | **none** |
+| `suppress:email:<norm>` | yes | identical | none |
+| `consentLog` entries | new sources, wording versions | **byte-identical `effectiveConsent`, same four scopes**; unknown fields ignored | none — scope and withdrawals honoured |
+| `optin:pending:*` | yes | unknown to it | none — it grants nothing, so ignoring it contacts nobody |
+| `budget:res:*`, `spend:job:*` | yes | unknown; it has no spend cap at all | ledger diverges, nothing unsafe |
+| `recovery:escalated:all` | yes | unknown | an alert is not shown; no suppression is lost |
+
+**The revert removes rather than loosens.** `lib/phone.js`, `sms-outreach.js`,
+`sms-send.js`, `optin.js` and `optin-public.js` **do not exist** at `30bf2d0`, so
+a revert removes the ability to text at all.
+
+### The one real caveat
+
+**Revert to the named target, not to "something older".** `f05673c` is a middle
+commit where the inbound SMS webhook had no signature check — reverting there
+would reintroduce a fixed hole. The test asserts that commit really is in that
+state, so this is not a hypothetical.
+
+### A code-only revert is not a full rollback
+
+The code goes back; the data stays. Consent records, suppressions, reservations
+and pending opt-ins written under this build remain in KV. The analysis above
+says that is safe for `30bf2d0` specifically — **do not also roll back the data**,
+and re-check suppression behaviour immediately after.
+
+### If a revert is not safe enough — emergency stop, forward fix
+
+Faster than a revert and it loses nothing:
+
+1. **Pause automation** — `?do=automation-pause`. Stops new site work and
+   outreach sending; replies, opt-outs, client reports and billing continue.
+2. **Switch outreach off** — `outreach.active = false`. Nothing composes or sends.
+3. **Unset `TWILIO_AUTH_TOKEN`** in Vercel if the inbound path is implicated: the
+   webhook then fails closed and refuses every inbound message.
+4. Fix forward on a branch, verify locally, deploy.
+
+Steps 1–3 take effect on the next request, need no deployment, and leave every
+consent record and suppression intact.
 
 ---
 
