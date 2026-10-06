@@ -250,6 +250,52 @@ check('and it is NOT a granted promotional consent',
 check('booking did not depend on it', withSms.state === REQUEST_STATE.CALL_REQUESTED,
   'the SMS answer must not change whether the request goes through');
 
+section('P8c2  a failed booking KEEPS the request');
+// The calendar refusing is our problem, not theirs, and they have already typed
+// everything we need. Discarding it would make a person who wanted a preview
+// find the page again and start over, because of a failure on our side.
+// Driven through the REAL Google adapter rather than a stubbed scheduler: the
+// credentials are present so it is genuinely connected, and only the network
+// is faked. The token call succeeds and free/busy fails, which is the adapter's
+// generic refusal — neither "taken" nor "uncertain", both handled above.
+const savedEnv = {
+  id: process.env.GOOGLE_CLIENT_ID, secret: process.env.GOOGLE_CLIENT_SECRET, refresh: process.env.GOOGLE_REFRESH_TOKEN,
+};
+process.env.GOOGLE_CLIENT_ID = 'fake-id';
+process.env.GOOGLE_CLIENT_SECRET = 'fake-secret';
+process.env.GOOGLE_REFRESH_TOKEN = 'fake-refresh';
+const savedFetch = globalThis.fetch;
+globalThis.fetch = async (url) => {
+  const u = String(url);
+  if (/oauth2/.test(u)) {
+    const body = { access_token: 'fake-token', expires_in: 3600 };
+    return { ok: true, status: 200, json: async () => body, text: async () => JSON.stringify(body) };
+  }
+  // free/busy is down, so the slot cannot be re-checked and nothing is booked
+  return { ok: false, status: 503, json: async () => ({}), text: async () => 'unavailable' };
+};
+const failed = await submitRequest({
+  name: 'Kit Example', businessName: 'Kit Cabinets', email: 'kit@example.test',
+  phone: '+15557770177', timezone: 'America/Chicago',
+  startAt: Date.now() + 5 * 86400e3, minutes: 30, willAttend: true,
+});
+globalThis.fetch = savedFetch;
+if (savedEnv.id === undefined) delete process.env.GOOGLE_CLIENT_ID; else process.env.GOOGLE_CLIENT_ID = savedEnv.id;
+if (savedEnv.secret === undefined) delete process.env.GOOGLE_CLIENT_SECRET; else process.env.GOOGLE_CLIENT_SECRET = savedEnv.secret;
+if (savedEnv.refresh === undefined) delete process.env.GOOGLE_REFRESH_TOKEN; else process.env.GOOGLE_REFRESH_TOKEN = savedEnv.refresh;
+
+check('the request is NOT thrown away', failed.ok === true, JSON.stringify(failed).slice(0, 220));
+check('a contact was still created', !!failed.contactId);
+check('and a preview task was still created', !!failed.previewTaskId,
+  'the work they asked for is the point; the calendar is an implementation detail to them');
+check('but it is a call request, not a confirmed appointment',
+  failed.state === REQUEST_STATE.CALL_REQUESTED && failed.booking === null);
+check('the failure is named for the owner', !!failed.bookingFailed, String(failed.bookingFailed));
+check('and the message tells them plainly it is not confirmed',
+  /NOT yet confirmed/.test(failed.message), failed.message);
+check('without claiming a time was booked',
+  !/confirmed\./i.test(failed.message.split('NOT')[0]), failed.message);
+
 section('P8d  the same submission twice is one submission');
 const first = await submitRequest({
   name: 'Robin Example', businessName: 'Robin Signs', email: 'robin@example.test',
@@ -374,7 +420,14 @@ check('and with nothing booked it says so outright',
   /NOT yet confirmed/.test(confirmationMessage(REQUEST_STATE.CALL_REQUESTED, SLOT_KIND.WALKTHROUGH)),
   'the kind must never upgrade a request into a confirmation');
 check('the confirmation is built by that one function, not inline',
-  /message: confirmationMessage\(/.test(requestSrc), 'lib/preview-request.js');
+  /confirmationMessage\(state, booking\?\.kind\)/.test(requestSrc), 'lib/preview-request.js');
+// Counted in CODE only. A comment quoting the sentence is documentation, not a
+// second place it can be produced — and an earlier version of this check read
+// its own prose and failed.
+const requestCode = requestSrc.split('\n').filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+check('and the walkthrough promise is produced in ONLY one place',
+  (requestCode.match(/ready to walk through/g) || []).length === 1,
+  'a second copy of that sentence is a second place it can be wrong');
 check('the page renders the same vocabulary',
   HTML.includes("s.kind === 'introductory'") && SLOT_KIND.INTRODUCTORY === 'introductory');
 check('every kind has a human label', Object.values(SLOT_KIND).every((k) => !!SLOT_KIND_LABEL[k]));

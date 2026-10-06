@@ -119,6 +119,12 @@ retry that creates a second appointment is worse than a slot briefly held.
 slot, in the calendar event and in the confirmation. It is not described as a
 preview walkthrough.
 
+**A failed booking keeps the request.** If the calendar refuses or will not
+answer, the contact, the consent choice and the preview task are all still
+created — they have already typed everything we need, and the failure is ours.
+What it does not become is a confirmed appointment: the page says the time is
+not confirmed and that we will email them.
+
 ---
 
 ## Preview production
@@ -177,7 +183,7 @@ Local tests and fixture providers do not prove any of this:
 - a real cold email send
 - a real person completing the form
 
-112 test files and 6,922 checks pass, and the page was driven in Chrome at
+112 test files and 6,930 checks pass, and the page was driven in Chrome at
 1280px and 390px with real mouse clicks against the real handlers. That is
 evidence the code behaves as described. It is not evidence that the
 integrations work.
