@@ -272,3 +272,15 @@ round's fix moved rather than closed.
 | R14.2 | When no source URL is on file, the organisation's official site and brand/usage terms are researched and identity verified before an asset is selected | Public availability is not permission. Ambiguity about identity, eligibility or rights is a question for the client, not a judgement call |
 | R14.3 | A dense chart on a phone is operable without hitting a 10px band, and its controls are not nested inside another control | `stopPropagation` hides a semantic nesting problem rather than fixing it |
 | R14.4 | The release trigger is established from the repository-to-host configuration itself | Version drift and stale responses establish difference, not cause |
+
+### Part 15 — A simpler CRM that books meetings (owner addendum, 2026-10-06)
+
+| Req | What it means | Notes |
+|---|---|---|
+| R15.1 | A discovered contact becomes textable only by asking them, in a way that is legal to send | The invitation is itself a marketing message, so it goes by email; a YES is a per-person record carrying the wording and their reply. An owner's blanket assertion is an attestation, not consent |
+| R15.2 | Email and SMS standing are shown separately, each with a reason and a next action | A contact marked emailable must never look SMS-eligible |
+| R15.3 | The interface answers five everyday questions in plain words | Provider diagnostics live behind an advanced view; a new employee needs no manual |
+| R15.4 | Competitor capabilities are read from current official docs and cited | Our improvements are hypotheses until measured |
+| R15.5 | The whole path from first message to a confirmed meeting works on fixtures | A meeting counts only when the scheduler confirms it |
+| R15.6 | A meetings-per-week target guides volume without overriding consent | Attended meetings are the outcome that matters, not bookings |
+| R15.7 | Every critical path has a real trigger, durable state and a visible outcome | The overnight failure pattern was a module with no caller |

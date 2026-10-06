@@ -291,11 +291,11 @@ replaces it.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 132 |
+| `[x]` built **and** verified | 133 |
 | `[b]` built, not verified | 0 |
-| `[~]` in progress | 0 |
+| `[~]` in progress | 1 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 0 |
+| `[ ]` not started | 5 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.
@@ -550,3 +550,33 @@ switch; an unproductive loop is not investigation.
 - **2026-10-06** — R13.9, and the first thing to fix was the claim itself. The plan recorded "11 of 14 demonstrated" and **the fourteen were never written down anywhere**, so neither the numerator nor the denominator could be checked by anyone. A requirement to demonstrate a set of journeys cannot be met without naming the set, so `lib/journeys.js` names all fourteen with per-journey evidence. Naming them immediately corrected the count: **four**, not three, end at a service we do not have — the old note predated the delivery-receipt path built earlier in this same session, which is also provider-dependent. So the honest figure went **down**, from a claimed 11 to a checked 10, and that is the point of writing it down. The four are not skipped. Each is driven as far as the boundary: J10 asserts the **exact HTTP request Twilio would receive** — endpoint, Basic auth, `To`, `From`, the actual words, and the `StatusCallback` — against an adapter that records instead of sending; J11 applies a signed carrier callback end to end through the real handler; J12 posts the carrier's own form payload through the real webhook and asserts STOP suppresses the number and that we do **not** text back; J14 verifies a correctly signed Calendly payload and refuses a tampered body and a week-old replay. So the untested step is the **service accepting it**, not our side of it, and the two are no longer conflated. The status lands in the Checks panel the owner already opens rather than in a document, reported as counts because "79% of journeys" invites rounding up where "10 demonstrated, 4 waiting on two accounts" says what to do. **Negative control: making the report claim 14/14 turns 6 checks red, including the Checks-panel line disappearing entirely.**
 
 - **2026-10-06** — R14.2, and the gap was not the decision logic. `asset-research.js` was written, tested and **unreachable**: it takes `search` and `fetchPage` as injected functions, nothing in the application ever supplied either, and every test passed by handing in its own fakes. So the official-source step could not run no matter how well it was covered — the same shape as the delivery receipt with no caller, and harder to see, because the injection that made it testable is exactly what hid the absence. `lib/search-adapter.js` is the missing half, built like the Twilio adapter: a real provider behind `configured()`, and a disconnected stand-in that explains itself. `researchTools()` returns **null** rather than a refusing function when there is no key, deliberately — the research checks `typeof search === 'function'` and reports `needs-search`, and "we looked and found nothing" would be a different and false claim. The recovery sweep now resolves the tools once per pass and reads the organisation off the client's card or out of the request text ("add the official CPD Standards Office accreditation logo" → "CPD Standards Office"), so a wrong guess costs a search rather than a wrong logo — the research's own identity check still has to accept it. A fetched page is stripped to text with script and style **contents removed rather than escaped**, because a brand page is somebody else's HTML and is data, not instructions. **Negative control: removing the wiring turns 2 checks red — the two that no amount of module-level testing would have caught.** Still blocked in practice: no `BRAVE_SEARCH_API_KEY` is set, so production reports that it cannot look. That is owner dependency 4 and it is the honest state, not a failure.
+
+---
+
+### Part 15 — A simpler CRM that books meetings (owner addendum, 2026-10-06, 08:18 CDT)
+
+Window: **10h, deadline 18:18 CDT 2026-10-06.** Release hold REMAINS. No push, no
+deploy, no real prospect outreach, no production client data changed. Use existing
+credits; no paid overages, no purchases.
+
+The product goal, in the owner's words: turn suitable business prospects into real
+conversations, complimentary website previews, and **attended meetings**. SMS matters
+greatly. The owner finds the current dashboard confusing.
+
+| Req | Task | Definition of done | State |
+|---|---|---|---|
+| R15.1 | Opt-in funnel: invite → YES → SMS eligible | The owner's own message ("we built you a preview, YES to see it, NO and we stop") goes by **email**, because the invitation IS the marketing message and cannot carry its own consent. A YES writes a per-person consent record with the wording and their reply as evidence. A NO suppresses both channels. A bulk owner assertion is stored as an **attestation** — who, when, basis — never as consent, and unlocks one message, never a sequence. | `[x]` |
+| R15.2 | Contact status the owner can read | Email and SMS stated **separately**, each with a plain label, a reason and a next action. A contact marked emailable must never look SMS-eligible. States: Email eligible · SMS eligible · permission needed · suppressed · unknown. | `[~]` model done in `lib/optin.js`; **not yet on screen** |
+| R15.3 | Five everyday questions drive the UI | Who needs me today · who can we contact and why · what messages/replies are happening · which meetings are booked/cancelled/missed · is automation healthy. Plain labels; provider diagnostics behind an advanced view. A new employee finds a contact, understands the next step, takes over a conversation and finds bookings without a manual. | `[ ]` |
+| R15.4 | Competitor read and the few changes we actually make | Current official docs for HighLevel, HubSpot, Apollo, Clay, Instantly + Twilio A2P requirements + the terms of any discovery source. 3–5 improvements that fit THIS process. Cite what each competitor actually offers; label our product hypotheses as hypotheses, not measured superiority. | `[ ]` |
+| R15.5 | Reply → booking path, end to end on fixtures | Contextual first message passes factual and eligibility checks → provider accepts and reports delivery → a human reply stops scheduled follow-ups immediately → classified → approved answer or draft → a preview request creates a production task and is never "ready" before a URL exists → a meeting offer uses a real configured booking path → counted only when the scheduler confirms → manual takeover cancels queued replies → STOP / not-interested / wrong-number / ambiguous take separate paths. | `[ ]` |
+| R15.6 | Meetings-per-week as a real control | Owner sets a target (e.g. 6/week). Progress against **verified** bookings, attended, cancelled, no-show. Week and timezone defined. Guides recommended volume within eligibility, budget and sending limits; never silently increases sending or overrides consent. "6 booked, 4 no-shows" is analysed (source, lead time, confirmation/reminder delivery, reschedules, fit, sample size) before any wording change is suggested, and the suggestion is labelled a hypothesis. | `[ ]` |
+| R15.7 | Reliability: no module without a caller | Audit the new journeys for the overnight failure pattern — passes isolated tests, has no production trigger. Each critical path needs a real trigger, durable state and a visible outcome. Scenarios: ineligible SMS refused, valid per-contact permission, duplicate webhooks, opt-out racing a send, reply racing a follow-up, manual takeover, booking confirmed, cancelled, failed integration. Owner pauses stay paused; provider uncertainty never duplicates a message. | `[ ]` |
+
+**Standing rules.** Never invent familiarity, defects, previews, prices, testimonials,
+availability or results. Limit automatic turns, log decisions, escalate uncertainty.
+Keep denominators and source attribution explicit. The system may propose bounded
+improvements from evidence; it may not claim to learn or to beat a competitor without
+enough observed outcomes. Respect discovery-source terms and preserve attribution.
+
+- **NEXT:** R15.2 — put the contact status on screen, then R15.3.
