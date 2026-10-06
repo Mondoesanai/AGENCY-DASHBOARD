@@ -149,9 +149,20 @@ check('and it leaves the unhandled list', (await listReplies({ onlyUnhandled: tr
 check('no email or text was sent anywhere in this suite', W.emails.length === 0 && W.sms.length === 0);
 
 // ---------------------------------------------------------------------------
-section('P8  R7.2 — all ten categories, with the dangerous three on rules');
-const { classifyReply, ALL_KINDS, ingestReplies, prospectReplyLookup } = await import('../lib/replies.js');
-check('all ten categories exist', ALL_KINDS.length === 10, String(ALL_KINDS.length));
+section('P8  R7.2 — every category, with the dangerous three on rules');
+const { classifyReply, ALL_KINDS, REPLY_KINDS: KINDS, ingestReplies, prospectReplyLookup } = await import('../lib/replies.js');
+// R7.2 specified ten. R15.5 added an eleventh — wrong-number — because the
+// owner's brief names it as a path of its own, and it genuinely is one: it is
+// a fact about the RECORD, not a decision by the person. Filing it as
+// not-interested throws away a prospect who may be perfectly reachable
+// elsewhere, and leaving it ambiguous leaves a bad number to be texted again.
+check('every category exists', ALL_KINDS.length === 11, String(ALL_KINDS.length));
+check('including the ten from R7.2', [
+  'interested', 'wants-details', 'wants-preview', 'wants-call', 'not-now',
+  'not-interested', 'opt-out', 'auto-reply', 'delivery-failure', 'ambiguous',
+].every((k) => ALL_KINDS.includes(k)), ALL_KINDS.join(','));
+check('plus wrong-number from R15.5', ALL_KINDS.includes(KINDS.WRONG_NUMBER));
+check('which is distinct from a refusal', KINDS.WRONG_NUMBER !== KINDS.NOT_INTERESTED);
 
 // the three where a wrong answer does real damage are decided by headers/phrases
 let v = classifyReply({ subject: 'Undeliverable: Couldn\'t find a website', from: 'MAILER-DAEMON@mail.test' });
