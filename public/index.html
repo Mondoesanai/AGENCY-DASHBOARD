@@ -255,6 +255,19 @@
   .acq-table td{padding:8px;border-bottom:1px solid rgba(255,255,255,.05);vertical-align:top;}
   .acq-table tr:hover td{background:rgba(255,255,255,.03);}
   .acq-card{border:1px solid var(--line);border-radius:11px;padding:12px;margin:10px 0;background:var(--surface2);}
+  /* R15.7 — observed spend sits ABOVE the limits table, because the table's
+     own figures are structurally zero until the reserve path is wired. */
+  .acq-h4{margin:16px 0 6px;font:600 13px/1.4 'Fraunces',serif;color:var(--muted);}
+  .acq-spend{border:1px solid var(--line);border-radius:11px;padding:12px;margin:10px 0;background:var(--surface2);}
+  .acq-spend .acq-h4{margin-top:0;}
+  .acq-spend-total{font:600 22px/1.2 'Fraunces',serif;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;}
+  .acq-spend-total .faint{font:400 12px/1.5 "Inter",system-ui,sans-serif;}
+  .acq-spend-list{margin:8px 0 0;padding-left:18px;font-size:13px;color:var(--muted);line-height:1.7;}
+  .acq-caps-list{list-style:none;margin:0;padding:0;display:grid;gap:8px;}
+  .acq-caps-list li{border:1px solid var(--line);border-left-width:3px;border-radius:9px;padding:9px 11px;font-size:13px;}
+  .acq-caps-list li.cap-hard{border-left-color:var(--green);}
+  .acq-caps-list li.cap-soft{border-left-color:var(--warn);}
+  .acq-caps-list .tag{margin-left:6px;}
   .acq-draft{border-top:1px solid var(--line);margin-top:10px;padding-top:10px;}
   .acq-pre{white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px;margin:6px 0;overflow-x:auto;}
   .acq-pre.quoted{border-left:3px solid var(--green);color:var(--muted);}

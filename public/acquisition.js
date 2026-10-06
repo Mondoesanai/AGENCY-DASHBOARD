@@ -385,34 +385,80 @@ export function renderBudget(b, error = '') {
   }
   if (!b) return '<div class="loading">Reading the spending state…</div>';
 
+  // `limitConfigured` is "the owner typed a number in"; `enforced` is "a code
+  // path applies it". Only the second one may be described as a cap.
   const row = (w) => {
-    const unlimited = !w.enforced;
+    const noLimit = !(w.limitConfigured ?? w.enforced);
     return `<tr>
       <td><b>${esc(w.period === 'week' ? 'This week' : 'This month')}</b><div class="faint">${esc(w.key)}</div></td>
-      <td>${unlimited ? '<span class="faint">no limit set</span>' : money(w.limitCents)}</td>
+      <td>${noLimit ? '<span class="faint">no limit set</span>' : money(w.limitCents)}</td>
       <td>${money(w.spentCents)}</td>
       <td>${money(w.reservedCents)}<div class="faint">jobs still running</div></td>
-      <td>${unlimited ? '<span class="faint">—</span>' : `<b>${money(w.remainingCents)}</b>`}</td>
+      <td>${noLimit ? '<span class="faint">—</span>' : `<b>${money(w.remainingCents)}</b>`}</td>
       <td>${esc(resetWords(w.resetsAt))}</td>
     </tr>`;
   };
 
-  const binding = b.bindingPeriod
-    ? `<div class="note">The <b>${esc(b.bindingPeriod === 'week' ? 'weekly' : 'monthly')}</b> limit is the one actually stopping work right now.</div>`
-    : `<div class="note warn"><b>No limit is set,</b> so nothing is capping what this app chooses to spend.
-       Spending is still recorded below — this is not a claim that nothing is being spent.</div>`;
+  // The panel may only claim a limit is stopping work if something applies it.
+  const binding = b.capWired === false
+    ? `<div class="note warn"><b>These limits are not being applied.</b> ${esc(b.capUnwiredNote || '')}</div>`
+    : b.bindingPeriod
+      ? `<div class="note">The <b>${esc(b.bindingPeriod === 'week' ? 'weekly' : 'monthly')}</b> limit is the one actually stopping work right now.</div>`
+      : `<div class="note warn"><b>No limit is set,</b> so nothing is capping what this app chooses to spend.
+         Spending is still recorded below — this is not a claim that nothing is being spent.</div>`;
 
   return `
     ${b.paused ? '<div class="note warn"><b>Automation is paused.</b> Nothing new will be started or charged until it is resumed.</div>' : ''}
     ${binding}
+    ${renderObservedSpend(b.observed)}
+    ${renderActiveCaps(b.activeCaps)}
+    <h4 class="acq-h4">Limits on record</h4>
     <table class="acq-table">
       <thead><tr><th>Window</th><th>Limit</th><th>Spent</th><th>Reserved</th><th>Remaining</th><th>Resets</th></tr></thead>
       <tbody>${row(b.week)}${row(b.month)}</tbody>
     </table>
     <p class="note faint">These two rows are <b>two windows over the same money</b>, not two budgets —
       a dollar spent today appears in both. Do not add them together.
-      ${b.week.conversationReserveCents ? `${money(b.week.conversationReserveCents)} of the weekly limit is held back for live conversations, so a reply never fails for want of budget.` : ''}</p>
+      ${b.capWired === false
+    ? 'Their spent and reserved columns stay at zero because nothing writes to them yet, not because nothing has been spent.'
+    : b.week.conversationReserveCents ? `${money(b.week.conversationReserveCents)} of the weekly limit is held back for live conversations, so a reply never fails for want of budget.` : ''}</p>
     <p class="note faint">${esc(b.uncappableNote || '')}</p>`;
+}
+
+/**
+ * What has actually been spent, from the counters the AI features write.
+ *
+ * This is here because the table above reads zero by construction, and a zero
+ * that means "nothing records this" looks exactly like a zero that means
+ * "nothing was spent".
+ */
+export function renderObservedSpend(o) {
+  if (!o) return '';
+  if (o.error) {
+    return `<div class="note neg"><b>Could not read what has been spent.</b> ${esc(o.error)}.
+      <div class="faint">${esc(o.note || '')}</div></div>`;
+  }
+  const rows = (o.byFeature || []).map((f) => `<li>${esc(f.what)} — <b>$${Number(f.usd || 0).toFixed(2)}</b></li>`).join('');
+  return `<div class="acq-spend">
+    <h4 class="acq-h4">What has actually been spent</h4>
+    <div class="acq-spend-total"><b>$${Number(o.totalUsd || 0).toFixed(2)}</b>
+      <span class="faint">on AI so far in ${esc(o.month || 'this month')}</span></div>
+    ${rows ? `<ul class="acq-spend-list">${rows}</ul>` : ''}
+    <p class="note faint">${esc(o.source || '')}. ${esc(o.note || '')}</p>
+  </div>`;
+}
+
+/** The limits that really do refuse work — and the one that only warns. */
+export function renderActiveCaps(caps) {
+  if (!caps?.length) return '';
+  return `<div class="acq-caps">
+    <h4 class="acq-h4">Limits that are actually applied</h4>
+    <ul class="acq-caps-list">${caps.map((c) => `<li class="${c.refuses ? 'cap-hard' : 'cap-soft'}">
+      <b>${esc(c.what)}</b> — ${esc(c.limit)}
+      <span class="tag">${c.refuses ? 'stops work' : 'warns only'}</span>
+      <div class="faint">${esc(c.note || '')} <span class="faint">(${esc(c.where || '')})</span></div>
+    </li>`).join('')}</ul>
+  </div>`;
 }
 
 /** "in 3 days" reads better than an ISO string, but keep the date too. */
