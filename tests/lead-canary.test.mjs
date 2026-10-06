@@ -76,8 +76,28 @@ check('a real submission goes through', good.status === 200 && good.json?.ok ===
 check('so the 400 above was validation, not a dead endpoint', res.status === 400 && good.status === 200);
 
 section('C4  the canary cannot break the sweep that runs it');
-check('the whole probe is inside a try/catch', /try \{[\s\S]{0,2600}lead-form-unreachable/.test(src));
+check('the whole probe is inside a try/catch', /try \{[\s\S]{0,3200}lead-form-unreachable/.test(src));
 check('and it only runs when a base URL is configured', /if \(base\)/.test(src),
   'locally there is no public URL, and inventing one would make every local sweep report a false alarm');
+
+section('C5  it probes the origin CUSTOMERS use, not this deployment');
+// Caught on the canary's first live run: it probed VERCEL_URL, the
+// per-deployment hostname, which sits behind Vercel deployment protection and
+// answers 401. It reported the lead form as broken while the real endpoint was
+// answering perfectly. A false alarm is worse than no alarm — it teaches the
+// owner that findings can be ignored.
+check('VERCEL_URL is NOT used as the probe target', !/env\.VERCEL_URL/.test(src),
+  'that is the per-deployment hostname, not the one the website posts to');
+check('a stable public origin is used instead', /const PUBLIC_ORIGIN = 'https:\/\//.test(src));
+check('and PUBLIC_BASE_URL still overrides it', /env\.PUBLIC_BASE_URL \|\| PUBLIC_ORIGIN/.test(src));
+check('401 is reported as CONFIGURATION, not as an outage',
+  /probe\.status === 401[\s\S]{0,400}finding\('lead-form-protected', SEVERITY\.CONFIG/.test(src),
+  'an authenticated origin is a setting somebody changed, with a different fix');
+check('the probe does not run outside a deployment',
+  /const deployed = !!env\.VERCEL_ENV \|\| !!env\.PUBLIC_BASE_URL/.test(src),
+  'a constant origin is always truthy — without this gate the suite makes real network calls');
+check('and the finding names the actual fix',
+  /Deployment Protection/.test(src) && /cannot authenticate/.test(src),
+  'because a visitor\'s browser cannot log in, so protection blocks every real submission too');
 
 done();
