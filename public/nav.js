@@ -20,16 +20,39 @@
 // in 360px without either truncating or shrinking below a readable size. The
 // icon is a simple stroke glyph — enough to tell the tabs apart at a glance
 // without the label having to carry it alone.
+// R15.3 — one section per everyday question, named after the question.
+//
+// This used to be Overview · Clients · Acquisition · Follow-ups · Automations
+// · Settings. "Acquisition" was a bucket holding three different questions —
+// who may we contact, what is being said, and what meetings exist — and
+// "Follow-ups" held two more. A section that answers several questions cannot
+// be named after any of them, which is why both had names nobody could act on.
+//
+// Now each of the owner's five questions has a section of its own:
+//
+//   Today          who needs my attention?
+//   Contacts       who can we contact, by which channel, and why?
+//   Conversations  what messages and replies are happening?
+//   Meetings       which real meetings are booked, cancelled or missed?
+//   Automation     is it healthy, paused, blocked or recovering?
+//
+// Clients stays because it is the other half of the business, and Settings
+// stays because it has to be reachable — but neither is an everyday question,
+// so `primary: false` keeps Settings out of the phone tab bar, where six
+// everyday sections already fill the width at 360px. It is still one tap away
+// from the header there, and unchanged on desktop.
 export const VIEWS = Object.freeze([
-  { id: 'overview', label: 'Overview', short: 'Today', icon: 'M3 11l9-8 9 8M5 10v10h14V10', hint: 'What needs attention today' },
+  { id: 'overview', label: 'Today', short: 'Today', icon: 'M3 11l9-8 9 8M5 10v10h14V10', hint: 'What needs attention today' },
   { id: 'clients', label: 'Clients', short: 'Clients', icon: 'M16 20v-2a4 4 0 00-8 0v2M12 11a3.5 3.5 0 100-7 3.5 3.5 0 000 7', hint: 'Each client, their analytics, sites and revisions' },
-  { id: 'acquisition', label: 'Acquisition', short: 'Growth', icon: 'M4 19V5M4 19h16M8 16V9M12 16v-5M16 16v-9', hint: 'Prospecting, contacts, campaigns, conversations, bookings' },
-  // People you have actually met, what you promised them, and the conversation
-  // you are having. Deliberately separate from Acquisition: the whole point of
-  // the relationship work is that these are not cold prospects.
-  { id: 'followups', label: 'Follow-ups', short: 'People', icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z', hint: 'What you promised people you met, previews owed, and conversations' },
-  { id: 'automations', label: 'Automations', short: 'Health', icon: 'M22 12h-4l-3 9L9 3l-3 9H2', hint: 'What is running, what is paused, what is blocked' },
-  { id: 'settings', label: 'Settings', short: 'Settings', icon: 'M12 15a3 3 0 100-6 3 3 0 000 6M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 003.6 15a1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 018 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0020.4 9c.14.35.38.65.69.86', hint: 'Business settings, integrations, budgets' },
+  { id: 'contacts', label: 'Contacts', short: 'Contacts', icon: 'M20 21v-2a4 4 0 00-3-3.87M4 21v-2a4 4 0 013-3.87M16 7a4 4 0 11-8 0 4 4 0 018 0', hint: 'Who we can contact, by which channel, and why' },
+  { id: 'conversations', label: 'Conversations', short: 'Messages', icon: 'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z', hint: 'What is being said, and what we promised people' },
+  { id: 'meetings', label: 'Meetings', short: 'Meetings', icon: 'M8 2v4M16 2v4M3 10h18M5 4h14a2 2 0 012 2v14a2 2 0 01-2 2H5a2 2 0 01-2-2V6a2 2 0 012-2z', hint: 'Booked, cancelled and missed — confirmed by the scheduler' },
+  { id: 'automations', label: 'Automation', short: 'Health', icon: 'M22 12h-4l-3 9L9 3l-3 9H2', hint: 'What is running, what is paused, what is blocked' },
+  // Reachable, not everyday. Kept out of the phone tab bar only.
+  { id: 'settings', label: 'Settings', short: 'Settings', primary: false, icon: 'M12 15a3 3 0 100-6 3 3 0 000 6M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 11-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 11-4 0v-.09A1.65 1.65 0 008 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 11-2.83-2.83l.06-.06A1.65 1.65 0 003.6 15a1.65 1.65 0 00-1.51-1H2a2 2 0 110-4h.09A1.65 1.65 0 003.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 112.83-2.83l.06.06A1.65 1.65 0 018 4.6a1.65 1.65 0 001-1.51V3a2 2 0 114 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 112.83 2.83l-.06.06A1.65 1.65 0 0020.4 9c.14.35.38.65.69.86', hint: 'Business settings, integrations, budgets' },
+  // The prospecting machinery. Still here, still working, no longer a tab:
+  // it answers no everyday question and its name explained nothing.
+  { id: 'acquisition', label: 'Prospecting', short: 'Prospecting', primary: false, advanced: true, icon: 'M4 19V5M4 19h16M8 16V9M12 16v-5M16 16v-9', hint: 'Discovery, campaigns and targeting — advanced' },
 ]);
 
 export const DEFAULT_VIEW = 'overview';
@@ -87,9 +110,11 @@ export function initNav(doc = document, { onChange = null } = {}) {
   const host = doc.getElementById('mainNav');
   if (!host) return null;
 
+  // The top nav carries everything; an advanced section is still a tab here,
+  // marked so it reads as a tool rather than as a place you go daily.
   host.innerHTML = VIEWS.map(
     (v) =>
-      `<button type="button" class="navbtn" data-view="${v.id}" title="${v.hint}" aria-current="false">${v.label}</button>`
+      `<button type="button" class="navbtn${v.advanced ? ' navbtn-adv' : ''}" data-view="${v.id}" title="${v.hint}" aria-current="false">${v.label}</button>`
   ).join('');
 
   // The phone tab bar. Built from the SAME VIEWS list and updated by the SAME
@@ -111,13 +136,19 @@ export function initNav(doc = document, { onChange = null } = {}) {
     doc.body.appendChild(bar);
   }
   // a no-op stand-in keeps the render and click paths below branch-free
-  if (!bar) bar = { innerHTML: '', querySelectorAll: () => [], addEventListener: () => {} };
-  bar.innerHTML = VIEWS.map(
+  if (!bar) bar = { innerHTML: '', style: {}, querySelectorAll: () => [], addEventListener: () => {} };
+  // Only the everyday sections. Six already fill 360px; adding Settings and
+  // Prospecting would take each tab below a readable label, and neither is a
+  // question anybody asks daily. Both stay reachable — Settings from the
+  // header, Prospecting from inside Contacts.
+  const PRIMARY = VIEWS.filter((v) => v.primary !== false);
+  bar.innerHTML = PRIMARY.map(
     (v) =>
       `<button type="button" class="tabbtn" data-view="${v.id}" aria-current="false">` +
       `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${v.icon}"/></svg>` +
       `<span>${v.short || v.label}</span></button>`
   ).join('');
+  bar.style.gridTemplateColumns = `repeat(${PRIMARY.length},1fr)`;
 
   const sections = {};
   for (const v of VIEWS) sections[v.id] = doc.getElementById('view-' + v.id);

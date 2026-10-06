@@ -329,6 +329,27 @@ export default async function handler(req, res) {
       const out = await sendInvitations(contacts, { owner, previewUrlFor: async () => null, send: null });
       return res.status(200).json(out);
     }
+    // R15.3 Q4 — which real meetings are booked, cancelled or missed.
+    //
+    // `schedulerConnected` travels with the data because "no meetings" and
+    // "no scheduler, so a meeting could not arrive" are different facts and
+    // the screen has to tell them apart.
+    case 'meetings': {
+      const { listBookings, bookingStats } = await import('../lib/bookings.js');
+      const [bookings, stats] = await Promise.all([listBookings({ limit: 200 }), bookingStats()]);
+      return res.status(200).json({
+        ok: true, bookings, stats,
+        schedulerConnected: !!process.env.CALENDLY_WEBHOOK_KEY,
+      });
+    }
+    case 'meeting-outcome': {
+      if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'recording an outcome is a POST' });
+      const { recordOutcome } = await import('../lib/bookings.js');
+      const body = typeof req.body === 'object' && req.body ? req.body : {};
+      if (!body.id || !body.outcome) return res.status(400).json({ ok: false, error: 'a booking id and an outcome are required' });
+      return res.status(200).json(await recordOutcome(body.id, body.outcome, { by: 'owner' }));
+    }
+
     case 'attest-consent': {
       if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'this is a POST' });
       const { attestConsent } = await import('../lib/optin.js');

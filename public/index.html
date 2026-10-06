@@ -545,6 +545,43 @@
     .trend svg:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:8px;}
   }
 
+  /* An advanced section is still reachable, just not presented as somewhere
+     you go daily. The muted tab and the collapsed block say the same thing. */
+  .navbtn-adv{opacity:.62;}
+  .navbtn-adv.on{opacity:1;}
+  .adv{margin-top:20px;border-top:1px solid var(--line);padding-top:14px;}
+  .adv summary{cursor:pointer;font-size:13.5px;color:var(--muted);padding:6px 0;min-height:44px;display:flex;align-items:center;}
+  .adv summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:8px;}
+  .adv[open] summary{color:var(--ink);}
+
+  /* Meetings. Booked, attended and missed are three different facts and are
+     never summed into one "meetings" number. */
+  .mt-figs{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:4px 0 12px;}
+  .mt-fig{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;text-align:center;}
+  .mt-fig b{display:block;font-family:'Fraunces',serif;font-size:26px;line-height:1.1;}
+  .mt-fig span{font-size:11.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;}
+  .mt-good b{color:var(--pos,#57c78c);} .mt-bad b{color:var(--neg);}
+  .mt-list{display:grid;gap:9px;margin-bottom:6px;}
+  .mt-row{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--line);border-radius:12px;
+    padding:12px 15px;display:grid;grid-template-columns:1.6fr 1fr auto;gap:12px;align-items:center;}
+  .mt-row.mt-attended{border-left-color:var(--pos,#57c78c);}
+  .mt-row.mt-no-show{border-left-color:var(--neg);}
+  .mt-row.mt-cancelled{opacity:.7;}
+  .mt-who{font-weight:600;font-size:14.5px;min-width:0;}
+  .mt-when{font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums;}
+  .mt-state{font-size:12.5px;color:var(--muted);text-align:right;}
+  .mt-ask{grid-column:1/-1;display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;}
+  @media (max-width:700px){
+    /* a heading and its explanation side by side leaves the explanation about
+       nine characters wide at 390px; stacked, it reads as a sentence */
+    .section-h{flex-direction:column;align-items:flex-start;gap:4px;}
+    .section-h .note{margin:0;}
+    .mt-figs{grid-template-columns:repeat(2,1fr);}
+    .mt-row{grid-template-columns:1fr;gap:4px;}
+    .mt-state{text-align:left;}
+    .mt-ask .btn{flex:1;min-width:0;}
+  }
+
   /* Contact permissions. The two channels are two separate blocks on purpose:
      the moment they share a badge or a colour, somebody texts a person who
      only agreed to email. */
@@ -781,23 +818,45 @@
   <!-- The business-card-to-follow-up workflow and the unified inbox. These are
        the two screens the relationship work exists for: what you promised
        people and when, and the conversation you are actually having. -->
-  <section id="view-followups" hidden>
-    <!-- R15.2 — who we may contact, on which channel, and why. Deliberately
-         the first thing on this screen: every other action here depends on
-         the answer, and it is the question the owner actually opens this for. -->
-    <div class="section-h"><h2>Who we can contact</h2></div>
+  <!-- R15.3 — one section per everyday question.
+       These three were one screen called "Follow-ups", which held the answers
+       to three different questions at once: who we may contact, what is being
+       said, and what we promised. Splitting them is the point of this part:
+       a screen that answers one question can be named after it, and a name
+       somebody understands is the whole of the navigation problem. -->
+
+  <!-- Q2: who can we contact, by which channel, and why? -->
+  <section id="view-contacts" hidden>
+    <div class="section-h"><h2>Who we can contact</h2>
+      <p class="note">Email and texting are separate permissions. Each person below shows both.</p></div>
     <div id="csSummary"></div>
     <div id="csInvite"></div>
     <div id="csList"></div>
+    <details class="adv">
+      <summary>Advanced — prospecting, campaigns and targeting</summary>
+      <p class="note">The discovery and campaign machinery. Nothing here is needed for the everyday job of inviting people and answering them.</p>
+      <button class="btn ghost" id="goAcquisition">Open prospecting tools</button>
+    </details>
+  </section>
 
-    <div class="section-h"><h2>Follow-ups &amp; previews</h2></div>
-    <div id="relPanel"></div>
-    <div class="section-h"><h2>Conversations</h2></div>
+  <!-- Q3: what messages and replies are happening? -->
+  <section id="view-conversations" hidden>
+    <div class="section-h"><h2>Conversations</h2>
+      <p class="note">Everything said to a person and by them, on both channels, in one thread.</p></div>
     <div id="smsStats"></div>
     <div class="inbox-split">
       <div id="smsWaiting"></div>
       <div id="smsConversation"></div>
     </div>
+    <div class="section-h"><h2>What we promised people</h2></div>
+    <div id="relPanel"></div>
+  </section>
+
+  <!-- Q4: which real meetings are booked, cancelled or missed? -->
+  <section id="view-meetings" hidden>
+    <div class="section-h"><h2>Meetings</h2>
+      <p class="note">A meeting counts when the scheduler confirms it — not when someone says they will come.</p></div>
+    <div id="meetingsPanel"></div>
   </section>
 
   <section id="view-settings" hidden>
@@ -999,7 +1058,8 @@ async function readAuthMode(){
     const j = await r.json();
     AUTH_MODE = (j && j.mode) || null;
   }catch{ AUTH_MODE = null; }
-  renderUnlock();
+  document.getElementById('goAcquisition')?.addEventListener('click',()=>{ if(window.IWgo) window.IWgo('acquisition'); });
+renderUnlock();
   return AUTH_MODE;
 }
 /** True when nothing needs a password here. Fails CLOSED while unknown. */
@@ -3232,6 +3292,38 @@ import('/sms-inbox.js').then((m)=>{ SMS_MOD=m; renderInbox(); }).catch(()=>{ SMS
 let CS_MOD=null, CS_DATA=null, CS_REVIEW=null, CS_BUSY=false;
 import('/contacts-status.js').then((m)=>{ CS_MOD=m; renderContactStatus(); }).catch(()=>{ CS_MOD=null; });
 
+/* ---------- Meetings -------------------------------------------------------
+   The only number here worth optimising, and the easiest to inflate. A past
+   booking with no outcome recorded is shown first, because that is the one
+   thing on the screen that needs the owner, and because leaving it unanswered
+   is how a no-show quietly becomes a success. */
+let MT_MOD=null, MT_DATA=null, MT_BUSY=false;
+import('/meetings.js').then((m)=>{ MT_MOD=m; renderMeetings(); }).catch(()=>{ MT_MOD=null; });
+
+async function loadMeetings(){
+  if(!unlocked()){ MT_DATA={ ok:false, error:'unlock with the password to see meetings' }; renderMeetings(); return; }
+  if(MT_BUSY) return; MT_BUSY=true;
+  try{ MT_DATA=await acqApi('meetings'); }
+  catch(e){ MT_DATA={ ok:false, error:String(e&&e.message||e).slice(0,120) }; }
+  MT_BUSY=false; renderMeetings();
+}
+
+function renderMeetings(){
+  if(!MT_MOD) return;
+  const host=$('#meetingsPanel'); if(!host) return;
+  host.innerHTML=MT_MOD.renderMeetingSummary(MT_DATA)+MT_MOD.renderMeetingList(MT_DATA,{ now:Date.now() });
+  MT_MOD.wireMeetings(host,{
+    open:(id)=>{ if(id) toast('Meeting '+id); },
+    outcome:async (id,outcome)=>{
+      let r=null;
+      try{ r=await acqApi('meeting-outcome',{ method:'POST', body:{ id, outcome } }); }
+      catch(e){ r={ ok:false, error:String(e&&e.message||e) }; }
+      toast(r&&r.ok?(outcome==='attended'?'Recorded as attended.':'Recorded as a no-show.'):(r&&r.error)||'Could not record that.');
+      loadMeetings();
+    },
+  });
+}
+
 async function loadContactStatus(){
   if(!unlocked()){ CS_DATA={ ok:false, error:'unlock with the password to see contact permissions' }; renderContactStatus(); return; }
   if(CS_BUSY) return; CS_BUSY=true;
@@ -3621,7 +3713,9 @@ import('/nav.js')
       onChange: (v) => {
         if (v === 'acquisition' && acqMod) renderAcq();
         if (v === 'automations') { loadAutomation(); loadOptimisation(); } // refresh the check-ins and the ledger on arrival
-        if (v === 'followups') { loadFollowUps(); loadContactStatus(); } // promises, and who we may contact
+        if (v === 'contacts') loadContactStatus();       // who we may contact, and why
+        if (v === 'conversations') loadFollowUps();      // what is being said, and what we promised
+        if (v === 'meetings') loadMeetings();            // confirmed by the scheduler, or not at all
         if (v === 'overview') loadToday();   // bookings and work in flight, re-read on arrival
       },
     });
@@ -3654,7 +3748,7 @@ import('/nav.js')
   })
   .catch(() => {
     // if the module cannot load, show everything rather than a blank page
-    ['overview', 'clients', 'acquisition', 'automations', 'settings'].forEach((v) => {
+    ['overview', 'clients', 'contacts', 'conversations', 'meetings', 'automations', 'settings', 'acquisition'].forEach((v) => {
       const el = document.getElementById('view-' + v);
       if (el) el.hidden = false;
     });

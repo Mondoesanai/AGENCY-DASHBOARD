@@ -13,11 +13,35 @@ const ids = VIEWS.map((v) => v.id);
 // rather than two, because a nav that keeps growing is the thing that makes a
 // dashboard feel like software nobody edited. The cap below is the guard: this
 // test failing is the intended way to notice a seventh tab being added.
-check('there are exactly six', VIEWS.length === 6, String(VIEWS.length));
-check('and no more than six, so the nav cannot creep', VIEWS.length <= 6);
-check('in the specified order', ids.join(',') === 'overview,clients,acquisition,followups,automations,settings', ids.join(','));
-check('Follow-ups sits next to Acquisition, since it is the warm half of the same job',
-  ids.indexOf('followups') === ids.indexOf('acquisition') + 1);
+// R15.3 — the cap is now on the EVERYDAY sections, not on the total. Six fill
+// a 360px tab bar at a readable label size; a seventh would push each one
+// below that, which is the real constraint rather than a round number.
+// Settings and Prospecting are reachable but not everyday, so they are marked
+// `primary: false` and live outside the bar.
+const primary = VIEWS.filter((v) => v.primary !== false);
+const secondary = VIEWS.filter((v) => v.primary === false);
+check('there are exactly six everyday sections', primary.length === 6, String(primary.length));
+check('and no more than six, so the tab bar cannot creep', primary.length <= 6);
+check('in the specified order',
+  primary.map((v) => v.id).join(',') === 'overview,clients,contacts,conversations,meetings,automations',
+  primary.map((v) => v.id).join(','));
+
+// one section per everyday question — the point of the reorganisation
+for (const [id, question] of [
+  ['overview', 'who needs my attention today'],
+  ['contacts', 'who can we contact and why'],
+  ['conversations', 'what messages and replies are happening'],
+  ['meetings', 'which meetings are booked, cancelled or missed'],
+  ['automations', 'is automation healthy'],
+]) check(`"${question}" has a section: ${id}`, ids.includes(id), ids.join(','));
+
+check('Settings is reachable but not an everyday tab', secondary.some((v) => v.id === 'settings'));
+check('and so is the prospecting machinery', secondary.some((v) => v.id === 'acquisition'));
+check('which is marked advanced', VIEWS.find((v) => v.id === 'acquisition')?.advanced === true);
+check('no everyday section is marked advanced', primary.every((v) => !v.advanced));
+check('the old catch-all names are gone',
+  !ids.includes('followups') && VIEWS.every((v) => v.label !== 'Acquisition'),
+  'a section that answers three questions cannot be named after any of them');
 check('each has a visible label', VIEWS.every((v) => v.label && v.label.length > 2));
 check('each has a hint explaining what belongs there', VIEWS.every((v) => v.hint && v.hint.length > 10));
 check('Overview is the default', DEFAULT_VIEW === 'overview');
