@@ -371,6 +371,25 @@ export default async function handler(req, res) {
       return res.status(200).json(await recordOutcome(body.id, body.outcome, { by: 'owner' }));
     }
 
+    // R16.5 — one person's permission, with the evidence for it. The honest
+    // alternative to a bulk checkbox: see lib/optin.js:recordPermission.
+    case 'record-permission': {
+      if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      const { getContact } = await import('../lib/contacts.js');
+      const { recordPermission, contactStatus } = await import('../lib/optin.js');
+      const contact = await getContact(body.contactId);
+      if (!contact) return res.status(404).json({ ok: false, error: 'no such contact' });
+      const out = await recordPermission(contact, {
+        channel: body.channel === 'email' ? 'email' : 'sms',
+        scope: body.scope || undefined,
+        source: body.source, wording: body.wording, evidence: body.evidence,
+        by: body.by || 'owner',
+      });
+      if (!out.ok) return res.status(400).json(out);
+      const fresh = await getContact(body.contactId);
+      return res.status(200).json({ ...out, status: await contactStatus(fresh) });
+    }
     case 'attest-consent': {
       if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'this is a POST' });
       const { attestConsent } = await import('../lib/optin.js');
@@ -453,6 +472,46 @@ export default async function handler(req, res) {
       if (!contact) return res.status(404).json({ ok: false, error: 'no such contact' });
       const out = await schedule({ contact, body: body.body, purpose: body.purpose || 'one_time_followup', sendAt: Number(body.sendAt) || Date.now(), by: 'owner' });
       return res.status(out.ok ? 200 : 400).json(out);
+    }
+    // R16.5 — the Send button's actual path.
+    //
+    // Until this existed, `schedule` queued a message and NOTHING drained the
+    // queue: `lib/sms-send.js:send` had no caller anywhere in production, while
+    // the interface asked "Send this text? It goes to a real phone if a provider
+    // is connected." Both halves of that were wrong — nothing went anywhere, and
+    // nothing ever would. The reachability audit missed it because `send` is too
+    // common a word to match on, which is why that detector now checks imports.
+    //
+    // Two gates, both deliberate. The owner's outreach switch is checked here
+    // rather than inside `send`, so the refusal names the switch instead of
+    // looking like a provider fault; per-contact permission is re-checked inside
+    // `send` at the moment of sending, because consent can be withdrawn between
+    // composing and sending and the queue must never outrun it.
+    case 'sms-send': {
+      if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      if (!body.messageId) return res.status(400).json({ ok: false, error: 'which message?' });
+
+      const { getSettings } = await import('../lib/settings.js');
+      const settings = await getSettings();
+      if (!settings?.outreach?.active) {
+        return res.status(200).json({
+          ok: false,
+          blockedBy: 'outreach-switch',
+          error: 'Outreach is switched off, so nothing was sent. This is the owner\'s switch, not a provider problem.',
+          ownerAction: true,
+        });
+      }
+
+      const { send, getMessage } = await import('../lib/sms-send.js');
+      const { getContact } = await import('../lib/contacts.js');
+      const msg = await getMessage(body.messageId);
+      if (!msg) return res.status(404).json({ ok: false, error: 'no such message' });
+      const contact = await getContact(msg.contactId);
+      if (!contact) return res.status(404).json({ ok: false, error: 'no such contact' });
+
+      const out = await send(body.messageId, { contact });
+      return res.status(200).json(out);
     }
     case 'sms-stats': {
       // R13.8 — one report, with relationship work kept apart from cold

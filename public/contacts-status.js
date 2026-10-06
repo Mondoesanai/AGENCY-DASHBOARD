@@ -95,7 +95,43 @@ export function renderStatusList(data) {
         ${channel('Email', r.email)}
         ${channel('Text', r.sms)}
       </div>
+      ${renderPermissionForm(r)}
     </div>`).join('')}</div>`;
+}
+
+/**
+ * R16.5 — record a permission this one person actually gave.
+ *
+ * Shown only where texting is not already permitted and the person has not
+ * opted out, because those are the two cases where it would be either pointless
+ * or wrong.
+ *
+ * The three fields are the whole point. A bulk "they all opted in" checkbox
+ * carries nothing that anyone could check afterwards; this asks how the
+ * permission was obtained, what the person was told they were agreeing to, and
+ * where the proof lives — and the server refuses the record if any is blank.
+ * It is more work per contact on purpose: that is the difference between a
+ * record and an assertion.
+ */
+export function renderPermissionForm(r) {
+  if (!r || r.suppressed) return '';
+  if (r.sms?.eligible) return '';
+  return `<details class="cs-perm" data-perm="${esc(r.id || '')}">
+    <summary>Record a permission they gave</summary>
+    <div class="cs-perm-in">
+      <p class="note faint">Only for a permission this person actually gave you. Finding their number, or
+        having their business card, is not one.</p>
+      <label class="field"><span>How did they give it?</span>
+        <input class="cs-src" placeholder="asked me to text her the preview, at her counter, 4 Oct" /></label>
+      <label class="field"><span>What were they told they were agreeing to?</span>
+        <input class="cs-word" placeholder="I'll text you a link to the free preview once it's built" /></label>
+      <label class="field"><span>Where is the proof?</span>
+        <input class="cs-ev" placeholder="photo of the signed card, shared drive, card #118" /></label>
+      <button class="btn sm cs-perm-save" type="button">Record it</button>
+      <div class="faint">Recorded as one message, not a series. Promotional texting needs their own
+        reply or form submission — it cannot be entered here.</div>
+    </div>
+  </details>`;
 }
 
 /**
@@ -156,6 +192,23 @@ export function wireContactStatus(root, handlers = {}) {
     const t = e.target;
     if (t?.closest?.('#csInviteSend')) return void handlers.send?.();
     if (t?.closest?.('#csInviteReview')) return void handlers.review?.();
+
+    // R16.5 — recording one person's permission. Handled before the row click
+    // so opening the form does not also open the contact.
+    const save = t?.closest?.('.cs-perm-save');
+    if (save) {
+      const box = save.closest('[data-perm]');
+      if (box) {
+        handlers.recordPermission?.(box.getAttribute('data-perm'), {
+          source: box.querySelector('.cs-src')?.value || '',
+          wording: box.querySelector('.cs-word')?.value || '',
+          evidence: box.querySelector('.cs-ev')?.value || '',
+        });
+      }
+      return;
+    }
+    if (t?.closest?.('.cs-perm')) return; // typing in the form is not a row click
+
     const row = t?.closest?.('[data-contact]');
     if (row) handlers.open?.(row.getAttribute('data-contact'));
   });

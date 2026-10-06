@@ -302,7 +302,7 @@ done that can be checked rather than asserted. Rows marked `[ ]` are open work.
 | R16.2 | `lib/budget.js:spendByCategory` — dead with R16.1 | Spend cannot be attributed, so the owner cannot tell which activity costs money | **P1** | R16.1 | Spend by category is computed from real reservations and shown | `[x]` |
 | R16.3 | `lib/budget.js:setBudgetSettings` — no screen writes limits | The owner cannot set the cap the app is supposed to obey; limits are only settable by direct store access | **P1** | R16.1 | A limit set in the UI is persisted and is the one the enforcement path reads | `[x]` |
 | R16.4 | `lib/budget.js:ESSENTIAL` — the categories allowed to exceed the cap are never consulted | Inbound replies, opt-outs and monitoring could be refused when the budget runs out. Ignoring an opt-out for lack of budget is unlawful, not merely rude | **P1** | R16.1 | With the allowance exhausted, an inbound reply and an opt-out are still processed, and the refusal path is proven to apply only to discretionary work | `[x]` |
-| R16.5 | `lib/sms-outreach.js:sendProspectSms` — complete and unreachable (classified HELD, not GAP, but it is the second thing the owner named) | Either a missing production path or UI that implies a capability the product does not have. Both are defects; they need opposite fixes | **P2** | Twilio account + A2P 10DLC for the live leg only | The whole path is traced and a decision recorded: wired behind the outreach switch **and** per-contact permission, or deliberately dormant with the misleading UI removed. Fixture verification complete either way | `[ ]` |
+| R16.5 | `lib/sms-outreach.js:sendProspectSms` — complete and unreachable (classified HELD, not GAP, but it is the second thing the owner named) | Either a missing production path or UI that implies a capability the product does not have. Both are defects; they need opposite fixes | **P2** | Twilio account + A2P 10DLC for the live leg only | The whole path is traced and a decision recorded: wired behind the outreach switch **and** per-contact permission, or deliberately dormant with the misleading UI removed. Fixture verification complete either way | `[x]` |
 | R16.6 | `lib/recovery.js:clearEscalation` — an escalation can be raised but never lowered | An operational alert, once raised, stays raised for ever. The owner learns to ignore the alert area, which defeats every other alert in it | **P3** | none | A raised escalation can be acknowledged from the dashboard and visibly clears, with the acknowledgement recorded | `[ ]` |
 | R16.7 | `lib/recovery.js:sweepHistory` — past sweeps are recorded but never shown | The Checks panel shows the latest sweep only, so "the sweep has not run for three days" is indistinguishable from "the sweep found nothing" | **P3** | none | The Checks panel shows when sweeps last ran, so a stalled sweep is visible | `[ ]` |
 | R16.8 | `lib/recovery.js:openRepairTask` — the sweep records a failure without opening a repair task | A detected failure produces a log line and no work item, which is how the three silent revision failures stayed silent | **P3** | none | A sweep-detected failure creates a task the owner can see and close | `[x]` |
@@ -331,11 +331,11 @@ no report should give a single number for both.
 
 | | Count |
 |---|---|
-| `[x]` built **and** verified | 144 (requirements, not operational readiness — see Part 13) |
+| `[x]` built **and** verified | 145 (requirements, not operational readiness — see Part 13) |
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 0 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 7 |
+| `[ ]` not started | 6 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.

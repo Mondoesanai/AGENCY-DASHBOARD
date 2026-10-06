@@ -280,6 +280,15 @@
   .acq-paths-in{padding:0 12px 12px;}
   .acq-paths-in h5{margin:10px 0 4px;font:600 12px/1.4 "Inter",system-ui,sans-serif;color:var(--faint);text-transform:uppercase;letter-spacing:.04em;}
   .acq-paths-in ul{margin:0;padding-left:18px;font-size:13px;line-height:1.7;}
+  /* R16.5 — recording one person's permission, with its evidence. */
+  .cs-perm{margin-top:8px;border-top:1px solid var(--line);padding-top:8px;}
+  .cs-perm>summary{cursor:pointer;font-size:12.5px;color:var(--muted);}
+  .cs-perm>summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:6px;}
+  .cs-perm-in{display:grid;gap:8px;margin-top:8px;}
+  .cs-perm-in .field{display:flex;flex-direction:column;gap:4px;font-size:12px;color:var(--muted);}
+  .cs-perm-in input{background:var(--surface2);border:1px solid var(--line-strong);border-radius:9px;padding:9px 10px;color:var(--ink);font:inherit;min-width:0;}
+  .cs-perm-in input:focus-visible{outline:2px solid var(--focus);outline-offset:2px;}
+  .cs-perm-in .btn{justify-self:start;}
   .acq-draft{border-top:1px solid var(--line);margin-top:10px;padding-top:10px;}
   .acq-pre{white-space:pre-wrap;font:13px/1.6 ui-monospace,monospace;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:10px;margin:6px 0;overflow-x:auto;}
   .acq-pre.quoted{border-left:3px solid var(--green);color:var(--muted);}
@@ -3406,6 +3415,15 @@ function renderContactStatus(){
     CS_MOD.wireContactStatus(host,{
       open:(id)=>{ if(id) openDrawer(id); },
       review:()=>loadContactStatus(),
+      // R16.5 — one person's permission, with the evidence for it. The server
+      // refuses the record unless all three fields are filled, and says which
+      // one is missing, so the message here is its message rather than a guess.
+      recordPermission:async (id,fields)=>{
+        if(!id) return;
+        const out=await acqApi('record-permission',{contactId:id,channel:'sms',...fields});
+        if(out&&out.ok){ toast('Permission recorded.'); loadContactStatus(); }
+        else alert('Not recorded.\n\n'+((out&&out.error)||'unknown reason')+(out&&out.why?'\n\n'+out.why:''));
+      },
       send:async ()=>{
         // The confirmation names the number and says what a yes unlocks,
         // because "send invitations" alone does not tell you how many people
@@ -3536,13 +3554,28 @@ async function previewText(){
   SMS_DRAFT=(out&&out.ok)?out.draft:{ok:false,body:SMS_BODY,reason:(out&&out.error)||'that could not be checked'};
   renderInbox();
 }
+/* R16.5 — queue it, then actually try to send it, and say which happened.
+   This used to call `sms-schedule` and stop, so a message was queued and never
+   sent while the confirm box promised it would reach a real phone. Now the
+   second step runs and its real outcome is reported: sent, refused by the
+   owner's outreach switch, or refused because no provider is connected. */
 async function sendText(){
   if(!SMS_OPEN||!SMS_DRAFT||!SMS_DRAFT.ok) return;
-  if(!confirm('Send this text?\n\nIt goes to a real phone if a provider is connected.')) return;
+  if(!confirm('Send this text?\n\nIt will be sent now if outreach is switched on and a provider is connected. If either is missing you will be told which, and nothing will go out.')) return;
   SMS_BUSY=true; renderInbox();
-  const out=await acqApi('sms-schedule',{contactId:SMS_OPEN,body:SMS_DRAFT.body,sendAt:Date.now()});
+  const queued=await acqApi('sms-schedule',{contactId:SMS_OPEN,body:SMS_DRAFT.body,sendAt:Date.now()});
+  if(!(queued&&queued.ok)){
+    SMS_BUSY=false; SMS_DRAFT=null; SMS_BODY='';
+    alert((queued&&queued.error)||'That could not be queued.');
+    return openConversation(SMS_OPEN);
+  }
+  const sent=await acqApi('sms-send',{messageId:queued.message&&queued.message.id});
   SMS_BUSY=false; SMS_DRAFT=null; SMS_BODY='';
-  if(!(out&&out.ok)) alert((out&&out.error)||'That could not be queued.');
+  if(sent&&sent.ok) toast('Sent.');
+  else if(sent&&sent.blockedBy==='outreach-switch') alert('Not sent.\n\n'+sent.error+'\n\nIt is saved as a draft on this conversation.');
+  else if(sent&&sent.disconnected) alert('Not sent.\n\n'+sent.error+'\n\nIt is saved as a draft on this conversation.');
+  else if(sent&&sent.held) alert('Held, not sent.\n\n'+(sent.error||''));
+  else alert('Not sent.\n\n'+((sent&&sent.error)||'No reason was given, which is itself worth reporting.'));
   openConversation(SMS_OPEN);
 }
 

@@ -244,6 +244,40 @@ function mentions(src, name) {
   return new RegExp(`\\b${name}\\b`).test(body);
 }
 
+/**
+ * Short, common names defeat a bare word match.
+ *
+ * `lib/sms-send.js:send` had no caller anywhere — the dashboard's Send button
+ * queued a message and nothing ever drained the queue — and this audit reported
+ * it as wired, because the four letters "send" appear in `adapter.send`,
+ * `res.send` and a hundred comments. Any export whose name is this generic is
+ * therefore checked by IMPORT instead: somebody must actually take it out of
+ * this module by name.
+ *
+ * The list is deliberately short and specific rather than a length rule, so it
+ * says which names have burned us rather than guessing at a threshold.
+ */
+const AMBIGUOUS = new Set(['send', 'get', 'set', 'run', 'record', 'compose', 'schedule', 'stats', 'start', 'stop', 'check', 'open', 'close', 'read', 'write', 'list', 'find', 'mark', 'next']);
+
+/** Does any production file actually import `name` from `mod`? */
+function importsByName(mod, name) {
+  const base = mod.replace(/^lib\//, '');
+  for (const [file, src] of prodSrc) {
+    if (file === mod) continue;
+    const code = stripComments(src);
+    // `import { a, b as c } from './mod.js'` and `const { a } = await import('./mod.js')`
+    // `[^}{\n]` rather than `[^}]`: an unconstrained capture starts at the
+    // enclosing `case '...': {` brace and swallows whole lines of unrelated
+    // code, so the extracted "names" were comment text.
+    const re = new RegExp(`\\{([^}{\\n]*)\\}\\s*=?\\s*(?:await\\s+import\\s*\\(\\s*)?['"][^'"]*${base.replace('.', '\\.')}['"]`, 'g');
+    for (const m of code.matchAll(re)) {
+      const names = m[1].split(',').map((s) => s.trim().split(/[: ]/)[0].trim());
+      if (names.includes(name)) return true;
+    }
+  }
+  return false;
+}
+
 const orphans = [];
 for (const f of libFiles) {
   const moduleReachable = reachable.has(f);
@@ -252,7 +286,12 @@ for (const f of libFiles) {
   const names = [...src.matchAll(/^export\s+(?:async\s+)?(?:function|const)\s+([A-Za-z0-9_$]+)/gm)].map((m) => m[1]);
   for (const n of names) {
     let inProd = false;
-    for (const osrc of prodSrc.values()) if (mentions(osrc, n)) { inProd = true; break; }
+    if (AMBIGUOUS.has(n)) {
+      // Too generic to match on. Require a real import by name.
+      inProd = importsByName(f, n);
+    } else {
+      for (const osrc of prodSrc.values()) if (mentions(osrc, n)) { inProd = true; break; }
+    }
     if (!inProd) orphans.push({ key: `${f}:${n}`, module: false, inTests: new RegExp(`\\b${n}\\b`).test(testSrc) });
   }
 }
