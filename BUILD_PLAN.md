@@ -334,6 +334,22 @@ requirements. This is the replacement, and it is the whole of the SMS consent st
 
 ---
 
+## PART 16 — Bounded four-hour safety and operability run (R18)
+
+Brief: `.claude/supervisor/MISSION.md` — not overwritten by the supervisor.
+Starting point `f05673c`. Priorities are in order; each row is one checklist item.
+
+| Req | Task | Status |
+|---|---|---|
+| R18.1 | Opt-in: ordering, duplication, suppression precedence, unconfigured-provider honesty, fail-CLOSED enrolment | `[ ]` |
+| R18.2 | Preview isolation as a real gate: inventory, fail-closed guard, Vercel change prepared | `[ ]` |
+| R18.3 | Public-repo history audit (no history rewrite) + a committed check that stops new exposure | `[ ]` |
+| R18.4 | The six everyday journeys, traced end to end with negative controls | `[ ]` |
+| R18.5 | Scheduled-worker health states, bounded recovery, named owner actions, one answering view | `[ ]` |
+| R18.6 | Release decision: four gates separated; rollback reviewed against safety-critical records | `[ ]` |
+
+---
+
 ## Tally
 
 Counted by the plan parser, not by hand — my first hand tally was wrong by 3 and this
@@ -351,7 +367,7 @@ no report should give a single number for both.
 | `[b]` built, not verified | 0 |
 | `[~]` in progress | 0 |
 | `[!]` externally blocked | 1 (G1 pricing values, G2 provider account) |
-| `[ ]` not started | 0 |
+| `[ ]` not started | 6 |
 | **Total tracked** | **120** = all 120 spec requirements (R8.9 was added by me during the build, so it lives in the spec rather than as an untracked extra row) |
 
 Enforced by `tests/governance.test.mjs`: the suite fails if these numbers drift from the file, if any requirement loses its acceptance criterion, or if anything is ticked without an evidence row at L1 or higher.

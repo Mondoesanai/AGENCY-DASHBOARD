@@ -320,3 +320,17 @@ for itself, and one person cannot give permission on another's behalf.
 | R17.3 | A release gate runs against the real production entry points, with negative controls | Auth in all three deployment modes, public endpoints, webhook forgery/tamper/replay, suppression in both key formats, duplicate events, budget refusal before the provider is called, and lease recovery after a worker dies |
 | R17.4 | Nothing published to a public repository identifies a real person or service | No fixture uses a resolving domain, an assignable number, or a credential shape |
 | R17.5 | The unauthenticated tick cannot run outside production | Preview and development deployments refuse it, naming the shared database |
+
+## Part 16 — Bounded four-hour safety and operability run (owner authorisation, 2026-10-06)
+
+Starting point `f05673c`. The brief is `.claude/supervisor/MISSION.md`, which the
+supervisor does not overwrite.
+
+| Req | Requirement | Acceptance criteria |
+|---|---|---|
+| R18.1 | The public opt-in cannot grant the wrong scope under any ordering, and a store outage cannot make enrolment easier | A third party's number creates no consent and no text; an unrelated inbound is not consent; STOP outranks a pending enrolment; expired/duplicate/replayed/concurrent events cannot grant scope or duplicate a send; the page does not promise a keyword works when nothing is configured; enrolment fails CLOSED on store failure while STOP still processes |
+| R18.2 | Preview cannot read or write production data | Every Preview-reachable entry point is classified; a fail-closed guard refuses unsafe access; verified in production, preview-with-shared-config and local modes; auth cannot become open on a deployed environment |
+| R18.3 | Public-repository exposure is understood and cannot grow | Git history is audited by category and severity without printing matches; a committed check blocks new client fixtures, real numbers and credentials |
+| R18.4 | The six everyday journeys are connected end to end | Each traced browser/scheduler → API → durable state → worker → provider boundary → visible result, with negative controls; anything unwired is repaired or marked disconnected |
+| R18.5 | The owner can run the agency from one view | Scheduled workers have defined healthy/late/blocked/never-ran states from durable data; retryable failures recover within bounds; permanent blockers become named owner actions; one view answers what needs attention, what runs, what is blocked, and what unblocks it |
+| R18.6 | The release decision separates code, configuration, live proof and activation | Four gates stated separately; rollback reviewed against consent, suppression, budget and job schema, with an emergency-stop procedure if it is unsafe |
