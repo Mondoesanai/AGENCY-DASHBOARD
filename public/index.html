@@ -545,6 +545,38 @@
     .trend svg:focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:8px;}
   }
 
+  /* Contact permissions. The two channels are two separate blocks on purpose:
+     the moment they share a badge or a colour, somebody texts a person who
+     only agreed to email. */
+  .cs-summary{margin:2px 0 14px;font-size:14px;}
+  .cs-list{display:grid;gap:10px;}
+  .cs-row{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:13px 16px;cursor:pointer;
+    transition:transform .14s cubic-bezier(.2,.9,.3,1.2),border-color .14s ease;border-left:3px solid transparent;}
+  .cs-row:hover{transform:translateY(-1px);border-left-color:var(--green);}
+  .cs-row-stop{opacity:.72;}
+  .cs-name{font-weight:600;font-size:15px;margin-bottom:9px;}
+  .cs-channels{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .cs-ch{border:1px solid var(--line);border-radius:11px;padding:9px 11px;background:var(--surface2);min-width:0;}
+  .cs-ch-k{font-size:11px;letter-spacing:.07em;text-transform:uppercase;color:var(--muted);}
+  .cs-ch-v{font-weight:600;font-size:14px;margin-top:2px;}
+  .cs-ch-why{font-size:12.5px;color:var(--muted);margin-top:3px;line-height:1.45;}
+  .cs-ch-next{font-size:12.5px;margin-top:5px;color:var(--green-br);}
+  /* four tones, and "permission needed" is deliberately NOT an alarm — it is
+     the normal state of a discovered business */
+  .cs-ok .cs-ch-v{color:var(--pos,#57c78c);}
+  .cs-todo .cs-ch-v{color:var(--warn);}
+  .cs-stop .cs-ch-v{color:var(--neg);}
+  .cs-none .cs-ch-v{color:var(--faint);}
+  .cs-invite{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:16px 18px;margin-bottom:14px;}
+  .cs-invite h3{margin:0 0 6px;font:600 16px 'Fraunces',serif;}
+  .cs-msg{white-space:pre-wrap;font-size:12.5px;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:11px 13px;max-height:280px;overflow:auto;}
+  @media (max-width:700px){
+    /* side by side at 390px would give each channel ~170px and the reason
+       would wrap to four lines; stacked, each gets the full width */
+    .cs-channels{grid-template-columns:1fr;}
+    .cs-ch-why,.cs-ch-next{font-size:13px;}
+  }
+
   .tabbar{display:none;}
   @media (max-width:700px){
     /* --- bottom tab bar: one thumb-reachable row, current section obvious */
@@ -750,6 +782,14 @@
        the two screens the relationship work exists for: what you promised
        people and when, and the conversation you are actually having. -->
   <section id="view-followups" hidden>
+    <!-- R15.2 — who we may contact, on which channel, and why. Deliberately
+         the first thing on this screen: every other action here depends on
+         the answer, and it is the question the owner actually opens this for. -->
+    <div class="section-h"><h2>Who we can contact</h2></div>
+    <div id="csSummary"></div>
+    <div id="csInvite"></div>
+    <div id="csList"></div>
+
     <div class="section-h"><h2>Follow-ups &amp; previews</h2></div>
     <div id="relPanel"></div>
     <div class="section-h"><h2>Conversations</h2></div>
@@ -3184,6 +3224,52 @@ let SMS_MOD=null, SMS_WAIT=null, SMS_WAIT_ERR='', SMS_CONV=null, SMS_CONV_ERR=''
 import('/relationships.js').then((m)=>{ REL_MOD=m; renderRelPanel(); }).catch(()=>{ REL_MOD=null; });
 import('/sms-inbox.js').then((m)=>{ SMS_MOD=m; renderInbox(); }).catch(()=>{ SMS_MOD=null; });
 
+/* ---------- Who we can contact, and why -----------------------------------
+   Email and SMS are fetched together and rendered as two separate blocks per
+   person. A failed read renders as a failed read: "nobody can be contacted"
+   and "we could not find out" are different facts, and on this screen the
+   second one being shown as the first is how somebody gets texted. */
+let CS_MOD=null, CS_DATA=null, CS_REVIEW=null, CS_BUSY=false;
+import('/contacts-status.js').then((m)=>{ CS_MOD=m; renderContactStatus(); }).catch(()=>{ CS_MOD=null; });
+
+async function loadContactStatus(){
+  if(!unlocked()){ CS_DATA={ ok:false, error:'unlock with the password to see contact permissions' }; renderContactStatus(); return; }
+  if(CS_BUSY) return; CS_BUSY=true;
+  try{ CS_DATA=await acqApi('contact-status'); }
+  catch(e){ CS_DATA={ ok:false, error:String(e&&e.message||e).slice(0,120) }; }
+  try{ CS_REVIEW=await acqApi('invite-review'); }catch{ CS_REVIEW=null; }
+  CS_BUSY=false;
+  renderContactStatus();
+}
+
+function renderContactStatus(){
+  if(!CS_MOD) return;
+  const s=$('#csSummary'), l=$('#csList'), i=$('#csInvite');
+  if(s) s.innerHTML=CS_MOD.renderSummary(CS_DATA);
+  if(l) l.innerHTML=CS_MOD.renderStatusList(CS_DATA);
+  if(i) i.innerHTML=CS_REVIEW?CS_MOD.renderInviteReview(CS_REVIEW):'';
+  for(const host of [s,l,i]){
+    if(!host) continue;
+    CS_MOD.wireContactStatus(host,{
+      open:(id)=>{ if(id) openDrawer(id); },
+      review:()=>loadContactStatus(),
+      send:async ()=>{
+        // The confirmation names the number and says what a yes unlocks,
+        // because "send invitations" alone does not tell you how many people
+        // are about to receive an email from you.
+        const n=(CS_REVIEW&&CS_REVIEW.preview&&CS_REVIEW.preview.prepared||[]).length;
+        if(!n) return;
+        if(!confirm(`Email ${n} business${n===1?'':'es'} asking whether they want to see their preview?\n\nA reply of YES is what lets us text them later. Nothing else is sent.`)) return;
+        const ids=(CS_REVIEW.preview.prepared||[]).map(p=>p.id);
+        let r=null;
+        try{ r=await acqApi('invite-send',{ method:'POST', body:{ ids } }); }catch(e){ r={ ok:false, error:String(e&&e.message||e) }; }
+        toast(r&&r.ok?`${r.sent} invitation${r.sent===1?'':'s'} sent.`:(r&&r.error)||'Nothing was sent.');
+        loadContactStatus();
+      },
+    });
+  }
+}
+
 async function loadFollowUps(){
   if(!unlocked()){ REL_DATA=null; REL_ERR='Unlock with the password to see what you promised people.'; renderRelPanel(); return; }
   let j=null;
@@ -3535,7 +3621,7 @@ import('/nav.js')
       onChange: (v) => {
         if (v === 'acquisition' && acqMod) renderAcq();
         if (v === 'automations') { loadAutomation(); loadOptimisation(); } // refresh the check-ins and the ledger on arrival
-        if (v === 'followups') loadFollowUps(); // what you promised people, re-read on arrival
+        if (v === 'followups') { loadFollowUps(); loadContactStatus(); } // promises, and who we may contact
         if (v === 'overview') loadToday();   // bookings and work in flight, re-read on arrival
       },
     });
