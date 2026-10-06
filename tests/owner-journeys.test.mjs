@@ -235,10 +235,22 @@ check('and the reason is that nothing is built yet',
 r = await post('/api/admin?do=preview-state', { taskId, state: 'ready' });
 check('REQUESTED cannot skip straight to READY', r.json?.ok === false, JSON.stringify(r.json).slice(0, 160));
 check('and the refusal names the states it CAN go to',
-  /Being built/.test(JSON.stringify(r.json)), JSON.stringify(r.json).slice(0, 150));
+  /Researching/.test(JSON.stringify(r.json)), JSON.stringify(r.json).slice(0, 150));
 
-r = await post('/api/admin?do=preview-state', { taskId, state: 'in-progress' });
-check('it can move to being built', r.json?.ok === true, JSON.stringify(r.json).slice(0, 140));
+// R19.4 — the owner's stages, walked through the API one at a time.
+r = await post('/api/admin?do=preview-state', { taskId, state: 'researching' });
+check('it can move to researching', r.json?.ok === true, JSON.stringify(r.json).slice(0, 140));
+r = await post('/api/admin?do=preview-state', { taskId, state: 'building' });
+check('and then to being built', r.json?.ok === true, JSON.stringify(r.json).slice(0, 140));
+
+r = await post('/api/admin?do=preview-state', { taskId, state: 'ready', url: 'https://preview.example/oj' });
+check('a built preview with a URL is STILL not ready before review', r.json?.ok === false,
+  JSON.stringify(r.json).slice(0, 160));
+check('and says review is what is missing',
+  /review/i.test(JSON.stringify(r.json)), JSON.stringify(r.json).slice(0, 170));
+
+r = await post('/api/admin?do=preview-state', { taskId, state: 'review' });
+check('it can move to waiting for review', r.json?.ok === true, JSON.stringify(r.json).slice(0, 140));
 r = await post('/api/admin?do=preview-state', { taskId, state: 'ready' });
 check('but READY without a URL is still refused', r.json?.ok === false, JSON.stringify(r.json).slice(0, 160));
 check('because an announcement needs something to point at',

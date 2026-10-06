@@ -89,10 +89,26 @@ let announce = await mayAnnounce(jordan.contact.id);
 check('while it is only requested, announcing is refused', announce.ok === false, JSON.stringify(announce));
 check('and says what state it is actually in', /not ready|requested/i.test(announce.reason), announce.reason);
 
-if (task) await setState(task.id, PREVIEW_STATE.IN_PROGRESS);
+// R19.4 — the stages the owner named. Each one is announced-refused in turn,
+// because every one of them is a moment where somebody could be told their
+// preview is ready when it is not.
+if (task) await setState(task.id, PREVIEW_STATE.RESEARCHING);
+announce = await mayAnnounce(jordan.contact.id);
+check('while we are still researching them, refused', announce.ok === false, announce.reason);
+
+if (task) await setState(task.id, PREVIEW_STATE.BUILDING);
 announce = await mayAnnounce(jordan.contact.id);
 check('while it is being built, still refused', announce.ok === false, announce.reason);
 check('and the refusal would be untrue to send', /untrue/i.test(announce.reason), announce.reason);
+
+// READY cannot be reached from the builder's machine — review comes first.
+const unreviewed = task ? await setState(task.id, PREVIEW_STATE.READY, { url: 'https://preview.example.invalid/hale-flooring' }) : { ok: false };
+check('a built preview with a real url is STILL not ready without review', unreviewed.ok === false,
+  JSON.stringify(unreviewed).slice(0, 160));
+
+if (task) await setState(task.id, PREVIEW_STATE.REVIEW);
+announce = await mayAnnounce(jordan.contact.id);
+check('waiting for review is not ready either', announce.ok === false, announce.reason);
 
 // ready REQUIRES a url — the state that unlocks the message cannot be faked
 const noUrl = task ? await setState(task.id, PREVIEW_STATE.READY) : { ok: false, error: 'no task' };

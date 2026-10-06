@@ -304,6 +304,74 @@ export default async function handler(req, res) {
     );
   }
 
+  // R19.1/R19.2 — the branded preview-request page.
+  //
+  // Public for the same reason the opt-in and unsubscribe pages are: the person
+  // using it is a prospect, not a user of this system, and must never be asked
+  // to authenticate.
+  //
+  // `slots` reads genuine availability. It returns `connected: false` rather
+  // than an empty list when no calendar is configured, because an empty list
+  // reads as "fully booked" and the page has to be able to say the honest
+  // thing instead: this is a call request, not a confirmed appointment.
+  if (req.query?.hook === 'slots') {
+    const { getScheduler } = await import('../lib/scheduling.js');
+    const { consentCopy } = await import('../lib/request-sms.js');
+    const sched = await getScheduler({});
+    const out = await sched.availability({ visitorTz: String(req.query.tz || '') || null });
+    return res.status(200).json({
+      ok: true,
+      connected: out.connected !== false,
+      provider: sched.name,
+      reason: out.reason || null,
+      // The page quotes a maximum number of texts. It comes from here so the
+      // number shown is the number `claimRequestText` actually enforces.
+      smsConsent: consentCopy({}),
+      // Absolute instants. The page renders them in the visitor's own zone; the
+      // server does not guess what that is.
+      slots: (out.slots || []).map((s) => ({ startAt: s.startAt, minutes: s.minutes, kind: s.kind })),
+      timezone: out.timezone || null,
+      previewLeadHours: out.rules?.previewLeadHours ?? null,
+    });
+  }
+
+  // An opaque prefill reference. The CRM may already know this business, and
+  // retyping it is friction — but the reference is a random id, NEVER the
+  // contact id and never anything personal, so a shared or guessed link cannot
+  // reveal somebody else's details. Only business-level fields come back.
+  if (req.query?.hook === 'prefill') {
+    const { readPrefill } = await import('../lib/preview-request.js');
+    const out = await readPrefill(String(req.query.ref || ''));
+    return res.status(200).json(out);
+  }
+
+  if (req.query?.hook === 'request') {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ ok: false, error: 'POST only — a fetched link must never book anything' });
+    }
+    const body = typeof req.body === 'string'
+      ? (() => { try { return JSON.parse(req.body); } catch { return {}; } })()
+      : (req.body || {});
+
+    // Same ceiling and same fail-closed rule as the opt-in write: a public
+    // endpoint that creates records needs a limit, and an outage is the one
+    // moment when nothing about a submission can be checked.
+    const { rateLimit } = await import('../lib/ratelimit.js');
+    const caller = String(req.headers['x-forwarded-for'] || req.socket?.remoteAddress || 'unknown').split(',')[0].trim();
+    const perCaller = await rateLimit(`req:ip:${caller}`, { max: 12, windowSec: 3600 });
+    const perEmail = await rateLimit(`req:em:${String(body.email || '').toLowerCase()}`, { max: 4, windowSec: 3600 });
+    if (perCaller.degraded || perEmail.degraded) {
+      return res.status(503).json({ ok: false, error: 'we cannot take requests at the moment — please try again shortly', retryable: true });
+    }
+    if (!perCaller.ok || !perEmail.ok) {
+      return res.status(429).json({ ok: false, error: 'too many requests — please try again later' });
+    }
+
+    const { submitRequest } = await import('../lib/preview-request.js');
+    const out = await submitRequest(body, { ip: caller });
+    return res.status(out.ok ? 200 : (out.status || 400)).json(out);
+  }
+
   if (req.query?.hook === 'booking') {
     const { verifyCalendlySignature, handleBookingWebhook } = await import('../lib/bookings.js');
     const rawBody = typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {});

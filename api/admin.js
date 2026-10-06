@@ -1040,6 +1040,40 @@ export default async function handler(req, res) {
       res.setHeader('Content-Type', 'text/xml');
       return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?><Response>${xml ? `<Message>${xml}</Message>` : ''}</Response>`);
     }
+    // R19.1/R19.2/R19.4 — the owner's side of the preview-request form.
+    case 'scheduling-rules': {
+      // Read the booking rules, or change them. These rules are the ONLY thing
+      // that decides which times a stranger is offered, so they belong to the
+      // owner and nothing else may widen them.
+      const { getRules, saveRules } = await import('../lib/scheduling.js');
+      if (req.method !== 'POST') return res.status(200).json({ ok: true, rules: await getRules() });
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      return res.status(200).json(await saveRules(body));
+    }
+    case 'preview-link': {
+      // A shareable link to the form with this business pre-filled. The
+      // reference is opaque and carries business fields only, so a link that
+      // gets forwarded cannot reveal somebody's personal details.
+      const { makePrefill } = await import('../lib/preview-request.js');
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      const src = { ...req.query, ...body };
+      const made = await makePrefill({
+        businessName: src.businessName || '',
+        website: src.website || '',
+        sourceRef: src.source || src.sourceRef || '',
+      });
+      const base = `https://${req.headers.host || 'localhost'}`;
+      return res.status(200).json({ ...made, url: `${base}/request.html?ref=${made.ref}` });
+    }
+    case 'request-texts': {
+      // What this request has used of the allowance the form quoted, and what
+      // is left. The number on the page and the number here are the same
+      // number, enforced in one place.
+      const { requestTextLedger, REQUEST_MESSAGE_PLAN, MAX_REQUEST_TEXTS } = await import('../lib/request-sms.js');
+      const id = String(req.query.id || '');
+      if (!id) return res.status(200).json({ ok: true, plan: REQUEST_MESSAGE_PLAN, max: MAX_REQUEST_TEXTS });
+      return res.status(200).json({ ok: true, ledger: await requestTextLedger(id), plan: REQUEST_MESSAGE_PLAN });
+    }
     case 'auto-tick':
       return res.status(200).json(await runAutoTick());
     case 'ranks-refresh-all': {

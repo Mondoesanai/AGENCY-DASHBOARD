@@ -1,0 +1,397 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>See what your business website could become</title>
+<meta name="robots" content="noindex" />
+<!--
+  R19.2 — the one branded preview-request and booking form.
+  Our own page, our own slots, our own submit. Not an embed, not a link out.
+
+  Three rules it has to keep:
+    * never show a time that is not genuinely free (the server refuses to
+      offer one, and says so rather than returning an empty list);
+    * never imply a preview exists before one is built;
+    * SMS is optional, unticked, and can never be a condition of booking.
+-->
+<style>
+  :root{
+    --bg:#0b0f0d; --surface:#141a17; --surface2:#1b2320; --ink:#f4f8f5;
+    --muted:#bcc8c1; --faint:#8b9a92; --line:#2e3a34; --line-strong:#6f837a;
+    --green:#3e9c6d; --green-br:#6fd3a4; --focus:#6fd3a4; --neg:#f0906f; --warn:#e3b452;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:var(--bg);color:var(--ink);
+    font:16px/1.6 "Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    -webkit-font-smoothing:antialiased;padding:28px 16px 64px;}
+  main{max-width:35rem;margin:0 auto}
+  .brand{font:600 12px/1 "Inter",sans-serif;letter-spacing:.16em;text-transform:uppercase;color:var(--green-br);margin-bottom:14px}
+  h1{font:600 30px/1.18 Georgia,"Times New Roman",serif;margin:0 0 10px;letter-spacing:-.015em}
+  .lede{color:var(--muted);margin:0 0 6px}
+  .offer{color:var(--faint);font-size:13.5px;margin:0 0 22px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:20px;margin-bottom:16px}
+  h2{font:600 15px/1.3 Georgia,serif;margin:0 0 4px}
+  .hint{color:var(--faint);font-size:12.5px;margin:0 0 14px}
+  label.f{display:block;margin-bottom:14px}
+  label.f > span{display:block;font-size:12.5px;color:var(--muted);margin-bottom:5px}
+  input[type=text],input[type=tel],input[type=email],input[type=url],textarea{
+    width:100%;background:var(--surface2);border:1px solid var(--line-strong);border-radius:11px;
+    padding:12px;color:var(--ink);font:inherit;min-height:46px}
+  textarea{min-height:76px;resize:vertical}
+  input:focus-visible,textarea:focus-visible,button:focus-visible,summary:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+  .err{color:var(--neg);font-size:12.5px;margin-top:5px;display:none}
+  .err.on{display:block}
+  input.bad{border-color:var(--neg)}
+
+  /* slots — a day first, then that day's times. Forty radio rows in one list
+     buried the consent boxes and the button below six screens of scrolling. */
+  .days{display:flex;gap:8px;overflow-x:auto;padding:2px 0 10px;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
+  .day{flex:0 0 auto;min-width:76px;min-height:58px;background:var(--surface2);border:1px solid var(--line-strong);
+    border-radius:11px;padding:8px 10px;color:var(--muted);cursor:pointer;text-align:center;font:inherit;
+    transition:transform .14s cubic-bezier(.2,.9,.3,1.2),border-color .14s ease}
+  .day:hover{border-color:var(--green);transform:translateY(-1px)}
+  .day[aria-pressed=true]{background:var(--green);border-color:var(--green);color:#04120c;font-weight:600}
+  .day .dow{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.06em;opacity:.8}
+  .day .dnum{display:block;font-size:16px;font-weight:600;line-height:1.3}
+  .day .cnt{display:block;font-size:10.5px;opacity:.75}
+  .times{display:grid;grid-template-columns:repeat(auto-fill,minmax(8.5rem,1fr));gap:8px}
+  .slot{display:flex;gap:9px;align-items:center;background:var(--surface2);border:1px solid var(--line-strong);
+    border-radius:11px;padding:11px;cursor:pointer;min-height:48px}
+  .slot:hover{border-color:var(--green)}
+  .slot input{width:20px;height:20px;min-width:20px;margin:0;accent-color:var(--green)}
+  .slot b{display:block;font-weight:600}
+  .slot .meta{font-size:11.5px;color:var(--faint)}
+  .daynote{font-size:12px;color:var(--warn);margin:0 0 9px}
+  .notlive{background:rgba(227,180,82,.1);border:1px solid var(--warn);color:var(--warn);
+    border-radius:11px;padding:12px;font-size:13.5px}
+
+  /* the two checkboxes */
+  .consent{display:flex;gap:11px;align-items:flex-start;margin:0 0 14px}
+  .consent input{width:20px;height:20px;min-width:20px;margin:2px 0 0;accent-color:var(--green)}
+  .consent .body{font-size:13.5px;color:var(--muted)}
+  .consent .lead{color:var(--ink);display:block;cursor:pointer}
+  details.more{margin-top:5px}
+  details.more>summary{cursor:pointer;color:var(--green-br);font-size:12.5px;list-style:none}
+  details.more>summary::-webkit-details-marker{display:none}
+  details.more>summary::after{content:" ▾"}
+  details.more[open]>summary::after{content:" ▴"}
+  details.more .inner{font-size:12.5px;color:var(--faint);margin-top:6px;line-height:1.65}
+  .when{background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 11px;
+    font-size:13px;margin:0 0 10px}
+  .when b{color:var(--ink)}
+
+  button.go{width:100%;min-height:52px;border:1px solid var(--green);background:var(--green);color:#04120c;
+    border-radius:12px;font:600 16.5px/1 inherit;cursor:pointer;
+    transition:transform .14s cubic-bezier(.2,.9,.3,1.2),filter .14s ease}
+  button.go:hover:not(:disabled){transform:translateY(-1px);filter:brightness(1.07)}
+  button.go:active:not(:disabled){transform:translateY(0)}
+  button.go:disabled{opacity:.5;cursor:not-allowed}
+  .msg{margin-top:14px;padding:13px;border-radius:11px;font-size:14px;display:none}
+  .msg.ok{display:block;background:rgba(62,156,109,.14);border:1px solid var(--green);color:var(--green-br)}
+  .msg.err{display:block;background:rgba(240,144,111,.12);border:1px solid var(--neg);color:var(--neg)}
+  .foot{color:var(--faint);font-size:12px;margin-top:18px;line-height:1.7}
+  a{color:var(--green-br)}
+</style>
+</head>
+<body>
+<main>
+  <div class="brand">Inspiring Websites</div>
+  <h1>See what your business website could become</h1>
+  <p class="lede">We will build you a custom preview of a new site for your business, and walk you through it on a short call.</p>
+  <!-- The offer, stated accurately. No fabricated redesign is shown, and the
+       preview is not claimed to exist yet. -->
+  <p class="offer">The preview is <b>complimentary and without obligation</b>. If you decide to go ahead,
+    a completed website has a build price and a monthly maintenance fee, both agreed with you first.</p>
+
+  <form id="f" novalidate>
+    <div class="card">
+      <h2>About you</h2>
+      <p class="hint">Four details, and we will do the research before we call.</p>
+      <label class="f"><span>Your name</span>
+        <input id="name" type="text" autocomplete="name" required />
+        <div class="err" id="e_name"></div></label>
+      <label class="f"><span>Business name</span>
+        <input id="businessName" type="text" autocomplete="organization" required />
+        <div class="err" id="e_businessName"></div></label>
+      <label class="f"><span>Your current website <span style="color:var(--faint)">(if you have one)</span></span>
+        <input id="website" type="url" inputmode="url" autocomplete="url" placeholder="yourbusiness.com" />
+        <div class="err" id="e_website"></div></label>
+      <label class="f"><span>Email address</span>
+        <input id="email" type="email" inputmode="email" autocomplete="email" required />
+        <div class="err" id="e_email"></div></label>
+      <label class="f"><span>Phone number <span style="color:var(--faint)">(for the call)</span></span>
+        <input id="phone" type="tel" inputmode="tel" autocomplete="tel" />
+        <div class="err" id="e_phone"></div>
+        <!-- Said at the point of entry, not buried in a policy. -->
+        <div class="hint" style="margin:5px 0 0">We use this for the call and your record. Entering it does not sign you up for texts.</div>
+      </label>
+      <label class="f"><span>Anything you would like us to know? <span style="color:var(--faint)">(optional)</span></span>
+        <textarea id="notes" rows="3"></textarea></label>
+    </div>
+
+    <div class="card">
+      <h2>Pick a time</h2>
+      <p class="hint" id="tzline">Times are shown in your timezone.</p>
+      <div id="slots" class="slots"><p class="hint">Loading real available times…</p></div>
+      <div class="err" id="e_slot"></div>
+    </div>
+
+    <div class="card" id="choices">
+      <h2>Two quick things</h2>
+      <p class="hint">Both are separate. Neither is required to book.</p>
+
+      <!-- 1. SMS — optional, unticked, scoped to THIS request. The lead line is
+           readable without opening anything; "See more" carries the rest. -->
+      <div class="consent">
+        <input type="checkbox" id="smsOptIn" />
+        <div class="body">
+          <!-- The lead is a <label for>, so tapping the sentence toggles the box
+               on a phone. The disclosure stays OUTSIDE the label: inside one, a
+               tap on "See more" or on Terms would silently tick the consent. -->
+          <label class="lead" for="smsOptIn"><b>I agree to receive texts from Inspiring Websites</b></label>
+          <details class="more">
+            <summary>See more</summary>
+            <div class="inner">
+              About my requested website preview and appointment — confirmation, reminders,
+              rescheduling information, a link to my preview when it is ready, and
+              <b>a follow-up text after the appointment</b>.
+              Up to <b id="smsMax">7</b> texts for this request.
+              Message and data rates may apply. Reply <b>STOP</b> to opt out or <b>HELP</b> for help.
+              Texts are optional and are not required to book.
+              <a href="/optin-terms.html" target="_blank" rel="noopener">Terms</a> ·
+              <a href="/optin-privacy.html" target="_blank" rel="noopener">Privacy</a>
+            </div>
+          </details>
+        </div>
+      </div>
+
+      <!-- 2. Attendance — an acknowledgment, never evidence. Shows the exact
+           chosen time beside it so there is no ambiguity about what is agreed. -->
+      <div class="when" id="whenBox" hidden></div>
+      <div class="consent">
+        <input type="checkbox" id="willAttend" />
+        <div class="body">
+          <label class="lead" for="willAttend">I plan to attend this call. If I can’t make it, I’ll use the reschedule link.</label>
+        </div>
+      </div>
+    </div>
+
+    <button class="go" type="submit" id="go">Schedule my preview call</button>
+    <div class="msg" id="msg" role="status" aria-live="polite"></div>
+    <p class="foot">
+      We only contact you about this request. Your details are not sold or shared.
+      <a href="/optin-terms.html">Terms</a> · <a href="/optin-privacy.html">Privacy</a>
+    </p>
+  </form>
+</main>
+
+<script>
+  const $ = (s) => document.querySelector(s);
+  const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Chicago';
+  const params = new URLSearchParams(location.search);
+  let SLOTS = [];
+  let DAYS = [];
+  let dayIndex = 0;
+  let CONNECTED = false;
+  let chosen = null;
+
+  const fmtDay = (ts) => new Date(ts).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', timeZone: TZ });
+  const fmtTime = (ts) => new Date(ts).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZone: TZ });
+
+  // Prefill is business-level only and comes back from an opaque reference, so
+  // a forwarded link cannot reveal another person's details. Always editable.
+  const ref = params.get('ref');
+  if (ref) {
+    fetch('/api/collect?hook=prefill&ref=' + encodeURIComponent(ref))
+      .then((r) => r.json())
+      .then((j) => {
+        if (!j.ok || !j.prefill) return;
+        if (j.prefill.businessName && !$('#businessName').value) $('#businessName').value = j.prefill.businessName;
+        if (j.prefill.website && !$('#website').value) $('#website').value = j.prefill.website;
+      })
+      .catch(() => {});
+  }
+
+  function renderSlots(j) {
+    const host = $('#slots');
+    CONNECTED = j.connected !== false;
+    SLOTS = j.slots || [];
+    $('#tzline').textContent = 'Times are shown in your timezone (' + TZ + ').';
+
+    if (!CONNECTED || !SLOTS.length) {
+      // Deliberately NOT an empty list rendered as "nothing available". The
+      // honest outcome with no calendar is a call request.
+      host.innerHTML = '<div class="notlive"><b>Online booking is not available right now.</b> '
+        + 'Send your details and we will email you with times. '
+        + 'Your appointment will not be confirmed until we reply.</div>';
+      $('#go').textContent = 'Request my preview call';
+      $('#whenBox').hidden = true;
+      return;
+    }
+
+    // Group into days, keeping the server's order. Every slot shown is still a
+    // slot the server offered — the grouping changes how many are on screen at
+    // once, never which ones exist.
+    DAYS = [];
+    for (const s of SLOTS) {
+      const key = fmtDay(s.startAt);
+      let d = DAYS.find((x) => x.key === key);
+      if (!d) { d = { key, slots: [] }; DAYS.push(d); }
+      d.slots.push(s);
+    }
+    dayIndex = 0;
+    renderDays();
+  }
+
+  function renderDays() {
+    const host = $('#slots');
+    const chips = DAYS.map((d, i) => {
+      const t = new Date(d.slots[0].startAt);
+      const dow = t.toLocaleDateString(undefined, { weekday: 'short', timeZone: TZ });
+      const num = t.toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: TZ });
+      return '<button type="button" class="day" data-i="' + i + '" aria-pressed="' + (i === dayIndex) + '">'
+        + '<span class="dow">' + dow + '</span><span class="dnum">' + num + '</span>'
+        + '<span class="cnt">' + d.slots.length + ' time' + (d.slots.length === 1 ? '' : 's') + '</span></button>';
+    }).join('');
+
+    const day = DAYS[dayIndex];
+    const anyIntro = day.slots.some((s) => s.kind === 'introductory');
+    const times = day.slots.map((s) => '<label class="slot">'
+      + '<input type="radio" name="slot" value="' + s.startAt + '"'
+      + (chosen && chosen.startAt === s.startAt ? ' checked' : '') + ' />'
+      + '<span><b>' + fmtTime(s.startAt) + '</b>'
+      + '<span class="meta">' + s.minutes + ' min</span></span></label>').join('');
+
+    host.innerHTML = '<div class="days" role="group" aria-label="Choose a day">' + chips + '</div>'
+      // Said once per day rather than stamped on every row, but never dropped:
+      // it is the difference between a walkthrough and a first conversation.
+      + (anyIntro ? '<p class="daynote">This soon, your preview may not be built yet — it would be an introductory call.</p>' : '')
+      + '<div class="times">' + times + '</div>';
+
+    host.querySelectorAll('.day').forEach((b) => b.addEventListener('click', () => {
+      dayIndex = Number(b.dataset.i);
+      renderDays();
+    }));
+    host.querySelectorAll('input[name=slot]').forEach((r) => r.addEventListener('change', () => {
+      chosen = SLOTS.find((s) => String(s.startAt) === r.value) || null;
+      showWhen();
+    }));
+  }
+
+  function showWhen() {
+    const box = $('#whenBox');
+    if (!chosen) { box.hidden = true; return; }
+    box.hidden = false;
+    box.innerHTML = '<b>' + fmtDay(chosen.startAt) + ' at ' + fmtTime(chosen.startAt) + '</b><br />'
+      + chosen.minutes + ' minutes · ' + TZ + ' · video call (link emailed to you)'
+      + (chosen.kind === 'introductory' ? '<br /><span style="color:var(--warn)">Introductory call — your preview may not be built yet.</span>' : '');
+  }
+
+  function loadSlots() {
+    fetch('/api/collect?hook=slots&tz=' + encodeURIComponent(TZ))
+      .then((r) => r.json())
+      .then((j) => {
+        // The literal in the markup is the fallback; the server's figure is the
+        // one the send path enforces, so it wins whenever it arrives.
+        if (j.smsConsent && j.smsConsent.max) $('#smsMax').textContent = String(j.smsConsent.max);
+        renderSlots(j);
+      })
+      .catch(() => renderSlots({ connected: false, slots: [] }));
+  }
+  loadSlots();
+
+  function clearErrors() {
+    document.querySelectorAll('.err').forEach((e) => { e.textContent = ''; e.classList.remove('on'); });
+    document.querySelectorAll('input.bad').forEach((i) => i.classList.remove('bad'));
+  }
+  function showFieldErrors(errs) {
+    for (const [k, v] of Object.entries(errs || {})) {
+      const e = $('#e_' + k); const i = $('#' + k);
+      if (e) { e.textContent = v; e.classList.add('on'); }
+      if (i) i.classList.add('bad');
+    }
+    const first = document.querySelector('input.bad');
+    if (first) first.focus();
+  }
+
+  $('#f').addEventListener('submit', async (ev) => {
+    ev.preventDefault();
+    clearErrors();
+    const msg = $('#msg');
+    msg.className = 'msg';
+
+    if (CONNECTED && SLOTS.length && !chosen) {
+      const e = $('#e_slot'); e.textContent = 'Please choose a time.'; e.classList.add('on');
+      return;
+    }
+
+    $('#go').disabled = true;
+    const was = $('#go').textContent;
+    $('#go').textContent = 'Booking…';
+
+    // Nothing here is cleared on failure — the visitor keeps their typing.
+    const payload = {
+      name: $('#name').value, businessName: $('#businessName').value,
+      website: $('#website').value, email: $('#email').value, phone: $('#phone').value,
+      notes: $('#notes').value, timezone: TZ,
+      startAt: chosen ? chosen.startAt : null, minutes: chosen ? chosen.minutes : null,
+      smsOptIn: $('#smsOptIn').checked, willAttend: $('#willAttend').checked,
+      sourceRef: params.get('src') || params.get('ref') || '',
+    };
+
+    try {
+      const r = await fetch('/api/collect?hook=request', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+      });
+      const j = await r.json();
+
+      if (j.fieldErrors) { showFieldErrors(j.fieldErrors); msg.className = 'msg err'; msg.textContent = j.error; }
+      else if (j.slotTaken) {
+        msg.className = 'msg err'; msg.textContent = j.error;
+        chosen = null; loadSlots();            // real new times, typing intact
+      } else if (j.uncertain) {
+        msg.className = 'msg err'; msg.textContent = j.error;
+        $('#go').disabled = true;              // stays disabled: do not let one click book twice
+        $('#go').textContent = 'Request received';
+        return;
+      } else if (j.ok) {
+        // A confirmation only after the provider confirmed it.
+        //
+        // The server's message is the authoritative sentence — it is the one
+        // that knows whether anything was actually booked. The heading is only
+        // added when it is not already the start of that sentence, or the two
+        // read as a stutter.
+        msg.className = 'msg ok';
+        const head = j.state === 'booked' ? 'Your call is confirmed.' : 'We have your request.';
+        const body = String(j.message || '');
+        let html = body.startsWith(head) ? '<b>' + head + '</b>' + body.slice(head.length)
+          : '<b>' + head + '</b><br />' + body;
+        if (j.booking) {
+          html += '<br /><br />' + fmtDay(j.booking.startAt) + ' at ' + fmtTime(j.booking.startAt)
+            + ' · ' + j.booking.minutes + ' minutes · ' + TZ;
+          if (j.booking.meetingUrl) html += '<br />Joining link: <a href="' + j.booking.meetingUrl + '">' + j.booking.meetingUrl + '</a>';
+          if (j.booking.manageUrl) html += '<br /><a href="' + j.booking.manageUrl + '">Reschedule or cancel</a>';
+        }
+        if (j.consent && j.consent.sms === 'pending-handset-confirmation') {
+          html += '<br /><br />You asked for texts: to switch them on, ' + (j.consent.confirmBy || 'text us from that phone')
+            + '. We will not text you until you do.';
+        }
+        msg.innerHTML = html;
+        // Lock the form so a second click cannot submit again, and say so on
+        // the button — leaving it reading "Booking…" looks like it is stuck.
+        $('#go').textContent = j.state === 'booked' ? 'Booked' : 'Request sent';
+        $('#f').querySelectorAll('input,textarea,button').forEach((i) => { i.disabled = true; });
+        return;
+      } else {
+        msg.className = 'msg err'; msg.textContent = j.error || 'That did not go through. Please try again.';
+      }
+    } catch {
+      msg.className = 'msg err'; msg.textContent = 'That did not go through. Please try again.';
+    }
+    $('#go').disabled = false;
+    $('#go').textContent = was;
+  });
+</script>
+</body>
+</html>

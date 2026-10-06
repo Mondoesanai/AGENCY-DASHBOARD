@@ -140,10 +140,12 @@ check('and says the message would be untrue', /not|no preview|untrue/i.test(may.
 
 // REQUESTED -> READY is refused outright: the state machine will not let a
 // promise skip steps, which is a property worth exercising rather than
-// bypassing. So the task is walked through IN_PROGRESS first.
+// bypassing. So the task is walked through the real stages first.
 const skipped = await setState(task.task.id, PREVIEW_STATE.READY, { url: 'https://preview.test/dana' });
 check('skipping straight from requested to ready is refused', skipped.ok === false, JSON.stringify(skipped).slice(0, 140));
-await setState(task.task.id, PREVIEW_STATE.IN_PROGRESS);
+await setState(task.task.id, PREVIEW_STATE.RESEARCHING);
+await setState(task.task.id, PREVIEW_STATE.BUILDING);
+await setState(task.task.id, PREVIEW_STATE.REVIEW);
 const noUrl = await setState(task.task.id, PREVIEW_STATE.READY);
 check('marking it READY with no URL is refused', noUrl.ok === false, JSON.stringify(noUrl).slice(0, 140));
 await setState(task.task.id, PREVIEW_STATE.READY, { url: 'https://preview.test/dana' });
