@@ -1033,7 +1033,7 @@
         <label class="field"><span>Client first name</span><input id="m_client" placeholder="Debbie" /></label>
       </div>
       <div class="row2">
-        <label class="field"><span>Client email — where reports go</span><input id="m_email" type="email" placeholder="debbie@abovepar.com" /></label>
+        <label class="field"><span>Client email — where reports go</span><input id="m_email" type="email" placeholder="name@theirbusiness.example" /></label>
         <label class="field"><span>Phone</span><input id="m_phone" placeholder="(555) 123-4567" /></label>
       </div>
       <div class="row2">
@@ -2461,7 +2461,7 @@ function openDrawer(slug){
     <div class="block">
       <h3>Email this client</h3>
       <label class="field"><span>Client name</span><input id="ecName" value="${esc(s.client||'')}" /></label>
-      <label class="field"><span>Client email</span><input id="ecAddr" type="email" value="${esc(s.email||'')}" placeholder="client@email.com" /></label>
+      <label class="field"><span>Client email</span><input id="ecAddr" type="email" value="${esc(s.email||'')}" placeholder="name@theirbusiness.example" /></label>
       <div class="btn-row">
         ${EMAIL_ENABLED?`<button class="btn sm" id="ecSend">Send now</button>`:''}
         <button class="btn ghost sm" id="ecGmail">Open Gmail draft</button>
@@ -3805,7 +3805,12 @@ function wireAcq(){
       return c;
     });
     const j=await acqApi('cards-commit',{cards,context:{relationship:$('#acqRelationship')?.value||'met_in_person'}});
-    toast(j.ok?`Saved ${cards.length} contact(s).`:'Could not save.',j.ok?'':'err');
+    // R18.4 — say what actually happened, not just that it saved. A card where
+    // somebody asked for a preview creates a tracked task, and that is the one
+    // thing on this path the owner needs to know about.
+    const extra=j.ok&&j.previewTasks?` · ${j.previewTasks} preview task${j.previewTasks===1?'':'s'} created`:'';
+    const review=j.ok&&j.needsReview?` · ${j.needsReview} need checking`:'';
+    toast(j.ok?`Saved ${cards.length} contact(s)${extra}${review}.`:'Could not save.',j.ok?'':'err');
     if(j.ok){ ACQ.scan=null; ACQ.tab='contacts'; renderAcq(); }
   });
   $('#acqPreviewBtn')?.addEventListener('click', async ()=>{

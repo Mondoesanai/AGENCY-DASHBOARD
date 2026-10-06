@@ -727,7 +727,18 @@ export default async function handler(req, res) {
     case 'cards-commit': {
       const body = req.body && typeof req.body === 'object' ? req.body : {};
       const out = await saveCards(body.cards || [], body.context || {});
-      return res.status(200).json({ ok: true, ...out });
+      // R18.4 — `saveCards` returns an ARRAY, and spreading an array into an
+      // object produced `{ ok: true, "0": {...}, "1": {...} }`: numeric keys no
+      // client can iterate. The page got away with it by reading only `ok`,
+      // which also meant the owner was never told a preview task had been
+      // created from a card — the one thing on this path worth seeing.
+      const saved = Array.isArray(out) ? out : [out];
+      return res.status(200).json({
+        ok: true,
+        saved,
+        previewTasks: saved.filter((s) => s?.previewTask).length,
+        needsReview: saved.filter((s) => s?.review).length,
+      });
     }
     case 'csv-preview': {
       const body = req.body && typeof req.body === 'object' ? req.body : {};

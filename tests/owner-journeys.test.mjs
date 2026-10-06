@@ -71,29 +71,39 @@ check('but only for one message, not a series', sms2?.promotional === false, Str
 
 // ===========================================================================
 section('J2  an unchecked website never becomes a false "no website"');
+// Through `?do=campaign-preview`, which is the endpoint the owner's "see the
+// exact words first" button calls. An earlier version of this section imported
+// `composeCold` directly and still claimed to be tracing the API — the reviewer
+// caught it. A constraint that holds in a library but is not reachable through
+// the endpoint people use is exactly the gap this file exists to find.
 const { WEB_STATUS } = await import('../lib/discovery.js');
-const { composeCold } = await import('../lib/campaigns.js');
 check('"not checked" and "no site" are different states',
   WEB_STATUS.NOT_CHECKED !== WEB_STATUS.NOT_LINKED, JSON.stringify(WEB_STATUS));
 
-// CAN-SPAM identity is required before anything composes at all, so the owner
-// fixture is complete — otherwise both halves would refuse for the same reason
-// and J2 would prove nothing about the website check.
-const OWNER = { name: 'Mondoe', business: 'Inspiring Websites', postalAddress: '1 Test St, Plano TX', replyTo: 'a@iw.test' };
-const unchecked = await composeCold(
-  { name: 'Unchecked Co', email: 'hi@unchecked.test', web: { status: WEB_STATUS.NOT_CHECKED }, evidence: { rawTags: {} } },
-  { owner: OWNER },
-).catch((e) => ({ ok: false, error: String(e.message || e) }));
-check('a message cannot be composed from an unchecked prospect', unchecked.ok === false, JSON.stringify(unchecked).slice(0, 160));
+// The owner identity has to be complete first, or both halves refuse for the
+// same CAN-SPAM reason and J2 proves nothing about the website check.
+await post('/api/admin?do=sender-save', {
+  sender: { name: 'Mondoe', business: 'Inspiring Websites', postalAddress: '1 Test St, Plano TX', replyTo: 'a@iw.test' },
+});
+
+r = await post('/api/admin?do=campaign-preview', {
+  prospect: { name: 'Unchecked Co', email: 'hi@unchecked.test', web: { status: WEB_STATUS.NOT_CHECKED }, evidence: { rawTags: {} } },
+});
+check('the preview endpoint answers', r.status === 200, `${r.status}`);
+check('but an UNCHECKED prospect produces no sendable message',
+  r.json?.message?.ok === false, JSON.stringify(r.json?.message || {}).slice(0, 170));
 check('and the reason names the missing check',
-  /check|unknown|not been looked|no honest/i.test(JSON.stringify(unchecked)), JSON.stringify(unchecked).slice(0, 160));
+  /check|unknown|not been looked|no honest/i.test(JSON.stringify(r.json?.message || {})),
+  JSON.stringify(r.json?.message || {}).slice(0, 170));
 
 section('J2b  NEGATIVE CONTROL: a genuinely checked prospect composes');
-const checked = await composeCold(
-  { name: 'Checked Co', email: 'hi@checked.test', web: { status: WEB_STATUS.NOT_LINKED }, evidence: { rawTags: {} } },
-  { owner: OWNER },
-).catch((e) => ({ ok: false, error: String(e.message || e) }));
-check('a checked prospect can be written to', checked.ok === true, JSON.stringify(checked).slice(0, 160));
+r = await post('/api/admin?do=campaign-preview', {
+  prospect: { name: 'Checked Co', email: 'hi@checked.test', web: { status: WEB_STATUS.NOT_LINKED }, evidence: { rawTags: {} } },
+});
+check('a checked prospect can be written to through the same endpoint',
+  r.json?.message?.ok === true, JSON.stringify(r.json?.message || {}).slice(0, 170));
+check('and the owner identity is reported as complete', r.json?.owner?.complete === true,
+  JSON.stringify(r.json?.owner || {}));
 
 // ===========================================================================
 section('J3  a consented contact: queue, send, deliver, reply, cancel, STOP');
@@ -180,16 +190,43 @@ check('and says the outcome was already decided', /already finished/.test(retry.
 
 // ===========================================================================
 section('J4  a requested preview becomes a task and cannot be announced early');
-// The production trigger is card intake: lib/card-intake.js calls createTask
-// when a scanned card says a preview was asked for. That is the only caller,
-// so the task is created the same way here and then driven through the real
-// `?do=preview-state` action the dashboard uses.
-const { createTask } = await import('../lib/previews.js');
-const made = await createTask({ contactId: 'oj_sms', businessName: 'Example Co', requestedBy: 'owner' });
-check('a request becomes a real task', made.ok === true && !!made.task?.id, JSON.stringify(made).slice(0, 150));
-const taskId = made.task.id;
+// Through `?do=cards-commit` — the endpoint the card scanner posts to. That is
+// the production trigger: lib/card-intake.js calls createTask when a committed
+// card says a preview was asked for. An earlier version called createTask
+// directly, which proved the library worked and nothing about the path.
+r = await post('/api/admin?do=cards-commit', {
+  cards: [{
+    name: { value: 'Jo Example', confidence: 1 },
+    businessName: { value: 'Example Co', confidence: 1 },
+    email: { value: 'jo@example.invalid', confidence: 1 },
+    phone: { value: N(10), confidence: 1 },
+  }],
+  // What they ASKED FOR lives in the context's per-card interactions, not on
+  // the card: the card is what was printed, the interaction is what happened.
+  // lib/relationship.js creates a preview task when the interest is
+  // wants-preview, and routes to a gentle introduction when it is not.
+  context: {
+    event: 'Plano Chamber breakfast',
+    collectedAt: new Date().toISOString(),
+    interactions: [{ interest: 'wants-preview', notes: 'asked to see a preview' }],
+  },
+});
+check('committing a scanned card succeeds', r.status === 200, `${r.status} ${JSON.stringify(r.json).slice(0, 120)}`);
 
-let ann = await get(`/api/admin?do=preview-announceable&contactId=${encodeURIComponent('oj_sms')}`);
+// The endpoint reports the task it created, so this reads the response rather
+// than looking the task up and hoping it is the right one.
+const saved = (r.json?.saved || [])[0] || {};
+check('the endpoint reports how many preview tasks it created', typeof r.json?.previewTasks === 'number', JSON.stringify(r.json?.previewTasks));
+check('the card was routed as a preview request',
+  /preview/i.test(JSON.stringify(saved.relationship || {})), JSON.stringify(saved.relationship || {}).slice(0, 170));
+check('A CARD ASKING FOR A PREVIEW CREATED A REAL TASK', !!saved.previewTask,
+  JSON.stringify(saved.previewTask || null));
+const taskId = saved.previewTask?.task?.id || saved.previewTask?.id;
+check('and the task has an id the dashboard can act on', !!taskId, String(taskId));
+const previewContactId = saved.contact?.id;
+check('attached to the contact the card created', !!previewContactId, String(previewContactId));
+
+let ann = await get(`/api/admin?do=preview-announceable&contactId=${encodeURIComponent(previewContactId)}`);
 check('it cannot be announced while it is only requested',
   ann.json?.result?.ok === false, JSON.stringify(ann.json).slice(0, 170));
 check('and the reason is that nothing is built yet',
@@ -210,7 +247,7 @@ check('because an announcement needs something to point at',
 section('J4b  NEGATIVE CONTROL: ready WITH a url is accepted and announceable');
 r = await post('/api/admin?do=preview-state', { taskId, state: 'ready', url: 'https://preview.example/oj' });
 check('ready with a real url works', r.json?.ok === true, JSON.stringify(r.json).slice(0, 160));
-ann = await get(`/api/admin?do=preview-announceable&contactId=${encodeURIComponent('oj_sms')}`);
+ann = await get(`/api/admin?do=preview-announceable&contactId=${encodeURIComponent(previewContactId)}`);
 check('and now it may be announced', ann.json?.result?.ok === true, JSON.stringify(ann.json?.result).slice(0, 150));
 
 // ===========================================================================
@@ -254,9 +291,11 @@ if (bid) {
 
 // ===========================================================================
 section('J6  a revision blocked by missing repo access is actionable');
-const { diagnose } = await import('../lib/recovery.js');
-const d = await diagnose({});
-check('the diagnosis runs', !!d, JSON.stringify(d).slice(0, 120));
+// Through `?do=recovery-diagnose`, the action the dashboard calls on every
+// load — not the library behind it.
+const diag = await get('/api/admin?do=recovery-diagnose');
+check('the diagnosis endpoint answers', diag.status === 200, `${diag.status}`);
+const d = diag.json || {};
 const findings = d.findings || d.problems || [];
 check('it reports findings as a list, not a sentence', Array.isArray(findings), typeof findings);
 const configIssues = findings.filter((f) => /config|credential|repo|token|permission/i.test(JSON.stringify(f)));
