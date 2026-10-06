@@ -147,4 +147,51 @@ check('nothing automatic may reply once taken over', after8.ok === false, JSON.s
 check('and the reason names a person having it',
   /took over|manual|person|owner/i.test(after8.reason || ''), after8.reason);
 
+// ---------------------------------------------------------------------------
+section('R9  takeover CANCELS what is already queued — it does not merely flag it');
+// The spec's words are "cancels queued automatic replies rather than flagging
+// them", and the difference is the whole point: a flagged job still runs. R8
+// above only proved that FUTURE replies are refused, which a flag would also
+// satisfy — so this queues a real job and asserts it is actually cancelled.
+const jobs = await import('../lib/jobs.js');
+const { upsertContact: up2, field: f2 } = await import('../lib/contacts.js');
+const victim = (await up2({ source: 'manual', name: f2('Queued Person'), email: f2('queued@hale.example'), phone: f2('+19195550199') })).contact;
+
+await conv.setOwnership(victim.id, conv.OWNER.AUTOMATIC, { by: 'test' });
+const queued = await jobs.enqueue({ type: 'sms-send', payload: { contactId: victim.id, body: 'an automatic answer' }, runAt: Date.now() + 3600e3 });
+const otherPerson = await jobs.enqueue({ type: 'sms-send', payload: { contactId: 'someone-else' }, runAt: Date.now() + 3600e3 });
+const unrelated = await jobs.enqueue({ type: 'daily-report', payload: { contactId: victim.id }, runAt: Date.now() + 3600e3 });
+
+const jobId = queued.job?.id || queued.id;
+const otherId = otherPerson.job?.id || otherPerson.id;
+const unrelatedId = unrelated.job?.id || unrelated.id;
+check('a reply job is really queued', !!jobId, JSON.stringify(queued).slice(0, 120));
+check('and it is pending before takeover',
+  (await jobs.getJob(jobId)).state !== jobs.JOB_STATE.CANCELLED,
+  (await jobs.getJob(jobId)).state);
+
+const result9 = await conv.takeOver(victim.id, { by: 'owner' });
+check('takeover reports what it cancelled', result9.cancelledQueuedReplies >= 1,
+  JSON.stringify(result9));
+
+const afterJob = await jobs.getJob(jobId);
+check('the queued reply is CANCELLED, not left to run',
+  afterJob.state === jobs.JOB_STATE.CANCELLED, afterJob.state);
+check('and it says why', /took over/i.test(JSON.stringify(afterJob)), JSON.stringify(afterJob).slice(0, 160));
+
+check('another person\'s queued reply is untouched',
+  (await jobs.getJob(otherId)).state !== jobs.JOB_STATE.CANCELLED,
+  'takeover cancels this conversation, not the queue');
+check('an unrelated job for the same person is untouched',
+  (await jobs.getJob(unrelatedId)).state !== jobs.JOB_STATE.CANCELLED,
+  'a daily report is not an automatic reply');
+
+// and the same must hold for the other route into person-ownership
+const victim2 = (await up2({ source: 'manual', name: f2('Second Person'), email: f2('second@hale.example'), phone: f2('+19195550177') })).contact;
+const q2 = await jobs.enqueue({ type: 'sms-send', payload: { contactId: victim2.id }, runAt: Date.now() + 3600e3 });
+await conv.setOwnership(victim2.id, conv.OWNER.PERSON, { by: 'owner' });
+check('setting ownership to a person also cancels',
+  (await jobs.getJob(q2.job?.id || q2.id)).state === jobs.JOB_STATE.CANCELLED,
+  'there are two ways in, and both have to cancel');
+
 done();

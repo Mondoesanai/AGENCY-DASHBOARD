@@ -151,6 +151,30 @@ export function renderSmsStats(s) {
   if (!s) return '';
   const sms = s.sms || {};
   const pv = s.previews || {};
+  const rt = s.responseTime || {};
+  const cost = s.cost || {};
+
+  // Response time: answered and still-waiting are never combined, because a
+  // four-day silence folded into a mean as "pending" is how a slow response
+  // time hides inside a good-looking average.
+  const answerLine = rt.ok === false
+    ? '<div class="faint">Response time could not be read.</div>'
+    : rt.answered
+      ? `<div><b>Answering people:</b> usually within ${esc(rt.medianHours)}h, worst ${esc(rt.worstHours)}h.` +
+        (rt.stillWaiting
+          ? ` <span class="tone-warn">${esc(rt.stillWaiting)} still waiting — the oldest for ${esc(rt.longestWaitHours)}h.</span>`
+          : ' Nobody is waiting.') + '</div>'
+      : `<div><b>Answering people:</b> ${esc(rt.note || 'nothing answered yet')}` +
+        (rt.stillWaiting ? ` <span class="tone-warn">${esc(rt.stillWaiting)} waiting.</span>` : '') + '</div>';
+
+  // Cost per qualified conversation: a number, or the reason there isn't one.
+  const costLine = cost.ok === false
+    ? '<div class="faint">Cost per conversation could not be computed.</div>'
+    : cost.costPerQualifiedCents != null
+      ? `<div><b>Per qualified conversation:</b> ~$${esc((cost.costPerQualifiedCents / 100).toFixed(2))}
+          across ${esc(cost.qualified)} — an <b>estimate</b>.</div>`
+      : `<div><b>Per qualified conversation:</b> not reported — ${esc(cost.reason || 'too little data')}.</div>`;
+
   return `<div class="note">
     <b>Texts:</b> ${esc(sms.attempted || 0)} attempted · ${esc(sms.delivered || 0)} confirmed delivered ·
     ${esc(sms.deliveryUnknown || 0)} never confirmed · ${esc(sms.failed || 0)} failed.
@@ -158,6 +182,9 @@ export function renderSmsStats(s) {
       Cost ${esc(((sms.estimatedCents || 0) / 100).toFixed(2))} is an <b>estimate</b> until provider billing is reconciled.</div>
     <div><b>Previews:</b> ${esc(pv.promised || 0)} promised · ${esc(pv.delivered || 0)} delivered ·
       ${esc(pv.brokenPromises || 0)} still owed.</div>
+    ${answerLine}
+    ${costLine}
+    <div class="faint">${esc(s.excludes || 'Relationship work only — cold outreach is reported separately.')}</div>
   </div>`;
 }
 

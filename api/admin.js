@@ -351,9 +351,13 @@ export default async function handler(req, res) {
       return res.status(out.ok ? 200 : 400).json(out);
     }
     case 'sms-stats': {
-      const { stats } = await import('../lib/sms-send.js');
-      const { stats: previewStats } = await import('../lib/previews.js');
-      return res.status(200).json({ ok: true, sms: await stats(), previews: await previewStats() });
+      // R13.8 — one report, with relationship work kept apart from cold
+      // discovery, and carrying the two figures that nothing computed before:
+      // what a qualified conversation cost, and how long people wait for an
+      // answer. Both refuse to produce a number from too little data rather
+      // than producing a flattering one.
+      const { relationshipReport } = await import('../lib/relationship-report.js');
+      return res.status(200).json(await relationshipReport({}));
     }
 
     // R9.9 — the deliverability trip: what the numbers are, and the one way
