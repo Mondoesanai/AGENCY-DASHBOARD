@@ -58,7 +58,7 @@ const WIRING = [
   // Who we may contact, on which channel, and why. Three mount points because
   // the summary, the invitation review and the list are separately replaceable.
   { mod: 'contacts-status.js', host: 'index.html', calls: ['renderSummary', 'renderStatusList', 'renderInviteReview', 'wireContactStatus'], mount: ['csSummary', 'csList', 'csInvite'] },
-  { mod: 'meetings.js', host: 'index.html', calls: ['renderMeetingSummary', 'renderMeetingList', 'wireMeetings'], mount: ['meetingsPanel'] },
+  { mod: 'meetings.js', host: 'index.html', calls: ['renderMeetingSummary', 'renderMeetingList', 'renderTarget', 'renderShortfall', 'wireMeetings'], mount: ['meetingsPanel'] },
   // states.js is a library for the other modules, not for the page
   { mod: 'states.js', host: 'acquisition.js', calls: ['renderPanel', 'panelState'], mount: [] },
 ];

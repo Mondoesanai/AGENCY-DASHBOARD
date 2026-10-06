@@ -336,9 +336,30 @@ export default async function handler(req, res) {
     // the screen has to tell them apart.
     case 'meetings': {
       const { listBookings, bookingStats } = await import('../lib/bookings.js');
+      const { weekProgress, recommendedVolume, diagnoseShortfall, DEFAULT_TARGET, DEFAULT_TZ } = await import('../lib/meeting-target.js');
       const [bookings, stats] = await Promise.all([listBookings({ limit: 200 }), bookingStats()]);
+
+      // R15.6 — the week, measured in ATTENDED meetings. The settings hold the
+      // owner's target and timezone; both default rather than being guessed.
+      const { getSettings } = await import('../lib/settings.js');
+      const s = await getSettings().catch(() => ({}));
+      const target = Number(s.meetings?.weeklyTarget) || DEFAULT_TARGET;
+      const tz = s.business?.timezone || DEFAULT_TZ;
+      const progress = weekProgress(bookings, { target, tz });
+
+      // History for the volume recommendation comes from what actually
+      // happened, never from an assumed funnel.
+      const history = {
+        invited: Number(s.stats?.invited || 0),
+        positiveReplies: Number(s.stats?.positiveReplies || 0),
+        booked: stats.verifiedBookings || 0,
+        attended: stats.attended || 0,
+      };
+
       return res.status(200).json({
-        ok: true, bookings, stats,
+        ok: true, bookings, stats, progress,
+        volume: recommendedVolume(progress, history),
+        shortfall: diagnoseShortfall(progress, {}),
         schedulerConnected: !!process.env.CALENDLY_WEBHOOK_KEY,
       });
     }

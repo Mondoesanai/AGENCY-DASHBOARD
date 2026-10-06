@@ -167,6 +167,46 @@ check('a verified one does', after === before + 1, `${before} -> ${after}`);
 check('and a link click is never counted among them',
   /clicks are counted separately|not bookings/i.test((await bookingStats()).note || ''), (await bookingStats()).note);
 
+section('E6b  and the same booking arrives through the real HTTP endpoint');
+// The cycle-6 reviewer was right: E6 drove handleBookingWebhook directly while
+// the SMS leg went through collect(). Testing the two legs differently is how
+// one of them turns out not to be wired at all. This drives a signed Calendly
+// payload through the real endpoint, exactly as the carrier hooks are.
+const CAL_KEY = 'fixture_calendly_key';
+async function calendlyPost(payload, { key = CAL_KEY } = {}) {
+  const prev = process.env.CALENDLY_WEBHOOK_KEY;
+  process.env.CALENDLY_WEBHOOK_KEY = CAL_KEY;
+  const raw = JSON.stringify(payload);
+  const stamp = Math.floor(Date.now() / 1000);
+  const sig = crypto.createHmac('sha256', key).update(`${stamp}.${raw}`).digest('hex');
+  const req = {
+    method: 'POST', url: '/api/collect?hook=booking', query: { hook: 'booking' },
+    headers: { 'calendly-webhook-signature': `t=${stamp},v1=${sig}` },
+    body: raw,
+  };
+  let code = 0, out2 = null;
+  const res = { status(c) { code = c; return this; }, json(x) { out2 = x; return this; }, send(x) { out2 = x; return this; }, setHeader() { return this; } };
+  await collect(req, res);
+  if (prev === undefined) delete process.env.CALENDLY_WEBHOOK_KEY; else process.env.CALENDLY_WEBHOOK_KEY = prev;
+  return { code, payload: out2 };
+}
+
+const beforeHttp = (await bookingStats()).verifiedBookings;
+let bk = await calendlyPost({ event: 'invitee.created', payload: { uri: 'http-u1', email: 'ownerdana@bizdana.test', name: 'Dana', start_time: new Date(NOW + 172800e3).toISOString() } });
+check('a signed booking is accepted by the endpoint', bk.code === 200, JSON.stringify(bk).slice(0, 160));
+const afterHttp = (await bookingStats()).verifiedBookings;
+check('and the booking count rises', afterHttp === beforeHttp + 1, `${beforeHttp} -> ${afterHttp}`);
+
+bk = await calendlyPost({ event: 'invitee.created', payload: { uri: 'http-u2', email: 'x@y.test' } }, { key: 'wrong_key' });
+check('a forged signature is refused at the door', bk.code === 401, JSON.stringify(bk));
+check('with a reason', /signature|verif/i.test((bk.payload && bk.payload.error) || ''), JSON.stringify(bk.payload));
+check('and created nothing', (await bookingStats()).verifiedBookings === afterHttp);
+
+const dup = await calendlyPost({ event: 'invitee.created', payload: { uri: 'http-u1', email: 'ownerdana@bizdana.test', start_time: new Date(NOW + 172800e3).toISOString() } });
+check('a replayed webhook is recognised as a duplicate', dup.payload && dup.payload.duplicate === true, JSON.stringify(dup.payload));
+check('and does not double-count the meeting', (await bookingStats()).verifiedBookings === afterHttp,
+  'schedulers retry, and a retried booking must not become two meetings');
+
 // ===========================================================================
 section('E7  manual takeover cancels what was queued');
 const jobs = await import('../lib/jobs.js');
