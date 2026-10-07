@@ -52,8 +52,39 @@ export default async function handler(req, res) {
   // /api/sites already exposes via emailEnabled/aiEnabled/backend), not
   // client revenue, and it needs to load without a click for the "tell me
   // proactively when something's wrong" goal to actually work.
+  // R21.5 — CLIENT DATA, so the full list is password-gated.
+  //
+  // This used to answer in full to anyone with the URL. The justification was
+  // "same trust level as the public /api/sites feed" — and that premise stopped
+  // being true in R1.8, when /api/sites was gated for exposing exactly this kind
+  // of thing. Nobody revisited this endpoint, so unauthenticated callers could
+  // read 25 tickets across 5 client sites: sender names, email addresses,
+  // subjects and the full text of what each client asked for.
+  //
+  // The counts stay public, because the collapsed Overview tile reads them
+  // before anyone has unlocked and "N pending" names nobody. Everything that
+  // identifies a person or a business needs the password.
   if (req.query.do === 'revisions-status') {
-    return res.status(200).json({ ok: true, status: await revisionsStatus() });
+    const status = await revisionsStatus();
+    if (authed(req)) return res.status(200).json({ ok: true, status });
+    const tickets = status.tickets || [];
+    const closed = (t) => t.status === 'done' || t.status === 'cancelled';
+    return res.status(200).json({
+      ok: true,
+      redacted: true,
+      status: {
+        configured: status.configured,
+        lastCheck: status.lastCheck,
+        // Counts only. No slug, no sender, no subject, no summary.
+        counts: {
+          total: tickets.length,
+          open: tickets.filter((t) => !closed(t)).length,
+          blocked: tickets.filter((t) => t.state === 'blocked').length,
+        },
+        tickets: [],
+      },
+      note: 'Unlock the dashboard to see the requests themselves.',
+    });
   }
   // Does this deployment require a password at all?
   //

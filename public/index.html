@@ -1735,7 +1735,7 @@ let revData=null;
 let revWidgetOpen=false; // always starts collapsed on a fresh page load — press Open to expand
 let revPasteOpen=false;
 async function loadRevWidget(){
-  const j=await fetch(`/api/admin?do=revisions-status`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
+  const j=await fetch(`/api/admin?do=revisions-status&secret=${encodeURIComponent(key())}`,{cache:'no-store'}).then(r=>r.json()).catch(()=>null);
   if(j&&j.ok) revData=j.status;
   // share the same tickets with each client's own card (R2.2) — one fetch, two
   // views, so the global queue and the per-client list can never disagree
@@ -1750,7 +1750,8 @@ async function loadRevWidget(){
 function renderRevWidget(){
   const el=$('#revWidget'); if(!el) return;
   const tickets=(revData&&revData.tickets)||[];
-  const pendingCount=tickets.filter(t=>!isClosedTicket(t)).length;
+  const redacted=!!(revData&&revData.counts&&!tickets.length);
+    const pendingCount=redacted?revData.counts.open:tickets.filter(t=>!isClosedTicket(t)).length;
   if(!revWidgetOpen){
     el.innerHTML=`<div class="fin-card" style="display:flex;align-items:center;gap:10px;padding:12px 16px">
       <strong style="font:600 14px 'Fraunces',serif">📨 Revisions</strong>

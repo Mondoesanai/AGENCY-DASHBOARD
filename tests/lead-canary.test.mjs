@@ -20,8 +20,11 @@ const src = await readFile(new URL('../lib/recovery.js', import.meta.url), 'utf8
 // ---------------------------------------------------------------------------
 section('C1  the probe is real, and it is safe to run every sweep');
 check('the sweep actually posts to the endpoint', /method: 'POST'/.test(src) && /hook=request/.test(src));
-check('with an invalid email on purpose', /probe-not-an-email/.test(src),
+check('with an invalid email on purpose', /-not-an-email/.test(src),
   'a VALID probe would create a real contact and a real preview task on every sweep');
+check('and that address is unique per sweep, so it always reaches validation',
+  /probe-\$\{now\.toString\(36\)\}-not-an-email/.test(src),
+  'a fixed address shares a per-email rate-limit bucket with itself: 4/hour against a 6/hour sweep, so two runs an hour were answered 429 before validating anything');
 check('it has a timeout', /AbortController|setTimeout\(\(\) => ctrl\.abort/.test(src),
   'a hung probe would hang the whole recovery sweep');
 check('and the timeout is always cleared', /finally \{\s*clearTimeout/.test(src));
