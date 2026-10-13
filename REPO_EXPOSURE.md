@@ -77,6 +77,31 @@ repositories change who can reach what:
 3. **Forks.** Existing forks of a public repo **stay public and stay readable**.
    Going private does not retract them.
 4. **GitHub Actions.** `.github/workflows/` runs on this repo; private repos have
+
+### What "zero forks" does and does not prove  (checked 2026-10-13)
+
+The GitHub API reports `forks: 0` and `subscribers: 0` on all four public
+repositories. That is worth knowing, and it is **much weaker evidence than it
+looks**. It counts one thing only: forks made through GitHub.
+
+It says nothing about
+
+* **`git clone`** — a clone leaves no trace on the origin. Any number may exist.
+* **Mirrors and CI checkouts** — any service that ever built these repos holds a
+  copy, and some keep it indefinitely.
+* **Search-engine and archive caches** — Google, Bing and the Wayback Machine
+  index public repository pages and raw file URLs.
+* **Code-search and training corpora** — public GitHub is routinely scraped in
+  bulk. Grep.app, Sourcegraph and similar have historically indexed public repos
+  without forking them.
+* **Anyone who simply read a file in a browser.**
+
+So the correct reading is: *no one has forked these on GitHub*, not *no copies
+exist*. Going private removes future access through GitHub and stops the
+exposure growing. It cannot retract what has already been fetched, and nothing
+in this repository's history should be treated as recallable.
+
+Git history is **not** being rewritten as part of this work.
    different minute allowances.
 
 ### What I recommend

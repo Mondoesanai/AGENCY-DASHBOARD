@@ -160,14 +160,20 @@ check('and the reason is consent', /opted out/i.test(add.reason), add.reason);
 section('C10  a draft campaign sends nothing, and the window holds sends');
 const c3 = (await createCampaign({ name: 'draft one', type: CAMPAIGN_TYPES.COLD_NO_SITE })).campaign;
 const d = await upsertContact({ source: 'discovery', name: E('Dana Kim'), businessName: E('Trinity Tile'), email: E('dana@trinitytile.test') });
-await addMember(c3.id, d.contact);
+// Enrol AT the moment the window checks below use.
+//
+// This was `addMember(c3.id, d.contact)`, which enrols at the real clock, while
+// the checks query a pinned Wednesday. That agreed only while the suite ran in
+// the same week it was written: once the date rolled past it, the pinned time
+// was in the PAST relative to enrolment, nothing was due yet, and two checks
+// failed for a reason that had nothing to do with sending windows.
+const wed2pm = Date.UTC(2026, 9, 7, 19, 0); // a Wednesday at 14:00 US Central
+await addMember(c3.id, d.contact, { startAt: wed2pm });
 due = await dueSends(c3.id, { now: Date.now() });
 check('a draft campaign has nothing due', due.due.length === 0);
 check('and says why', /draft, not running/.test(due.note), due.note);
 
 await setCampaignStatus(c3.id, 'running');
-// a Wednesday at 14:00 US Central
-const wed2pm = Date.UTC(2026, 9, 7, 19, 0);
 check('2pm on a Wednesday is inside the window', withinWindow(wed2pm, { startHour: 8, endHour: 17 }) === true);
 check('3am is not', withinWindow(Date.UTC(2026, 9, 7, 8, 0), { startHour: 8, endHour: 17 }) === false);
 const sat = Date.UTC(2026, 9, 10, 19, 0);

@@ -11,10 +11,12 @@
 // the outage reported itself nowhere.
 
 import { check, section, done } from './world.mjs';
-import { REQUIRED_SCOPES, missingScopes } from '../lib/google.js';
+import { REQUIRED_SCOPES, missingScopes, missingCapabilities, GOOGLE_CAPABILITIES } from '../lib/google.js';
 
 const CAL_EVENTS = 'https://www.googleapis.com/auth/calendar.events';
 const CAL_READ = 'https://www.googleapis.com/auth/calendar.readonly';
+const CAL_FREEBUSY = 'https://www.googleapis.com/auth/calendar.freebusy';
+const CAL_EV_FREEBUSY = 'https://www.googleapis.com/auth/calendar.events.freebusy';
 const CAL_FULL = 'https://www.googleapis.com/auth/calendar';
 const GMAIL_MOD = 'https://www.googleapis.com/auth/gmail.modify';
 const MAIL_ALL = 'https://mail.google.com/';
@@ -23,8 +25,11 @@ const MAIL_ALL = 'https://mail.google.com/';
 section('G1  the scopes are written down, derived from the calls');
 check('three are required', REQUIRED_SCOPES.length === 3, REQUIRED_SCOPES.join(' '));
 check('calendar.events, for creating the appointment', REQUIRED_SCOPES.includes(CAL_EVENTS));
-check('calendar.readonly, for reading free/busy', REQUIRED_SCOPES.includes(CAL_READ),
-  'this is the one the live grant lacked');
+check('calendar.freebusy, for reading free/busy', REQUIRED_SCOPES.includes(CAL_FREEBUSY),
+  'the capability the live grant lacked');
+check('and NOT calendar.readonly, which was the first answer and too broad',
+  !REQUIRED_SCOPES.includes(CAL_READ),
+  'checked against Google discovery: freebusy unlocks 1 method, readonly unlocks 15');
 check('gmail.modify, for the revision inbox and sending', REQUIRED_SCOPES.includes(GMAIL_MOD));
 check('and no scope wider than needed is asked for',
   !REQUIRED_SCOPES.includes(CAL_FULL) && !REQUIRED_SCOPES.includes(MAIL_ALL),
@@ -34,7 +39,7 @@ section('G2  the live grant, as it actually was');
 const LIVE = `${CAL_EVENTS} ${GMAIL_MOD}`;
 const missing = missingScopes(LIVE);
 check('exactly one scope is missing', missing.length === 1, missing.join(','));
-check('and it is calendar.readonly', missing[0] === CAL_READ, missing[0]);
+check('and the fix is calendar.freebusy', missing[0] === CAL_FREEBUSY, missing[0]);
 check('so events could still be created', !missing.includes(CAL_EVENTS),
   'which is why the revision inbox and calendar invites kept working while booking did not');
 check('and Gmail was never affected', !missing.includes(GMAIL_MOD));
@@ -42,6 +47,23 @@ check('and Gmail was never affected', !missing.includes(GMAIL_MOD));
 section('G2b  adding that one scope is enough');
 check('nothing missing once calendar.readonly is granted',
   missingScopes(`${LIVE} ${CAL_READ}`).length === 0);
+
+section('G2c  every scope Google accepts for free/busy satisfies us');
+// freebusy.query accepts four scopes of very different reach. A grant holding
+// any of them is complete, so nobody is told to re-authorise for nothing.
+for (const [label, sc] of [['calendar.freebusy', CAL_FREEBUSY], ['calendar.events.freebusy', CAL_EV_FREEBUSY], ['calendar.readonly', CAL_READ], ['calendar (full)', CAL_FULL]]) {
+  check(`a grant with ${label} is complete`, missingScopes(`${CAL_EVENTS} ${GMAIL_MOD} ${sc}`).length === 0);
+}
+check('but calendar.events alone is NOT enough',
+  missingScopes(`${CAL_EVENTS} ${GMAIL_MOD}`).length === 1,
+  'events does not grant free/busy — that is the whole outage');
+
+section('G2d  the recommendation is the narrowest that works');
+check('we ask for the 1-method scope, not the 15-method one',
+  REQUIRED_SCOPES.includes(CAL_FREEBUSY) && !REQUIRED_SCOPES.includes(CAL_READ));
+check('and the capability says what it is for, not just a URL',
+  missingCapabilities(`${CAL_EVENTS} ${GMAIL_MOD}`)[0].what.includes('booking'),
+  JSON.stringify(missingCapabilities(`${CAL_EVENTS} ${GMAIL_MOD}`)[0]));
 
 section('G3  supersets are understood, not demanded');
 check('full calendar covers both calendar scopes',

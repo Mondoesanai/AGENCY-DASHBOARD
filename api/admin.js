@@ -1072,6 +1072,47 @@ export default async function handler(req, res) {
       return res.status(200).send(`<?xml version="1.0" encoding="UTF-8"?><Response>${xml ? `<Message>${xml}</Message>` : ''}</Response>`);
     }
     // R19.1/R19.2/R19.4 — the owner's side of the preview-request form.
+    case 'google-scopes': {
+      // R22.1 — what the Google grant can and cannot do, in words. The owner
+      // should be able to answer "why is booking off?" without reading code or
+      // waiting for the ten-minute sweep to mention it.
+      const { GOOGLE_CAPABILITIES, REQUIRED_SCOPES, missingCapabilities } = await import('../lib/google.js');
+      const have = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REFRESH_TOKEN);
+      if (!have) {
+        return res.status(200).json({
+          ok: true, configured: false,
+          recommended: REQUIRED_SCOPES,
+          capabilities: GOOGLE_CAPABILITIES.map((c) => ({ what: c.what, calls: c.calls, scope: c.recommended })),
+          note: 'Google is not connected on this deployment.',
+        });
+      }
+      let granted = null; let error = null;
+      try {
+        const body = new URLSearchParams({
+          client_id: process.env.GOOGLE_CLIENT_ID,
+          client_secret: process.env.GOOGLE_CLIENT_SECRET,
+          refresh_token: process.env.GOOGLE_REFRESH_TOKEN,
+          grant_type: 'refresh_token',
+        });
+        const r = await fetch('https://oauth2.googleapis.com/token', {
+          method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: body.toString(), signal: AbortSignal.timeout(8000),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) error = String(j.error || `http ${r.status}`);
+        else granted = String(j.scope || '');
+      } catch (e) { error = String(e?.message || e).slice(0, 120); }
+      // The scope list is a capability description, never a credential.
+      const missing = error ? null : missingCapabilities(granted);
+      return res.status(200).json({
+        ok: !error, configured: true, error,
+        granted: granted ? granted.split(/\s+/).filter(Boolean) : null,
+        recommended: REQUIRED_SCOPES,
+        missing,
+        complete: missing ? missing.length === 0 : null,
+        capabilities: GOOGLE_CAPABILITIES.map((c) => ({ what: c.what, calls: c.calls, scope: c.recommended })),
+      });
+    }
     case 'scheduling-rules': {
       // Read the booking rules, or change them. These rules are the ONLY thing
       // that decides which times a stranger is offered, so they belong to the

@@ -1,86 +1,127 @@
 # Re-authorising Google (restores online booking)
 
-**Why:** the saved grant holds `calendar.events` and `gmail.modify` and nothing
-else. `freeBusy.query` needs `calendar` or `calendar.readonly`, so the booking
-form cannot read a single free slot and tells every visitor that online booking
-is unavailable. That is the form behaving correctly — it refuses to offer a time
-it could not verify. One scope is missing. Nothing else is wrong.
+**One capability is missing, and one scope fixes it.**
 
-Confirmed against the live credential: token exchange returns 200, and the
-grant's own scope list contains exactly the two scopes above.
+The saved grant holds `calendar.events` and `gmail.modify`. Creating, changing
+and cancelling appointments works. Reading **free/busy** does not, and that is
+what the booking form needs to offer a real time — so it offers none and tells
+every visitor that online booking is unavailable. That is the form behaving
+correctly: it refuses to show a slot it could not verify.
 
-## The scopes to request
+Confirmed against the live credential (token exchange returns 200; the grant's
+own scope list contains exactly those two).
+
+## The scope to add
 
 ```
-https://www.googleapis.com/auth/calendar.events
-https://www.googleapis.com/auth/calendar.readonly
-https://www.googleapis.com/auth/gmail.modify
+https://www.googleapis.com/auth/calendar.freebusy
 ```
 
-`calendar.readonly` is the only addition. Keep the other two or the revision
-inbox and calendar invites stop working. Do **not** substitute
-`https://www.googleapis.com/auth/calendar` unless you want to: it also grants
-deleting and sharing calendars, which this app never does.
+Keep the two you already have. The complete set becomes:
 
-These are recorded in code as `REQUIRED_SCOPES` in `lib/google.js`, derived from
-the actual API calls, so they cannot drift from what the product needs.
+| Scope | What it is for |
+|---|---|
+| `calendar.freebusy` | **add this** — read availability, so the form can offer real times |
+| `calendar.events` | create, change and cancel the appointment |
+| `gmail.modify` | the revision inbox: read, label, reply |
 
-## Shortest safe procedure
+### Why `calendar.freebusy` and not `calendar.readonly`
 
-1. **Google Cloud Console → APIs & Services → Credentials.** Open the existing
-   OAuth client. Do not create a new one — a new client id means a new client
-   secret, and you would have to replace three variables instead of one.
+`freebusy.query` accepts four scopes. Checked against Google's own discovery
+document (`/discovery/v1/apis/calendar/v3/rest`), which publishes the accepted
+scopes per method:
+
+| Scope | Methods it unlocks across the whole API |
+|---|---|
+| `calendar.freebusy` | **1** — `freebusy.query`, and nothing else |
+| `calendar.events.freebusy` | 7 — also reads event titles, times and details |
+| `calendar.readonly` | 15 — every calendar, every event, and the sharing rules |
+| `calendar` | everything, including deleting calendars |
+
+All four would work. `calendar.freebusy` is the only one that grants nothing
+beyond what the form actually does. An earlier draft of this document said
+`calendar.readonly`; that would have handed a live system read access to every
+event on the calendar to use a one-method capability.
+
+Recorded in code as `GOOGLE_CAPABILITIES` in `lib/google.js`, so the scopes and
+the reasons stay attached to the calls that need them.
+
+## The account steps
+
+1. **Google Cloud Console → APIs & Services → Credentials.** Open the **existing**
+   OAuth client. Do not create a new one: a new client id brings a new secret,
+   and you would be replacing three variables instead of one.
 2. Confirm **Google Calendar API** and **Gmail API** are both enabled under
    *Enabled APIs & services*.
-3. **OAuth consent screen → Data access.** Add `calendar.readonly` to the
-   scope list and save. Leave the existing scopes alone.
-4. **Mint a new refresh token** with all three scopes, using that same client
-   id and secret. Two usual routes:
-   - *OAuth 2.0 Playground* — gear icon, tick "Use your own OAuth credentials",
-     paste the client id and secret, select the three scopes, authorise, then
-     exchange the code for tokens. Its redirect URI
+3. **OAuth consent screen → Data access → Add or remove scopes.** Add
+   `https://www.googleapis.com/auth/calendar.freebusy`. Leave the existing two
+   alone — removing either breaks the revision inbox or appointment creation.
+   Save.
+4. **Mint a new refresh token** against that same client id and secret, with all
+   three scopes. Either route works:
+   - *OAuth 2.0 Playground* — gear icon → tick "Use your own OAuth credentials"
+     → paste the client id and secret → select the three scopes → Authorize →
+     "Exchange authorization code for tokens". Its redirect URI
      (`https://developers.google.com/oauthplayground`) must be listed on the
-     client.
-   - *A one-off local script* using the same client id and secret with
-     `access_type=offline` and `prompt=consent`. `prompt=consent` matters:
-     without it Google often returns no refresh token at all on a re-grant.
-5. **Replace `GOOGLE_REFRESH_TOKEN` in Vercel** — Project *agency-dashboard* →
-   Settings → Environment Variables → `GOOGLE_REFRESH_TOKEN`, Production scope.
-   Edit the value, save, and **redeploy** so running functions pick it up.
-   `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` do not change.
+     client first.
+   - *A one-off local script*, same client id and secret, with
+     `access_type=offline` **and** `prompt=consent`. `prompt=consent` matters:
+     without it Google usually returns no refresh token at all on a re-grant,
+     and you end up thinking it failed.
+5. **Replace `GOOGLE_REFRESH_TOKEN` in Vercel** — project *agency-dashboard* →
+   Settings → Environment Variables → `GOOGLE_REFRESH_TOKEN`, **Production**
+   scope. Edit the value, save, then **redeploy** so running functions pick it
+   up. `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` do not change.
 6. **Revoke the old grant** at <https://myaccount.google.com/permissions> once
    the new one works, so the narrower token stops being valid.
 
-Never paste the token into a chat, a commit, or a file in this repository. It
-goes from the place that minted it straight into Vercel.
+The token goes from wherever you mint it straight into Vercel. It never belongs
+in a chat, a commit, or a file in this repository.
 
-## Confirming it worked
+## Checking it worked
 
-The system now checks this itself every ten minutes. After the redeploy, the
-recovery sweep stops reporting `google-scopes-missing`, and:
+Two ways, neither of which needs the token:
+
+```
+GET /api/admin?do=google-scopes&secret=<CRON_SECRET>
+```
+
+returns `complete: true` and an empty `missing` list. It reports capabilities in
+words ("read free/busy, to offer real booking times"), not just URLs.
 
 ```
 GET /api/collect?hook=slots
 ```
 
 changes from `"the calendar could not be read (google 403: Request had
-insufficient authentication scopes)"` to a list of real times with
-`connected: true`.
+insufficient authentication scopes)"` to real times with `connected: true`.
 
-## Then, and only then: the end-to-end booking test
+The ten-minute recovery sweep also stops reporting `google-scopes-missing` by
+itself. It raises that finding **at most once every 24 hours** even while the
+problem persists — proven in `tests/calendar-health-dedupe.test.mjs`, which runs
+144 consecutive sweeps and asserts exactly one notification.
 
-Still outstanding, and it needs the scope first. Use one designated test
-identity, not a real prospect:
+## Then: the designated booking test
 
-1. Open `/request.html`, pick a slot the page actually displays.
-2. Submit with the SMS box untouched.
-3. Confirm **one** Calendar event exists at that time, in the right timezone,
-   with the invitee on it and the invitation sent.
-4. Confirm **one** booking in the ledger (`?do=bookings`) with
-   `source: provider-confirmed` and the provider's event id.
-5. Re-submit the same slot from a second browser → expect "that time was taken",
-   no second event.
-6. Delete the test event and erase the test contact.
+Blocked until step 5 is done. Use one designated test identity, never a real
+prospect, and run each as a separate result:
 
-Steps 3 and 4 are what this audit's `recordProviderBooking` change makes
-possible; before it, a confirmed booking never reached the ledger at all.
+1. **Displayed slot** — open `/request.html`, note the exact time and timezone shown.
+2. **Submit** with the SMS box untouched.
+3. **One Calendar event** at that instant, in the right timezone, invitee attached.
+4. **Guest notification** actually sent (the event is created with `sendUpdates=all`).
+5. **One CRM booking** at `?do=bookings` with `source: provider-confirmed` and the
+   provider's event id.
+6. **Owner notification** received.
+7. **Vanished slot** — book the same time from a second browser; expect "that time
+   was taken", and no second event.
+8. **Reschedule / cancel** via the link in the confirmation, and confirm the CRM
+   record follows.
+9. **Clean up** — delete the test event, erase the test contact.
+
+Steps 5 and 8 are only possible because of `recordProviderBooking`; before that,
+a confirmed booking never reached the ledger at all.
+
+**Until step 3 and step 5 both pass, the public form keeps saying booking is
+unavailable and keeps collecting call requests.** That is the current state and
+it is the correct one.
