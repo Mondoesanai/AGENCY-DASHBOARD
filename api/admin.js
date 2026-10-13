@@ -1124,6 +1124,20 @@ export default async function handler(req, res) {
       const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
       return res.status(200).json(await saveRules(body));
     }
+    case 'funnel-plan': {
+      // R23.2 — the arithmetic behind the weekly goal, with its assumptions
+      // attached. Answers "how many businesses must we contact for one sale a
+      // week", and says which rates are measured and which are still guesses.
+      const { funnelPlan, OWNER_BASELINE, DEFAULT_ECONOMICS } = await import('../lib/funnel-math.js');
+      const sales = Math.max(1, Math.min(10, Number(req.query.sales) || 1));
+      const plan = await funnelPlan({ salesPerWeek: sales });
+      return res.status(200).json({
+        ok: true,
+        ...plan,
+        ownerBaseline: OWNER_BASELINE,
+        economics: DEFAULT_ECONOMICS,
+      });
+    }
     case 'funnel': {
       // R19.7 — where people actually drop out. Ten events that are not each
       // other, and a booking counted only from a provider confirmation.
