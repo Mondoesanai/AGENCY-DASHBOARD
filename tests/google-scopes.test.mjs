@@ -82,11 +82,17 @@ check('an unrelated scope grants nothing',
 section('G4  the system reports this itself');
 import { readFile } from 'node:fs/promises';
 const rec = await readFile(new URL('../lib/recovery.js', import.meta.url), 'utf8');
-check('the sweep checks the grant', /missingScopes\(j\.scope\)/.test(rec), 'lib/recovery.js');
+check('the sweep checks the grant', /missingCapabilities\(j\.scope\)/.test(rec), 'lib/recovery.js');
 check('and names the exact scopes to add',
-  /Re-authorise with these added and replace GOOGLE_REFRESH_TOKEN: \$\{missing\.join/.test(rec));
+  /GOOGLE_REFRESH_TOKEN: \$\{missing\.join/.test(rec));
+check('while telling the owner to KEEP what they already have',
+  /Keep the scopes already granted/.test(rec),
+  'dropping calendar.events or gmail.modify would break appointments or the revision inbox');
+check('the headline names the broken CAPABILITY, not a scope URL',
+  /The Google grant cannot: \$\{missingCaps\.map/.test(rec),
+  'an earlier version hardcoded "without calendar.readonly" and then contradicted its own advice once the recommendation narrowed to calendar.freebusy');
 check('it explains the consequence in plain words',
-  /every visitor is told online booking is unavailable/.test(rec),
+  /told online booking is unavailable/.test(rec),
   'a scope string alone does not tell the owner what is broken');
 check('a rejected grant is reported separately from a narrow one',
   /google-token-rejected/.test(rec) && /google-scopes-missing/.test(rec),
@@ -95,9 +101,22 @@ check('a missing scope is CONFIG, not an outage to retry',
   /google-scopes-missing', SEVERITY\.CONFIG/.test(rec),
   'no amount of retrying grants a scope');
 check('and the check cannot break the sweep',
-  /try \{[\s\S]{0,2600}missingScopes[\s\S]{0,900}\} catch/.test(rec));
+  /try \{[\s\S]{0,2600}missingCapabilities[\s\S]{0,1600}\} catch/.test(rec));
 check('it only runs when credentials exist',
   /env\.GOOGLE_CLIENT_ID && env\.GOOGLE_CLIENT_SECRET && env\.GOOGLE_REFRESH_TOKEN/.test(rec),
   'a deployment with no Google set up is not misconfigured, it is just not using it');
+
+section('G5  the owner can ask directly, without waiting for the sweep');
+const admin = await readFile(new URL('../api/admin.js', import.meta.url), 'utf8');
+check('there is an endpoint for it', /case 'google-scopes'/.test(admin), 'api/admin.js');
+check('it reports capabilities in words', /capabilities: GOOGLE_CAPABILITIES\.map/.test(admin));
+check('and the bare list to paste into the consent screen',
+  /addScopes: error \? null : missingScopes\(granted\)/.test(admin));
+check('it never returns the token itself',
+  !/refresh_token:\s*j\./.test(admin) && !/GOOGLE_REFRESH_TOKEN[^)]*res\.status/.test(admin),
+  'a scope list is a capability description; the credential is not');
+check('and it is behind the password',
+  admin.indexOf("case 'google-scopes'") > admin.indexOf('if (!authed(req)) return res.status(401)'),
+  'it names what the account can do, which is not public information');
 
 done();

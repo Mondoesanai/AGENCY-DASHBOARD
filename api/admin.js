@@ -1076,7 +1076,7 @@ export default async function handler(req, res) {
       // R22.1 — what the Google grant can and cannot do, in words. The owner
       // should be able to answer "why is booking off?" without reading code or
       // waiting for the ten-minute sweep to mention it.
-      const { GOOGLE_CAPABILITIES, REQUIRED_SCOPES, missingCapabilities } = await import('../lib/google.js');
+      const { GOOGLE_CAPABILITIES, REQUIRED_SCOPES, missingCapabilities, missingScopes } = await import('../lib/google.js');
       const have = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REFRESH_TOKEN);
       if (!have) {
         return res.status(200).json({
@@ -1109,6 +1109,8 @@ export default async function handler(req, res) {
         granted: granted ? granted.split(/\s+/).filter(Boolean) : null,
         recommended: REQUIRED_SCOPES,
         missing,
+        // The bare list, ready to paste into the consent screen.
+        addScopes: error ? null : missingScopes(granted),
         complete: missing ? missing.length === 0 : null,
         capabilities: GOOGLE_CAPABILITIES.map((c) => ({ what: c.what, calls: c.calls, scope: c.recommended })),
       });
