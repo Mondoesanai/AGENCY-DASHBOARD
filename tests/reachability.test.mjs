@@ -67,18 +67,12 @@ const list = (dir, ext) => fs.readdirSync(path.join(ROOT, dir)).filter((f) => f.
 // ---------------------------------------------------------------------------
 const ALLOWED = {
   // --- HELD: outreach is switched off, so the send path cannot run ---------
-  'lib/outreach-email.js:sendProspectEmail': {
-    cls: 'HELD',
-    why: 'The prospect email sender. Outreach is disabled for this development window.',
-    wiredBy: 'turning the outreach switch on; `?do=invite-send` already calls the invitation path and obeys the switch',
-  },
-  'lib/replies.js:guardedSend': {
-    cls: 'HELD',
-    why: 'claim → prepare → recheck → commit, the wrapper that stops an opt-out or an inbound reply racing a queued follow-up. Dead only because nothing sends yet.',
-    wiredBy: 'the first real campaign send; `claimSend` and `claimStillValid` are reached through it, not separately',
-  },
-  'lib/campaigns.js:composeWarm': { cls: 'HELD', why: 'Writes the follow-up body for a sequence step.', wiredBy: 'enabling campaign sends' },
-  'lib/campaigns.js:markStepSent': { cls: 'HELD', why: 'Records that a sequence step went out.', wiredBy: 'enabling campaign sends' },
+  //
+  // R24.3 removed five entries from this group -- sendProspectEmail,
+  // guardedSend, composeWarm, markStepSent and jobs.js:enqueue. They were
+  // never dead code: they had no PRODUCER. `lib/campaign-runner.js` is that
+  // producer, reached from `?do=campaign-run`, and the owner's switch is
+  // checked inside it, so being wired is not being switched on.
   'lib/campaigns.js:mayEscalateToSms': {
     cls: 'HELD',
     why: 'Decides whether an email thread may move to text. Refusing is the default and the refusal is what matters, so it must not be wired before SMS is.',
@@ -133,15 +127,6 @@ const ALLOWED = {
       + 'That was wrong: tests/contrast.test.mjs reads the real token values out of public/index.html and does the '
       + 'arithmetic on every run. Verified by negative control — setting --muted to #1b231f turns 3 checks red at '
       + '1.01:1. Having no runtime caller is the correct state for this module, so there is nothing to wire.',
-  },
-  'lib/jobs.js:enqueue': {
-    cls: 'HELD',
-    why: 'R16.10 first recorded this as "a second scheduling mechanism with no users", and that was wrong. '
-      + 'lib/jobs.js is the durable queue and most of it IS in use — listJobs, cancelJob, queueHealth, drain and '
-      + 'replayDead all have production callers, and the recovery sweep reads it every run. Only the PRODUCER has '
-      + 'none, so the queue is correctly managed and always empty. Its one producer is the campaign send path, '
-      + 'which is held, so this is held with it rather than being dead code to delete.',
-    wiredBy: 'the first real campaign send — the same thing that wires guardedSend',
   },
 
   // --- OWNER: a real capability with no screen pointing at it yet ---------

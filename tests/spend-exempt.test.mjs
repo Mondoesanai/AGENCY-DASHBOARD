@@ -95,7 +95,10 @@ for (const p of PAID_PATHS) {
 const guarded = PAID_PATHS.filter((p) => p.guard === 'withSpend');
 check('most paid paths go through the guard', guarded.length >= 4, String(guarded.length));
 check('the ones that do not are each explained',
-  PAID_PATHS.filter((p) => p.guard !== 'withSpend').every((p) => ['own-cap', 'unreachable'].includes(p.guard)),
+  // 'switch' joined the vocabulary in R24.3: the cold-email path became
+  // reachable, so what holds it is the owner's switch plus a missing
+  // credential. X7 below makes that claim earn its place.
+  PAID_PATHS.filter((p) => p.guard !== 'withSpend').every((p) => ['own-cap', 'unreachable', 'switch'].includes(p.guard)),
   'a path with no guard and no reason is the bug this file exists to catch');
 
 section('X6  the unreachable paid paths really are unreachable');
@@ -108,6 +111,24 @@ for (const p of PAID_PATHS.filter((x) => x.guard === 'unreachable')) {
   check(`${p.what} is recorded as unreachable in the audit`,
     new RegExp(`lib/${mod.replace('.', '\\.')}:`).test(reach),
     `${p.where} claims 'unreachable' but has no entry in the reachability allowlist`);
+}
+
+section('X7  a path guarded by the SWITCH has that proven, not asserted');
+// R24.3 — 'unreachable' is the strongest claim and the easiest to invalidate:
+// wiring a producer silently turns it into a lie. A path that moved to 'switch'
+// has to point at a check that drives the real function with the switch off and
+// shows that no provider was contacted, otherwise 'switch' is just a nicer word
+// for 'we hope so'.
+const journey = read('tests/cold-email-journey.test.mjs');
+for (const p of PAID_PATHS.filter((x) => x.guard === 'switch')) {
+  check(`${p.what} is checked with the switch off`,
+    /THE SWITCH IS CHECKED FIRST/.test(journey), 'tests/cold-email-journey.test.mjs');
+  check(`${p.what} proves no provider call happens then`,
+    /NO provider call was made/.test(journey) && /calls === 0/.test(journey),
+    'the check must count real calls, not trust a return value');
+  check(`${p.what} is reachable, which is why 'unreachable' was dropped`,
+    !new RegExp(`'${p.where.replace('.', '\\.')}:send`).test(reach),
+    `${p.where} still has a send-path entry in the reachability allowlist`);
 }
 
 done();

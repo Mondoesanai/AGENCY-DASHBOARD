@@ -420,7 +420,13 @@ export default async function handler(req, res) {
       const cands = await invitationCandidates(contacts);
       const { getSettings } = await import('../lib/settings.js');
       const s = await getSettings();
-      const owner = { name: s.business?.ownerName, businessName: s.business?.name, postalAddress: s.business?.postalAddress };
+      // `settings.business` does not exist in the settings shape -- the sender
+      // identity lives under `settings.sender` and `ownerIdentity()` is its
+      // accessor. Reading the wrong key made every message refuse with "sender
+      // identity incomplete" whatever the owner configured. `businessName` and
+      // `business` are both sent because the composers disagree on the name.
+      const id = await ownerIdentity();
+      const owner = { name: id.name, business: id.business, businessName: id.business, postalAddress: id.postalAddress, replyTo: id.replyTo, unsubscribeLine: id.unsubscribeLine };
       // dry run: composes every message and applies every refusal, sends none
       const preview = await sendInvitations(
         contacts.filter((c) => cands.eligible.some((e) => e.id === c.id)),
@@ -443,7 +449,13 @@ export default async function handler(req, res) {
       if (!s.outreach?.active) {
         return res.status(200).json({ ok: false, error: 'outreach is switched off, so no invitation was sent', paused: true, selected: ids.length });
       }
-      const owner = { name: s.business?.ownerName, businessName: s.business?.name, postalAddress: s.business?.postalAddress };
+      // `settings.business` does not exist in the settings shape -- the sender
+      // identity lives under `settings.sender` and `ownerIdentity()` is its
+      // accessor. Reading the wrong key made every message refuse with "sender
+      // identity incomplete" whatever the owner configured. `businessName` and
+      // `business` are both sent because the composers disagree on the name.
+      const id = await ownerIdentity();
+      const owner = { name: id.name, business: id.business, businessName: id.business, postalAddress: id.postalAddress, replyTo: id.replyTo, unsubscribeLine: id.unsubscribeLine };
       const out = await sendInvitations(contacts, { owner, previewUrlFor: async () => null, send: null });
       return res.status(200).json(out);
     }
@@ -840,6 +852,29 @@ export default async function handler(req, res) {
     case 'campaign-due': {
       const out = await dueSends(req.query.id, { window: { startHour: 8, endHour: 17 } });
       return res.status(200).json({ ok: true, ...out });
+    }
+    // R24.3 — the producer the send path never had. Everything downstream of
+    // this existed and was tested; nothing read "who is due" and walked them
+    // through it, so `enqueue`, `guardedSend` and `sendProspectEmail` all had
+    // no callers and the system could not have sent an email even with a paid
+    // key in place. The owner's switch is checked inside, first, so with
+    // outreach off this contacts no provider and changes nothing.
+    case 'campaign-run': {
+      if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'sending is a POST' });
+      const { runCampaignSends } = await import('../lib/campaign-runner.js');
+      const limit = req.query.limit != null ? Number(req.query.limit) : null;
+      const out = await runCampaignSends(req.query.id, { limit: Number.isFinite(limit) ? limit : null });
+      return res.status(200).json(out);
+    }
+    case 'campaign-last-run': {
+      const { lastRun } = await import('../lib/campaign-runner.js');
+      return res.status(200).json({ ok: true, lastRun: await lastRun(req.query.id) });
+    }
+    case 'campaign-enrol-queue': {
+      if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'queueing is a POST' });
+      const { enqueueProviderEnrolment } = await import('../lib/campaign-runner.js');
+      const body = req.body && typeof req.body === 'object' ? req.body : {};
+      return res.status(200).json(await enqueueProviderEnrolment(req.query.id, body.leads || []));
     }
     case 'sender-save': {
       const body = req.body && typeof req.body === 'object' ? req.body : {};

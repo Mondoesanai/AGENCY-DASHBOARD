@@ -258,7 +258,11 @@ check('the uncappable caveat SURVIVES being wired', /cannot cap charges a provid
 
 section('E8b  every paid path is accounted for');
 check('the paid paths are listed', PAID_PATHS.length >= 8, String(PAID_PATHS.length));
-check('each says how it is guarded', PAID_PATHS.every((p) => ['withSpend', 'own-cap', 'unreachable'].includes(p.guard)),
+// 'switch' is the fourth kind, added in R24.3 when the cold-email path gained a
+// producer and stopped being guarded by having no caller. The vocabulary is
+// closed on purpose: a new word here must be a guard somebody can check, which
+// is what tests/spend-exempt.test.mjs X7 does for this one.
+check('each says how it is guarded', PAID_PATHS.every((p) => ['withSpend', 'own-cap', 'unreachable', 'switch'].includes(p.guard)),
   PAID_PATHS.map((p) => p.guard).join(','));
 check('each names the module it lives in', PAID_PATHS.every((p) => /^lib\//.test(p.where)));
 check('no path is listed without a category', PAID_PATHS.every((p) => !!p.category));
