@@ -141,4 +141,53 @@ check('and it did NOT pull the data file',
   !/PACKAGES/.test(seoPrompt),
   'only a client revision gets the wider sample; discretionary work keeps the tight budget');
 
+
+
+// ---------------------------------------------------------------------------
+section('D4  a big site cannot starve the data file out of the prompt');
+// Data files are fetched LAST, after every page and stylesheet. On a site whose
+// pages fill the 400KB shared budget, the loop would hit `budgetLeft <= 500`
+// and skip the data file — reproducing the original bug with no error anywhere.
+// A content file the page reads at runtime is not optional, so it has a reserve
+// the pages cannot spend.
+const FILLER = '<p>' + 'Mobile detailing for cars, trucks and boats. '.repeat(1100) + '</p>';
+const bigFiles = { 'js/site-data.js': SITE_DATA, 'css/style.css': 'body{margin:0}' };
+for (let i = 0; i < 16; i++) {
+  bigFiles[i === 0 ? 'index.html' : `page-${i}.html`] =
+    `<!doctype html><html><head><title>P${i}</title>`
+    + `<link rel="stylesheet" href="css/style.css"></head><body><h1>Page ${i}</h1>`
+    + `${FILLER}<div id="pkgCards"></div><script src="js/site-data.js"></script></body></html>`;
+}
+const bigBytes = Object.values(bigFiles).join('').length;
+// Only the first 12 pages are ever sampled, so the 12 LARGEST-indexed pages
+// must themselves exceed the 400KB budget for this to be a real starvation.
+const twelveBytes = Object.entries(bigFiles).filter(([k]) => k.endsWith('.html')).slice(0, 12).reduce((n, [, v]) => n + v.length, 0);
+check('the 12 sampled pages alone exceed the 400KB budget', twelveBytes > 400000, `${twelveBytes} bytes across 12 pages`);
+
+addRepo('bigco/site', bigFiles);
+W.pages['https://bigco.test'] = bigFiles['index.html'];
+await saveSiteConfig('bigco', {
+  url: 'https://bigco.test', name: 'Big Co', repo: 'bigco/site',
+  email: 'owner@bigco.test', client: 'Bea',
+});
+const bigSite = (await listSites()).find((s) => s.slug === 'bigco');
+await store.set('conv:tagged:bigco', '1');
+await store.set('tracker:installed:bigco', '1');
+await store.set('agent:keywords:bigco', JSON.stringify(['mobile detailing prices', 'boat detailing near me']));
+const BIG_TICKET = `tkt_big_${Date.now()}`;
+await store.set(`revisions:attach:${BIG_TICKET}`, REQUEST, { ex: 3600 }).catch(() => {});
+await addRevisionTodo('bigco', { title: REQUEST, detail: 'Requested by the client', ticketId: BIG_TICKET });
+
+let bigPrompt = '';
+W.anthropic.push((req) => {
+  bigPrompt = req.messages[0].content.map((c) => c.text || '').join('\n');
+  return 'NOOP: big capture';
+});
+await runAgentCycle(bigSite, { manual: false }).catch(() => {});
+check('a prompt was captured', bigPrompt.length > 200, `${bigPrompt.length} chars`);
+check('the pages did fill the budget', bigPrompt.length > 300000, `${bigPrompt.length} chars`);
+check('and the data file STILL got through',
+  /PACKAGES/.test(bigPrompt),
+  'without the reserve this is the original bug, with no error anywhere to see it');
+
 done();
