@@ -1130,7 +1130,11 @@ export default async function handler(req, res) {
       // week", and says which rates are measured and which are still guesses.
       const { funnelPlan, OWNER_BASELINE, DEFAULT_ECONOMICS } = await import('../lib/funnel-math.js');
       const sales = Math.max(1, Math.min(10, Number(req.query.sales) || 1));
-      const plan = await funnelPlan({ salesPerWeek: sales });
+      // `?calls=` plans from the owner's OWN stated units (four to six calls a
+      // week) instead of from sales. The two answer different questions and the
+      // difference grows fast, so the caller picks rather than the code assuming.
+      const calls = req.query.calls != null ? Math.max(1, Math.min(40, Number(req.query.calls) || 1)) : null;
+      const plan = await funnelPlan({ salesPerWeek: sales, attendedCallsPerWeek: calls });
       return res.status(200).json({
         ok: true,
         ...plan,

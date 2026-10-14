@@ -12,7 +12,7 @@
 
 import { check, section, done } from './world.mjs';
 import { candidateSlots, DEFAULT_RULES } from '../lib/scheduling.js';
-import { DEFAULT_ECONOMICS, requiredVolume } from '../lib/funnel-math.js';
+import { DEFAULT_ECONOMICS, requiredVolume, targetVsCapacity, previewCapacity, ASSUMED_RATES } from '../lib/funnel-math.js';
 
 const TZ = 'America/Chicago';
 const MON = Date.UTC(2026, 9, 19, 13, 0); // Monday
@@ -121,5 +121,95 @@ check('a cancelled booking does not consume capacity',
   'a call that was cancelled owes nobody a preview');
 check('and an unreadable ledger does not silently raise capacity',
   /catch \{ \/\* an unreadable ledger must not silently raise capacity/.test(src));
+
+
+
+// ---------------------------------------------------------------------------
+section('C7  R24.2 — the owner\'s STATED target, in his own units');
+// Everything above planned from sales. The owner's words were "four to six
+// CALLS a week", and planning from sales quietly answers a different question.
+// At a 4h preview and 20h a week the floor does not fit either, and that is the
+// finding — not a rounding detail to be smoothed over.
+const tc = targetVsCapacity();
+check('four attended calls needs six confirmed bookings',
+  tc.floor.confirmedBookings === 6,
+  `${tc.floor.confirmedBookings} at a ${Math.round(tc.showRate * 100)}% show rate`);
+check('which is 24h of preview building', tc.floor.previewHours === 24, `${tc.floor.previewHours}h`);
+check('six attended calls needs nine confirmed bookings',
+  tc.target.confirmedBookings === 9, `${tc.target.confirmedBookings}`);
+check('which is 36h', tc.target.previewHours === 36, `${tc.target.previewHours}h`);
+check('and only 20h exist', tc.capacity.hoursPerWeek === 20, `${tc.capacity.hoursPerWeek}h`);
+check('so the stated FLOOR does not fit', tc.floor.fits === false, tc.verdict);
+check('nor does the target', tc.target.fits === false);
+check('the verdict says the floor is over capacity, not just the target',
+  /FLOOR is already over capacity/.test(tc.verdict), tc.verdict,
+  'the earlier version only flagged two sales a week and let four calls through');
+
+section('C7b  and it offers the three real options rather than one');
+check('three options are given', tc.options.length === 3, JSON.stringify(tc.options.map((o) => o.option)));
+check('shorten the preview is one', tc.options.some((o) => /shorten/.test(o.option)));
+check('add build capacity is one', tc.options.some((o) => /add build capacity/.test(o.option)));
+check('lower the call target is one', tc.options.some((o) => /lower the call target/.test(o.option)));
+check('each names what it requires and what it risks',
+  tc.options.every((o) => o.requires && o.unlocks && o.risk), JSON.stringify(tc.options[0]));
+check('shortening names the hours it would have to hit',
+  /[0-9.]+h instead of 4h/.test(tc.options[0].requires), tc.options[0].requires,
+  'an option with no number is not a choice, it is a suggestion');
+
+section('C8  the servable ceiling is stated, not left to be discovered');
+const one = requiredVolume({ salesPerWeek: 1 });
+check('the ceiling is about three attended calls a week',
+  one.ownerCapacity.servableAttendedCalls === 3,
+  `${one.ownerCapacity.servableAttendedCalls} calls from ${previewCapacity().previewsPerWeek} previews at a ${Math.round(ASSUMED_RATES.show.value * 100)}% show rate`);
+check('which is about one sale a week',
+  one.ownerCapacity.servableSalesPerWeek >= 0.9 && one.ownerCapacity.servableSalesPerWeek <= 1.1,
+  `${one.ownerCapacity.servableSalesPerWeek}`,
+  'the REVENUE goal of one build a week fits; the CALL target of four to six does not');
+check('max previews a week is five', previewCapacity().previewsPerWeek === 5);
+
+section('C9  every rate behind the invitation count is labelled an estimate');
+// "413 invitations" is 1 ÷ 0.33 ÷ 0.7 ÷ 0.35 ÷ 0.03. Three of those four were
+// bare literals in a function signature with no provenance anywhere.
+check('all four rates are present', Object.keys(ASSUMED_RATES).length === 4,
+  Object.keys(ASSUMED_RATES).join(','));
+for (const [k, a] of Object.entries(ASSUMED_RATES)) {
+  check(`${k} is labelled ESTIMATE`, a.label === 'ESTIMATE', a.label);
+  check(`${k} says where it came from`, !!a.source && a.source.length > 10, a.source);
+  check(`${k} defines its own denominator`, /÷/.test(a.definition), a.definition);
+  check(`${k} says what would replace it`, !!a.replacedBy, a.replacedBy);
+}
+check('the show rate does NOT claim to be owner-provided',
+  !/owner/i.test(ASSUMED_RATES.show.source), ASSUMED_RATES.show.source,
+  'only the close rate came from the owner; the other three were picked here');
+check('the reply rate admits it is the most sensitive one',
+  /three times the sending/.test(ASSUMED_RATES.reply.basis), ASSUMED_RATES.reply.basis);
+
+section('C9b  the arithmetic is shown in full, so it can be checked by hand');
+check('the chain is spelled out', /÷ 0.03 reply/.test(one.arithmetic), one.arithmetic);
+check('it ends at the number that gets quoted', /413 to send/.test(one.arithmetic), one.arithmetic);
+check('and the unrounded expectation is kept beside the integer plan',
+  one.expected.invitationsSent === 412.3 && one.perWeek.invitationsSent === 413,
+  JSON.stringify({ expected: one.expected.invitationsSent, plan: one.perWeek.invitationsSent }));
+check('every rate carries its provenance in the output too',
+  Object.values(one.rateProvenance).every((r) => r.label && r.source && r.percent),
+  JSON.stringify(one.rateProvenance.reply));
+
+section('C10  planning from calls and from sales are different questions');
+const fromCalls = requiredVolume({ attendedCallsPerWeek: 4 });
+check('it says which drove it', fromCalls.drivenBy === 'attendedCalls', fromCalls.drivenBy);
+check('four calls needs more sending than one sale does',
+  fromCalls.perWeek.invitationsSent > one.perWeek.invitationsSent,
+  `${fromCalls.perWeek.invitationsSent} vs ${one.perWeek.invitationsSent}`);
+check('and four calls is flagged over capacity',
+  fromCalls.ownerCapacity.overCapacity === true, fromCalls.ownerCapacity.note);
+check('the bottleneck is named as preview capacity',
+  fromCalls.bottleneck === 'owner preview capacity', fromCalls.bottleneck);
+
+section('C10b  NEGATIVE CONTROL: with enough hours, the same target fits');
+const roomy = targetVsCapacity({ economics: { ...DEFAULT_ECONOMICS, ownerPreviewHoursPerWeek: 40 } });
+check('40h a week fits the six-call target', roomy.target.fits === true, roomy.verdict);
+check('and it says so rather than warning anyway',
+  /Both the floor and the target fit/.test(roomy.verdict), roomy.verdict);
+check('with no options to choose between', roomy.options.length === 0);
 
 done();
